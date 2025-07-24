@@ -1,0 +1,176 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?   // Add this line
+  role          Role      @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts          Account[]
+  sessions          Session[]
+  enrollments       Enrollment[]
+  testAttempts      TestAttempt[]
+  videoProgress     VideoProgress[]
+  dailyStreaks      DailyStreak[]
+  favoriteCourses   FavoriteCourse[]
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  thumbnail   String?
+  category    String
+  level       Level    @default(BEGINNER)
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  videos          Video[]
+  enrollments     Enrollment[]
+  favoriteCourses FavoriteCourse[]
+}
+
+model Video {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  videoUrl    String
+  duration    Int?     // in seconds
+  order       Int
+  courseId    String
+  aiPrompt    String?  // For AI test generation
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  course        Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  tests         Test[]
+  videoProgress VideoProgress[]
+
+  @@unique([courseId, order])
+}
+
+model Test {
+  id       String @id @default(cuid())
+  videoId  String
+  question String
+  options  Json   // Array of options
+  correct  Int    // Index of correct answer
+  
+  video        Video         @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  testAttempts TestAttempt[]
+}
+
+model Enrollment {
+  id        String   @id @default(cuid())
+  userId    String
+  courseId  String
+  progress  Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+}
+
+model VideoProgress {
+  id          String   @id @default(cuid())
+  userId      String
+  videoId     String
+  completed   Boolean  @default(false)
+  watchTime   Int      @default(0) // in seconds
+  testPassed  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, videoId])
+}
+
+model TestAttempt {
+  id        String   @id @default(cuid())
+  userId    String
+  testId    String
+  answer    Int
+  correct   Boolean
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  test Test @relation(fields: [testId], references: [id], onDelete: Cascade)
+}
+
+model DailyStreak {
+  id     String   @id @default(cuid())
+  userId String
+  date   DateTime @db.Date
+  count  Int      @default(1)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+}
+
+model FavoriteCourse {
+  id       String @id @default(cuid())
+  userId   String
+  courseId String
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Level {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
