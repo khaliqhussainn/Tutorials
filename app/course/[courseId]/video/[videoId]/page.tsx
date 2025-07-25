@@ -1,4 +1,4 @@
-// app/course/[courseId]/video/[videoId]/page.tsx
+// app/course/[courseId]/video/[videoId]/page.tsx - Updated with sections support
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -9,7 +9,7 @@ import VideoPlayer from '@/components/course/VideoPlayer'
 import TestInterface from '@/components/test/TestInterface'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { ArrowLeft, ArrowRight, CheckCircle, Clock, FileText } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle, Clock, FileText, BookOpen, Target, Award } from 'lucide-react'
 import { formatDuration } from '@/lib/utils'
 
 interface Video {
@@ -19,6 +19,7 @@ interface Video {
   videoUrl: string
   duration?: number
   order: number
+  sectionId?: string
   tests: Test[]
 }
 
@@ -29,10 +30,18 @@ interface Test {
   correct: number
 }
 
+interface CourseSection {
+  id: string
+  title: string
+  order: number
+  videos: { id: string; order: number; title: string }[]
+}
+
 interface Course {
   id: string
   title: string
-  videos: { id: string; order: number; title: string }[]
+  sections: CourseSection[]
+  videos: { id: string; order: number; title: string }[] // Legacy videos
 }
 
 export default function VideoPage({ 
@@ -50,6 +59,7 @@ export default function VideoPage({
   const [watchTime, setWatchTime] = useState(0)
   const [canWatch, setCanWatch] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [currentSection, setCurrentSection] = useState<CourseSection | null>(null)
 
   useEffect(() => {
     if (session) {
@@ -70,6 +80,12 @@ export default function VideoPage({
         const courseData = await courseResponse.json()
         setVideo(videoData)
         setCourse(courseData)
+        
+        // Find current section if video belongs to one
+        if (videoData.sectionId) {
+          const section = courseData.sections?.find((s: CourseSection) => s.id === videoData.sectionId)
+          setCurrentSection(section || null)
+        }
       }
     } catch (error) {
       console.error('Error fetching video data:', error)
@@ -164,19 +180,73 @@ export default function VideoPage({
   const getNextVideo = () => {
     if (!course || !video) return null
     
-    const currentIndex = course.videos.findIndex(v => v.id === video.id)
-    return currentIndex < course.videos.length - 1 
-      ? course.videos[currentIndex + 1] 
-      : null
+    if (video.sectionId && currentSection) {
+      // Video is in a section
+      const currentVideoIndex = currentSection.videos.findIndex(v => v.id === video.id)
+      
+      if (currentVideoIndex < currentSection.videos.length - 1) {
+        // Next video in same section
+        return currentSection.videos[currentVideoIndex + 1]
+      } else {
+        // First video of next section
+        const currentSectionIndex = course.sections.findIndex(s => s.id === currentSection.id)
+        if (currentSectionIndex < course.sections.length - 1) {
+          const nextSection = course.sections[currentSectionIndex + 1]
+          return nextSection.videos.length > 0 ? nextSection.videos[0] : null
+        }
+      }
+    } else {
+      // Legacy video without section
+      const currentIndex = course.videos.findIndex(v => v.id === video.id)
+      return currentIndex < course.videos.length - 1 ? course.videos[currentIndex + 1] : null
+    }
+    
+    return null
   }
 
   const getPrevVideo = () => {
     if (!course || !video) return null
     
-    const currentIndex = course.videos.findIndex(v => v.id === video.id)
-    return currentIndex > 0 
-      ? course.videos[currentIndex - 1] 
-      : null
+    if (video.sectionId && currentSection) {
+      // Video is in a section
+      const currentVideoIndex = currentSection.videos.findIndex(v => v.id === video.id)
+      
+      if (currentVideoIndex > 0) {
+        // Previous video in same section
+        return currentSection.videos[currentVideoIndex - 1]
+      } else {
+        // Last video of previous section
+        const currentSectionIndex = course.sections.findIndex(s => s.id === currentSection.id)
+        if (currentSectionIndex > 0) {
+          const prevSection = course.sections[currentSectionIndex - 1]
+          return prevSection.videos.length > 0 ? prevSection.videos[prevSection.videos.length - 1] : null
+        }
+      }
+    } else {
+      // Legacy video without section
+      const currentIndex = course.videos.findIndex(v => v.id === video.id)
+      return currentIndex > 0 ? course.videos[currentIndex - 1] : null
+    }
+    
+    return null
+  }
+
+  const getAllVideos = () => {
+    if (!course) return []
+    
+    const sectionVideos = course.sections?.flatMap(section => 
+      section.videos.map(video => ({ ...video, sectionTitle: section.title }))
+    ) || []
+    
+    const legacyVideos = course.videos?.map(video => ({ ...video, sectionTitle: 'Additional Content' })) || []
+    
+    return [...sectionVideos, ...legacyVideos]
+  }
+
+  const getCurrentVideoPosition = () => {
+    const allVideos = getAllVideos()
+    const currentIndex = allVideos.findIndex(v => v.id === video?.id)
+    return { current: currentIndex + 1, total: allVideos.length }
   }
 
   if (!session) {
@@ -220,6 +290,7 @@ export default function VideoPage({
 
   const nextVideo = getNextVideo()
   const prevVideo = getPrevVideo()
+  const position = getCurrentVideoPosition()
 
   return (
     <div className="min-h-screen bg-white">
@@ -234,8 +305,13 @@ export default function VideoPage({
             Back to Course
           </Link>
           
-          <div className="text-sm text-dark-500">
-            Video {video.order} of {course.videos.length}
+          <div className="text-sm text-dark-500 flex items-center space-x-4">
+            {currentSection && (
+              <span className="bg-primary-100 text-primary-800 px-3 py-1 rounded-full text-xs font-medium">
+                {currentSection.title}
+              </span>
+            )}
+            <span>Video {position.current} of {position.total}</span>
           </div>
         </div>
 
@@ -255,15 +331,18 @@ export default function VideoPage({
                 
                 {videoCompleted && !testPassed && video.tests.length > 0 && (
                   <Card className="border-yellow-200 bg-yellow-50">
-                    <CardContent className="p-4 text-center">
-                      <FileText className="w-8 h-8 text-yellow-600 mx-auto mb-2" />
-                      <h3 className="font-semibold text-yellow-800 mb-2">
-                        Complete the Test
+                    <CardContent className="p-6 text-center">
+                      <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <FileText className="w-8 h-8 text-yellow-600" />
+                      </div>
+                      <h3 className="font-semibold text-yellow-800 mb-2 text-lg">
+                        Complete the Knowledge Check
                       </h3>
-                      <p className="text-yellow-700 mb-4">
-                        You need to pass the test to proceed to the next video.
+                      <p className="text-yellow-700 mb-6">
+                        Test your understanding of this video before proceeding to the next lesson.
                       </p>
-                      <Button onClick={() => setShowTest(true)}>
+                      <Button onClick={() => setShowTest(true)} size="lg">
+                        <Target className="w-5 h-5 mr-2" />
                         Take Test
                       </Button>
                     </CardContent>
@@ -280,24 +359,47 @@ export default function VideoPage({
               />
             )}
 
-            {/* Video Info */}
+            {/* Video Information */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>{video.title}</span>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center text-xl">
+                      {video.title}
+                      {testPassed && (
+                        <CheckCircle className="w-6 h-6 text-green-600 ml-3" />
+                      )}
+                    </CardTitle>
+                    {currentSection && (
+                      <p className="text-sm text-primary-600 font-medium mt-1">
+                        {currentSection.title}
+                      </p>
+                    )}
+                  </div>
                   {testPassed && (
-                    <CheckCircle className="w-6 h-6 text-green-600" />
+                    <div className="flex items-center bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium">
+                      <Award className="w-4 h-4 mr-2" />
+                      Completed
+                    </div>
                   )}
-                </CardTitle>
+                </div>
               </CardHeader>
               <CardContent>
                 {video.description && (
-                  <p className="text-dark-600 mb-4">{video.description}</p>
+                  <p className="text-dark-600 mb-4 leading-relaxed">{video.description}</p>
                 )}
                 
-                <div className="flex items-center text-sm text-dark-500">
-                  <Clock className="w-4 h-4 mr-2" />
-                  Duration: {formatDuration(video.duration || 0)}
+                <div className="flex items-center text-sm text-dark-500 space-x-6">
+                  <div className="flex items-center">
+                    <Clock className="w-4 h-4 mr-2" />
+                    Duration: {formatDuration(video.duration || 0)}
+                  </div>
+                  {video.tests.length > 0 && (
+                    <div className="flex items-center">
+                      <Target className="w-4 h-4 mr-2" />
+                      {video.tests.length} test questions
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -307,9 +409,12 @@ export default function VideoPage({
               <div>
                 {prevVideo && (
                   <Link href={`/course/${params.courseId}/video/${prevVideo.id}`}>
-                    <Button variant="outline">
+                    <Button variant="outline" className="flex items-center">
                       <ArrowLeft className="w-4 h-4 mr-2" />
-                      Previous: {prevVideo.title}
+                      <div className="text-left">
+                        <div className="text-xs text-dark-500">Previous</div>
+                        <div className="font-medium">{prevVideo.title}</div>
+                      </div>
                     </Button>
                   </Link>
                 )}
@@ -318,9 +423,12 @@ export default function VideoPage({
               <div>
                 {nextVideo && testPassed && (
                   <Link href={`/course/${params.courseId}/video/${nextVideo.id}`}>
-                    <Button>
-                      Next: {nextVideo.title}
-                      <ArrowRight className="w-4 h-4 ml-2" />
+                    <Button className="flex items-center">
+                      <div className="text-right mr-2">
+                        <div className="text-xs text-primary-100">Next</div>
+                        <div className="font-medium">{nextVideo.title}</div>
+                      </div>
+                      <ArrowRight className="w-4 h-4" />
                     </Button>
                   </Link>
                 )}
@@ -333,28 +441,68 @@ export default function VideoPage({
             {/* Course Progress */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Course Progress</CardTitle>
+                <CardTitle className="text-lg flex items-center">
+                  <BookOpen className="w-5 h-5 mr-2" />
+                  Course Progress
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {course.videos.map((v, index) => (
-                    <div
-                      key={v.id}
-                      className={`flex items-center p-2 rounded-lg text-sm ${
-                        v.id === video.id 
-                          ? 'bg-primary-100 text-primary-800' 
-                          : 'text-dark-600 hover:bg-dark-50'
-                      }`}
-                    >
-                      <div className="w-6 h-6 rounded-full border-2 border-dark-300 flex items-center justify-center mr-3 text-xs">
-                        {index + 1}
+                <div className="space-y-4">
+                  {/* Section-based videos */}
+                  {course.sections?.map((section, sectionIndex) => (
+                    <div key={section.id} className="space-y-2">
+                      <h4 className="font-medium text-dark-800 text-sm">
+                        {sectionIndex + 1}. {section.title}
+                      </h4>
+                      <div className="space-y-1 ml-4">
+                        {section.videos.map((v, videoIndex) => (
+                          <div
+                            key={v.id}
+                            className={`flex items-center p-2 rounded-lg text-sm transition-colors ${
+                              v.id === video.id 
+                                ? 'bg-primary-100 text-primary-800' 
+                                : 'text-dark-600 hover:bg-dark-50'
+                            }`}
+                          >
+                            <div className="w-5 h-5 rounded-full border border-dark-300 flex items-center justify-center mr-3 text-xs">
+                              {videoIndex + 1}
+                            </div>
+                            <span className="flex-1 truncate">{v.title}</span>
+                            {v.id === video.id && testPassed && (
+                              <CheckCircle className="w-4 h-4 text-green-600 ml-2" />
+                            )}
+                          </div>
+                        ))}
                       </div>
-                      <span className="flex-1 truncate">{v.title}</span>
-                      {v.id === video.id && testPassed && (
-                        <CheckCircle className="w-4 h-4 text-green-600 ml-2" />
-                      )}
                     </div>
                   ))}
+                  
+                  {/* Legacy videos */}
+                  {course.videos && course.videos.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="font-medium text-dark-800 text-sm">Additional Content</h4>
+                      <div className="space-y-1 ml-4">
+                        {course.videos.map((v, index) => (
+                          <div
+                            key={v.id}
+                            className={`flex items-center p-2 rounded-lg text-sm ${
+                              v.id === video.id 
+                                ? 'bg-primary-100 text-primary-800' 
+                                : 'text-dark-600 hover:bg-dark-50'
+                            }`}
+                          >
+                            <div className="w-5 h-5 rounded-full border border-dark-300 flex items-center justify-center mr-3 text-xs">
+                              {index + 1}
+                            </div>
+                            <span className="flex-1 truncate">{v.title}</span>
+                            {v.id === video.id && testPassed && (
+                              <CheckCircle className="w-4 h-4 text-green-600 ml-2" />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -366,22 +514,25 @@ export default function VideoPage({
               </CardHeader>
               <CardContent className="space-y-3">
                 <Link href={`/course/${params.courseId}`}>
-                  <Button variant="outline" className="w-full">
+                  <Button variant="outline" className="w-full justify-start">
+                    <BookOpen className="w-4 h-4 mr-2" />
                     Course Overview
                   </Button>
                 </Link>
                 
                 <Link href="/dashboard">
-                  <Button variant="outline" className="w-full">
+                  <Button variant="outline" className="w-full justify-start">
+                    <Target className="w-4 h-4 mr-2" />
                     My Dashboard
                   </Button>
                 </Link>
                 
                 {videoCompleted && !showTest && video.tests.length > 0 && (
                   <Button 
-                    className="w-full"
+                    className="w-full justify-start"
                     onClick={() => setShowTest(true)}
                   >
+                    <FileText className="w-4 h-4 mr-2" />
                     Take Test
                   </Button>
                 )}

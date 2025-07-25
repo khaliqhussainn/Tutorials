@@ -1,4 +1,4 @@
-// app/api/courses/[courseId]/route.ts
+// app/api/courses/[courseId]/route.ts - Updated to include sections
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 
@@ -10,7 +10,23 @@ export async function GET(
     const course = await prisma.course.findUnique({
       where: { id: params.courseId },
       include: {
+        sections: {
+          orderBy: { order: 'asc' },
+          include: {
+            videos: {
+              orderBy: { order: 'asc' },
+              select: {
+                id: true,
+                title: true,
+                description: true,
+                duration: true,
+                order: true
+              }
+            }
+          }
+        },
         videos: {
+          where: { sectionId: null }, // Videos without sections
           orderBy: { order: 'asc' },
           select: {
             id: true,
@@ -36,3 +52,4 @@ export async function GET(
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
+

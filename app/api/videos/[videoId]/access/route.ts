@@ -1,4 +1,4 @@
-// app/api/videos/[videoId]/access/route.ts
+// app/api/videos/[videoId]/access/route.ts - Updated for section-based access control
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -20,12 +20,23 @@ export async function GET(
       include: {
         course: {
           include: {
+            sections: {
+              orderBy: { order: 'asc' },
+              include: {
+                videos: {
+                  orderBy: { order: 'asc' },
+                  select: { id: true, order: true }
+                }
+              }
+            },
             videos: {
+              where: { sectionId: null },
               orderBy: { order: 'asc' },
               select: { id: true, order: true }
             }
           }
-        }
+        },
+        section: true
       }
     })
 
@@ -47,22 +58,62 @@ export async function GET(
       return NextResponse.json({ canWatch: false })
     }
 
-    // Check if this is the first video or if previous video is completed
-    const currentIndex = video.course.videos.findIndex((v: { id: any }) => v.id === video.id)
-    let canWatch = true
+    // Determine if this video can be watched based on section structure
+    let canWatch = false
 
-    if (currentIndex > 0) {
-      const prevVideo = video.course.videos[currentIndex - 1]
-      const prevProgress = await prisma.videoProgress.findUnique({
-        where: {
-          userId_videoId: {
-            userId: session.user.id,
-            videoId: prevVideo.id
+    if (video.sectionId) {
+      // Video is in a section
+      const section = video.section!
+      const sectionIndex = video.course.sections.findIndex((s: { id: any }) => s.id === section.id)
+      const videoIndex = section.videos.findIndex((v: { id: string }) => v.id === video.id)
+
+      if (sectionIndex === 0 && videoIndex === 0) {
+        // First video of first section
+        canWatch = true
+      } else {
+        // Check if previous video is completed
+        let prevVideoId: string | null = null
+
+        if (videoIndex > 0) {
+          // Previous video in same section
+          prevVideoId = section.videos[videoIndex - 1].id
+        } else if (sectionIndex > 0) {
+          // Last video of previous section
+          const prevSection = video.course.sections[sectionIndex - 1]
+          if (prevSection.videos.length > 0) {
+            prevVideoId = prevSection.videos[prevSection.videos.length - 1].id
           }
         }
-      })
 
-      canWatch = prevProgress?.completed && prevProgress?.testPassed
+        if (prevVideoId) {
+          const prevProgress = await prisma.videoProgress.findUnique({
+            where: {
+              userId_videoId: {
+                userId: session.user.id,
+                videoId: prevVideoId
+              }
+            }
+          })
+          canWatch = !!(prevProgress?.completed && prevProgress?.testPassed)
+        }
+      }
+    } else {
+      // Legacy video without section
+      const videoIndex = video.course.videos.findIndex((v: { id: string }) => v.id === video.id)
+      if (videoIndex === 0) {
+        canWatch = true
+      } else {
+        const prevVideo = video.course.videos[videoIndex - 1]
+        const prevProgress = await prisma.videoProgress.findUnique({
+          where: {
+            userId_videoId: {
+              userId: session.user.id,
+              videoId: prevVideo.id
+            }
+          }
+        })
+        canWatch = prevProgress?.completed && prevProgress?.testPassed
+      }
     }
 
     // Get current video progress

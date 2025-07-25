@@ -1,4 +1,4 @@
-// app/api/admin/courses/[courseId]/route.ts
+// app/api/admin/courses/[courseId]/route.ts - Updated with sections support
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -18,7 +18,19 @@ export async function GET(
     const course = await prisma.course.findUnique({
       where: { id: params.courseId },
       include: {
+        sections: {
+          orderBy: { order: 'asc' },
+          include: {
+            videos: {
+              orderBy: { order: 'asc' },
+              include: {
+                tests: { select: { id: true } }
+              }
+            }
+          }
+        },
         videos: {
+          where: { section: null }, // Videos without sections (legacy)
           orderBy: { order: 'asc' },
           include: {
             tests: { select: { id: true } }
@@ -81,7 +93,8 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Delete course and all related data (videos, tests, etc.)
+    // Delete course and all related data (videos, tests, sections, etc.)
+    // Prisma cascade delete will handle related records
     await prisma.course.delete({
       where: { id: params.courseId }
     })

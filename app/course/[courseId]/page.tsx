@@ -1,4 +1,4 @@
-// app/course/[courseId]/page.tsx
+// app/course/[courseId]/page.tsx - Updated with sections support
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -8,7 +8,19 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Clock, Users, Star, Play, Lock, CheckCircle, BookOpen } from 'lucide-react'
+import { 
+  Clock, 
+  Users, 
+  Star, 
+  Play, 
+  Lock, 
+  CheckCircle, 
+  BookOpen,
+  ChevronDown,
+  ChevronRight,
+  Award,
+  Target
+} from 'lucide-react'
 import { formatDuration, calculateProgress } from '@/lib/utils'
 
 interface Video {
@@ -19,6 +31,14 @@ interface Video {
   order: number
 }
 
+interface CourseSection {
+  id: string
+  title: string
+  description?: string
+  order: number
+  videos: Video[]
+}
+
 interface Course {
   id: string
   title: string
@@ -26,7 +46,8 @@ interface Course {
   thumbnail?: string
   category: string
   level: string
-  videos: Video[]
+  sections: CourseSection[]
+  videos: Video[] // Legacy videos without sections
   _count: { enrollments: number }
 }
 
@@ -42,6 +63,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
   const [course, setCourse] = useState<Course | null>(null)
   const [isEnrolled, setIsEnrolled] = useState(false)
   const [videoProgress, setVideoProgress] = useState<VideoProgress[]>([])
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [enrolling, setEnrolling] = useState(false)
 
@@ -52,6 +74,14 @@ export default function CoursePage({ params }: { params: { courseId: string } })
       fetchProgress()
     }
   }, [params.courseId, session])
+
+  useEffect(() => {
+    // Expand all sections by default
+    if (course?.sections) {
+      const sectionIds = new Set(course.sections.map(s => s.id))
+      setExpandedSections(sectionIds)
+    }
+  }, [course])
 
   const fetchCourse = async () => {
     try {
@@ -104,7 +134,11 @@ export default function CoursePage({ params }: { params: { courseId: string } })
 
       if (response.ok) {
         setIsEnrolled(true)
-        router.push(`/course/${params.courseId}/video/${course?.videos[0]?.id}`)
+        // Navigate to first video in first section or first video overall
+        const firstVideo = course?.sections?.[0]?.videos?.[0] || course?.videos?.[0]
+        if (firstVideo) {
+          router.push(`/course/${params.courseId}/video/${firstVideo.id}`)
+        }
       }
     } catch (error) {
       console.error('Error enrolling:', error)
@@ -113,30 +147,77 @@ export default function CoursePage({ params }: { params: { courseId: string } })
     }
   }
 
-  const getVideoStatus = (video: Video, index: number) => {
+  const getVideoStatus = (video: Video, sectionVideos: Video[], videoIndex: number, sectionIndex: number) => {
     const progress = videoProgress.find(p => p.videoId === video.id)
     
     if (progress?.completed && progress?.testPassed) {
       return 'completed'
     }
     
-    if (index === 0) {
+    // First video of first section is always available
+    if (sectionIndex === 0 && videoIndex === 0) {
       return 'available'
     }
     
-    const prevVideo = course?.videos[index - 1]
-    const prevProgress = videoProgress.find(p => p.videoId === prevVideo?.id)
+    // Check if previous video is completed
+    let prevVideo: Video | null = null
     
-    if (prevProgress?.completed && prevProgress?.testPassed) {
-      return 'available'
+    if (videoIndex > 0) {
+      // Previous video in same section
+      prevVideo = sectionVideos[videoIndex - 1]
+    } else if (sectionIndex > 0) {
+      // Last video of previous section
+      const prevSection = course?.sections?.[sectionIndex - 1]
+      if (prevSection && prevSection.videos.length > 0) {
+        prevVideo = prevSection.videos[prevSection.videos.length - 1]
+      }
+    }
+    
+    if (prevVideo) {
+      const prevProgress = videoProgress.find(p => p.videoId === prevVideo!.id)
+      if (prevProgress?.completed && prevProgress?.testPassed) {
+        return 'available'
+      }
     }
     
     return 'locked'
   }
 
-  const completedVideos = videoProgress.filter(p => p.completed && p.testPassed).length
-  const totalVideos = course?.videos.length || 0
-  const progressPercentage = calculateProgress(completedVideos, totalVideos)
+  const toggleSection = (sectionId: string) => {
+    setExpandedSections(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(sectionId)) {
+        newSet.delete(sectionId)
+      } else {
+        newSet.add(sectionId)
+      }
+      return newSet
+    })
+  }
+
+  const getTotalVideos = () => {
+    const sectionVideos = course?.sections?.reduce((acc, section) => acc + section.videos.length, 0) || 0
+    const legacyVideos = course?.videos?.length || 0
+    return sectionVideos + legacyVideos
+  }
+
+  const getTotalDuration = () => {
+    const sectionDuration = course?.sections?.reduce((acc, section) => 
+      acc + section.videos.reduce((videoAcc, video) => videoAcc + (video.duration || 0), 0), 0
+    ) || 0
+    const legacyDuration = course?.videos?.reduce((acc, video) => acc + (video.duration || 0), 0) || 0
+    return sectionDuration + legacyDuration
+  }
+
+  const getCompletedVideos = () => {
+    return videoProgress.filter(p => p.completed && p.testPassed).length
+  }
+
+  const getProgressPercentage = () => {
+    const total = getTotalVideos()
+    const completed = getCompletedVideos()
+    return calculateProgress(completed, total)
+  }
 
   if (loading) {
     return (
@@ -159,7 +240,9 @@ export default function CoursePage({ params }: { params: { courseId: string } })
     )
   }
 
-  const totalDuration = course.videos.reduce((acc, video) => acc + (video.duration || 0), 0)
+  const totalVideos = getTotalVideos()
+  const totalDuration = getTotalDuration()
+  const progressPercentage = getProgressPercentage()
 
   return (
     <div className="min-h-screen bg-white">
@@ -189,22 +272,34 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                 {course.description}
               </p>
               
-              <div className="flex items-center space-x-6 text-primary-200 mb-8">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-primary-200 mb-8">
                 <div className="flex items-center">
                   <Clock className="w-5 h-5 mr-2" />
-                  {formatDuration(totalDuration)}
+                  <div>
+                    <div className="text-sm">Duration</div>
+                    <div className="font-semibold">{formatDuration(totalDuration)}</div>
+                  </div>
                 </div>
                 <div className="flex items-center">
                   <BookOpen className="w-5 h-5 mr-2" />
-                  {course.videos.length} videos
+                  <div>
+                    <div className="text-sm">Videos</div>
+                    <div className="font-semibold">{totalVideos}</div>
+                  </div>
                 </div>
                 <div className="flex items-center">
                   <Users className="w-5 h-5 mr-2" />
-                  {course._count.enrollments} students
+                  <div>
+                    <div className="text-sm">Students</div>
+                    <div className="font-semibold">{course._count.enrollments}</div>
+                  </div>
                 </div>
                 <div className="flex items-center">
                   <Star className="w-5 h-5 mr-2 fill-yellow-400 text-yellow-400" />
-                  4.8 rating
+                  <div>
+                    <div className="text-sm">Rating</div>
+                    <div className="font-semibold">4.8</div>
+                  </div>
                 </div>
               </div>
 
@@ -216,25 +311,33 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                   disabled={enrolling}
                   className="min-w-40"
                 >
-                  {enrolling ? 'Enrolling...' : 'Enroll Now'}
+                  {enrolling ? 'Enrolling...' : 'Enroll Now - Free'}
                 </Button>
               ) : (
                 <div className="space-y-4">
                   <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-sm font-medium">Course Progress</span>
-                      <span className="text-sm">{progressPercentage}%</span>
+                      <div className="flex items-center space-x-2">
+                        <Award className="w-4 h-4" />
+                        <span className="text-sm">{progressPercentage}%</span>
+                      </div>
                     </div>
-                    <div className="w-full bg-white/20 rounded-full h-2">
+                    <div className="w-full bg-white/20 rounded-full h-3">
                       <div
-                        className="bg-white h-2 rounded-full transition-all duration-300"
+                        className="bg-white h-3 rounded-full transition-all duration-300"
                         style={{ width: `${progressPercentage}%` }}
                       />
                     </div>
+                    <div className="flex justify-between text-xs mt-2">
+                      <span>{getCompletedVideos()} completed</span>
+                      <span>{totalVideos - getCompletedVideos()} remaining</span>
+                    </div>
                   </div>
                   
-                  <Link href={`/course/${course.id}/video/${course.videos[0].id}`}>
+                  <Link href={`/course/${course.id}/video/${course.sections?.[0]?.videos?.[0]?.id || course.videos?.[0]?.id}`}>
                     <Button size="lg" variant="secondary" className="min-w-40">
+                      <Play className="w-5 h-5 mr-2" />
                       Continue Learning
                     </Button>
                   </Link>
@@ -265,7 +368,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
       {/* Course Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* Course Videos */}
+          {/* Course Sections */}
           <div className="lg:col-span-2">
             <Card>
               <CardHeader>
@@ -273,65 +376,151 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                   <BookOpen className="w-5 h-5 mr-2" />
                   Course Content
                 </CardTitle>
+                <p className="text-sm text-dark-600">
+                  {course.sections?.length || 0} sections • {totalVideos} videos • {formatDuration(totalDuration)} total length
+                </p>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {course.videos.map((video, index) => {
-                    const status = getVideoStatus(video, index)
-                    const progress = videoProgress.find(p => p.videoId === video.id)
-                    
-                    return (
-                      <div
-                        key={video.id}
-                        className={`flex items-center p-4 rounded-lg border-2 transition-colors ${
-                          status === 'completed' ? 'border-green-200 bg-green-50' :
-                          status === 'available' ? 'border-primary-200 bg-primary-50 hover:border-primary-300' :
-                          'border-dark-200 bg-dark-50'
-                        }`}
+                  {/* Course Sections */}
+                  {course.sections?.map((section, sectionIndex) => (
+                    <div key={section.id} className="border border-dark-200 rounded-lg overflow-hidden">
+                      {/* Section Header */}
+                      <div 
+                        className="flex items-center justify-between p-4 bg-dark-50 cursor-pointer hover:bg-dark-100 transition-colors"
+                        onClick={() => toggleSection(section.id)}
                       >
-                        <div className="flex items-center mr-4">
-                          {status === 'completed' ? (
-                            <CheckCircle className="w-6 h-6 text-green-600" />
-                          ) : status === 'available' ? (
-                            <Play className="w-6 h-6 text-primary-600" />
-                          ) : (
-                            <Lock className="w-6 h-6 text-dark-400" />
-                          )}
-                        </div>
-                        
-                        <div className="flex-1">
-                          <h4 className="font-semibold text-dark-900 mb-1">
-                            {index + 1}. {video.title}
-                          </h4>
-                          {video.description && (
-                            <p className="text-sm text-dark-600 mb-2">{video.description}</p>
-                          )}
-                          <div className="flex items-center text-sm text-dark-500">
-                            <Clock className="w-4 h-4 mr-1" />
-                            {formatDuration(video.duration || 0)}
+                        <div className="flex items-center">
+                          <div className="flex items-center mr-3">
+                            {expandedSections.has(section.id) ? (
+                              <ChevronDown className="w-5 h-5 text-dark-600" />
+                            ) : (
+                              <ChevronRight className="w-5 h-5 text-dark-600" />
+                            )}
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-dark-900">
+                              Section {sectionIndex + 1}: {section.title}
+                            </h3>
+                            {section.description && (
+                              <p className="text-sm text-dark-600 mt-1">{section.description}</p>
+                            )}
                           </div>
                         </div>
                         
-                        {isEnrolled && status === 'available' && (
-                          <Link href={`/course/${course.id}/video/${video.id}`}>
-                            <Button size="sm">
-                              {progress?.completed ? 'Review' : 'Watch'}
-                            </Button>
-                          </Link>
-                        )}
+                        <div className="flex items-center space-x-4 text-sm text-dark-500">
+                          <span>{section.videos.length} videos</span>
+                          <span>
+                            {formatDuration(
+                              section.videos.reduce((acc, v) => acc + (v.duration || 0), 0)
+                            )}
+                          </span>
+                        </div>
                       </div>
-                    )
-                  })}
+
+                      {/* Section Videos */}
+                      {expandedSections.has(section.id) && (
+                        <div className="border-t border-dark-200">
+                          {section.videos.map((video, videoIndex) => {
+                            const status = getVideoStatus(video, section.videos, videoIndex, sectionIndex)
+                            const progress = videoProgress.find(p => p.videoId === video.id)
+                            
+                            return (
+                              <div
+                                key={video.id}
+                                className={`flex items-center p-4 border-b border-dark-100 last:border-b-0 transition-colors ${
+                                  status === 'completed' ? 'bg-green-50' :
+                                  status === 'available' ? 'hover:bg-primary-50' :
+                                  'bg-gray-50'
+                                }`}
+                              >
+                                <div className="flex items-center mr-4">
+                                  <div className="w-8 h-8 rounded-full bg-white border-2 border-dark-200 flex items-center justify-center mr-3 text-xs font-medium">
+                                    {videoIndex + 1}
+                                  </div>
+                                  {status === 'completed' ? (
+                                    <CheckCircle className="w-5 h-5 text-green-600" />
+                                  ) : status === 'available' ? (
+                                    <Play className="w-5 h-5 text-primary-600" />
+                                  ) : (
+                                    <Lock className="w-5 h-5 text-dark-400" />
+                                  )}
+                                </div>
+                                
+                                <div className="flex-1">
+                                  <h4 className="font-medium text-dark-900 mb-1">
+                                    {video.title}
+                                  </h4>
+                                  {video.description && (
+                                    <p className="text-sm text-dark-600 mb-2">{video.description}</p>
+                                  )}
+                                  <div className="flex items-center text-sm text-dark-500 space-x-4">
+                                    <div className="flex items-center">
+                                      <Clock className="w-4 h-4 mr-1" />
+                                      {formatDuration(video.duration || 0)}
+                                    </div>
+                                    {status === 'completed' && (
+                                      <div className="flex items-center text-green-600">
+                                        <Target className="w-4 h-4 mr-1" />
+                                        Test Passed
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                
+                                {isEnrolled && status === 'available' && (
+                                  <Link href={`/course/${course.id}/video/${video.id}`}>
+                                    <Button size="sm">
+                                      {progress?.completed ? 'Review' : 'Watch'}
+                                    </Button>
+                                  </Link>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Legacy Videos (without sections) */}
+                  {course.videos && course.videos.length > 0 && (
+                    <div className="border border-yellow-200 rounded-lg overflow-hidden">
+                      <div className="p-4 bg-yellow-50">
+                        <h3 className="font-semibold text-yellow-800">Additional Content</h3>
+                        <p className="text-sm text-yellow-700">Extra videos and materials</p>
+                      </div>
+                      <div className="border-t border-yellow-200">
+                        {course.videos.map((video, index) => (
+                          <div
+                            key={video.id}
+                            className="flex items-center p-4 border-b border-yellow-100 last:border-b-0 hover:bg-yellow-50 transition-colors"
+                          >
+                            <Play className="w-5 h-5 text-yellow-600 mr-4" />
+                            <div className="flex-1">
+                              <h4 className="font-medium text-dark-900">{video.title}</h4>
+                              {video.description && (
+                                <p className="text-sm text-dark-600">{video.description}</p>
+                              )}
+                            </div>
+                            <div className="text-sm text-dark-500">
+                              {formatDuration(video.duration || 0)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* Course Stats */}
+          {/* Course Stats Sidebar */}
           <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Course Stats</CardTitle>
+                <CardTitle>Course Statistics</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex justify-between">
@@ -339,8 +528,12 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                   <span className="font-semibold">{formatDuration(totalDuration)}</span>
                 </div>
                 <div className="flex justify-between">
+                  <span className="text-dark-600">Sections</span>
+                  <span className="font-semibold">{course.sections?.length || 0}</span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-dark-600">Videos</span>
-                  <span className="font-semibold">{course.videos.length}</span>
+                  <span className="font-semibold">{totalVideos}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-dark-600">Level</span>
@@ -356,11 +549,14 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                       <span className="text-dark-600">Your Progress</span>
                       <span className="font-semibold">{progressPercentage}%</span>
                     </div>
-                    <div className="w-full bg-dark-200 rounded-full h-2">
+                    <div className="w-full bg-dark-200 rounded-full h-2 mb-2">
                       <div
                         className="bg-primary-600 h-2 rounded-full transition-all duration-300"
                         style={{ width: `${progressPercentage}%` }}
                       />
+                    </div>
+                    <div className="text-xs text-dark-500">
+                      {getCompletedVideos()} of {totalVideos} videos completed
                     </div>
                   </div>
                 )}
@@ -370,17 +566,58 @@ export default function CoursePage({ params }: { params: { courseId: string } })
             {!isEnrolled && (
               <Card className="border-primary-200">
                 <CardContent className="text-center p-6">
-                  <h3 className="font-semibold text-lg mb-2">Ready to Start?</h3>
+                  <Target className="w-12 h-12 text-primary-600 mx-auto mb-4" />
+                  <h3 className="font-semibold text-lg mb-2">Ready to Start Learning?</h3>
                   <p className="text-dark-600 mb-4">
-                    Join {course._count.enrollments} other students in this course.
+                    Join {course._count.enrollments} other students and start your learning journey today.
                   </p>
                   <Button
                     className="w-full"
                     onClick={handleEnroll}
                     disabled={enrolling}
                   >
-                    {enrolling ? 'Enrolling...' : 'Enroll Now'}
+                    {enrolling ? 'Enrolling...' : 'Enroll Now - Free'}
                   </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Learning Path */}
+            {isEnrolled && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Learning Path</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {course.sections?.slice(0, 3).map((section, index) => {
+                      const sectionProgress = section.videos.filter(v => 
+                        videoProgress.find(p => p.videoId === v.id && p.completed && p.testPassed)
+                      ).length
+                      const sectionTotal = section.videos.length
+                      const sectionPercentage = sectionTotal > 0 ? (sectionProgress / sectionTotal) * 100 : 0
+                      
+                      return (
+                        <div key={section.id} className="p-3 border border-dark-200 rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-medium text-dark-900 text-sm">{section.title}</h4>
+                            <span className="text-xs text-dark-500">{Math.round(sectionPercentage)}%</span>
+                          </div>
+                          <div className="w-full bg-dark-200 rounded-full h-1">
+                            <div
+                              className="bg-primary-600 h-1 rounded-full transition-all duration-300"
+                              style={{ width: `${sectionPercentage}%` }}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {course.sections && course.sections.length > 3 && (
+                      <p className="text-xs text-dark-500 text-center">
+                        +{course.sections.length - 3} more sections
+                      </p>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             )}

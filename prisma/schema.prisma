@@ -65,9 +65,25 @@ model Course {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  sections        CourseSection[]
   videos          Video[]
   enrollments     Enrollment[]
   favoriteCourses FavoriteCourse[]
+}
+
+model CourseSection {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  order       Int
+  courseId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  course Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  videos Video[]
+
+  @@unique([courseId, order])
 }
 
 model Video {
@@ -78,11 +94,13 @@ model Video {
   duration    Int?     // in seconds
   order       Int
   courseId    String
+  sectionId   String?  // Optional for backward compatibility
   aiPrompt    String?  // For AI test generation
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   course        Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  section       CourseSection?  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   tests         Test[]
   videoProgress VideoProgress[]
 
