@@ -139,6 +139,7 @@ model VideoProgress {
   completed   Boolean  @default(false)
   watchTime   Int      @default(0) // in seconds
   testPassed  Boolean  @default(false)
+  notes       String?  // Add this line for video notes
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

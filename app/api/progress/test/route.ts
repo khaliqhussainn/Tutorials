@@ -14,7 +14,6 @@ export async function POST(request: Request) {
 
     const { videoId, passed, score } = await request.json()
 
-    // Update video progress with test result
     const progress = await prisma.videoProgress.upsert({
       where: {
         userId_videoId: {
@@ -29,49 +28,10 @@ export async function POST(request: Request) {
       create: {
         userId: session.user.id,
         videoId,
-        completed: true,
-        testPassed: passed
+        testPassed: passed,
+        completed: true
       }
     })
-
-    // Update course progress
-    const video = await prisma.video.findUnique({
-      where: { id: videoId },
-      include: {
-        course: {
-          include: {
-            videos: { select: { id: true } }
-          }
-        }
-      }
-    })
-
-    if (video) {
-      const totalVideos = video.course.videos.length
-      const completedVideos = await prisma.videoProgress.count({
-        where: {
-          userId: session.user.id,
-          videoId: { in: video.course.videos.map((v: { id: any }) => v.id) },
-          completed: true,
-          testPassed: true
-        }
-      })
-
-      const courseProgress = (completedVideos / totalVideos) * 100
-
-      await prisma.enrollment.update({
-        where: {
-          userId_courseId: {
-            userId: session.user.id,
-            courseId: video.courseId
-          }
-        },
-        data: {
-          progress: courseProgress,
-          updatedAt: new Date()
-        }
-      })
-    }
 
     return NextResponse.json(progress)
   } catch (error) {

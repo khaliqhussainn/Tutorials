@@ -1,10 +1,10 @@
-// components/test/TestInterface.tsx
+// components/test/TestInterface.tsx - Simple test interface
 'use client'
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { CheckCircle, XCircle, ArrowRight } from 'lucide-react'
+import { CheckCircle, XCircle, Award } from 'lucide-react'
 
 interface Test {
   id: string
@@ -19,173 +19,148 @@ interface TestInterfaceProps {
 }
 
 export default function TestInterface({ tests, onComplete }: TestInterfaceProps) {
-  const [currentQuestion, setCurrentQuestion] = useState(0)
-  const [selectedAnswers, setSelectedAnswers] = useState<number[]>([])
+  const [currentTestIndex, setCurrentTestIndex] = useState(0)
+  const [answers, setAnswers] = useState<number[]>(new Array(tests.length).fill(-1))
   const [showResults, setShowResults] = useState(false)
-  const [score, setScore] = useState(0)
+  const [selectedAnswer, setSelectedAnswer] = useState(-1)
 
-  const handleAnswerSelect = (answerIndex: number) => {
-    const newAnswers = [...selectedAnswers]
-    newAnswers[currentQuestion] = answerIndex
-    setSelectedAnswers(newAnswers)
+  const currentTest = tests[currentTestIndex]
+  const isLastTest = currentTestIndex === tests.length - 1
+
+  const handleAnswerSelect = (optionIndex: number) => {
+    setSelectedAnswer(optionIndex)
   }
 
   const handleNext = () => {
-    if (currentQuestion < tests.length - 1) {
-      setCurrentQuestion(currentQuestion + 1)
+    const newAnswers = [...answers]
+    newAnswers[currentTestIndex] = selectedAnswer
+    setAnswers(newAnswers)
+
+    if (isLastTest) {
+      // Calculate results
+      const correctAnswers = newAnswers.filter((answer, index) => 
+        answer === tests[index].correct
+      ).length
+      
+      const score = (correctAnswers / tests.length) * 100
+      const passed = score >= 70 // 70% passing grade
+      
+      setShowResults(true)
+      onComplete(passed, score)
     } else {
-      calculateResults()
+      setCurrentTestIndex(currentTestIndex + 1)
+      setSelectedAnswer(-1)
     }
   }
 
   const calculateResults = () => {
-    let correctCount = 0
-    selectedAnswers.forEach((answer, index) => {
-      if (answer === tests[index].correct) {
-        correctCount++
-      }
-    })
+    const correctAnswers = answers.filter((answer, index) => 
+      answer === tests[index].correct
+    ).length
     
-    const finalScore = Math.round((correctCount / tests.length) * 100)
-    setScore(finalScore)
-    setShowResults(true)
-    
-    // Pass if score >= 70%
-    const passed = finalScore >= 70
-    onComplete(passed, finalScore)
+    return {
+      correct: correctAnswers,
+      total: tests.length,
+      score: (correctAnswers / tests.length) * 100,
+      passed: (correctAnswers / tests.length) * 100 >= 70
+    }
   }
 
-  const currentTest = tests[currentQuestion]
-  const isLastQuestion = currentQuestion === tests.length - 1
-  const hasSelectedAnswer = selectedAnswers[currentQuestion] !== undefined
-
   if (showResults) {
-    const passed = score >= 70
+    const results = calculateResults()
     
     return (
-      <Card className="max-w-2xl mx-auto">
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            {passed ? (
-              <CheckCircle className="w-16 h-16 text-green-500" />
+      <Card className={`border-2 ${results.passed ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+        <CardContent className="p-8 text-center">
+          <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${
+            results.passed ? 'bg-green-100' : 'bg-red-100'
+          }`}>
+            {results.passed ? (
+              <Award className="w-10 h-10 text-green-600" />
             ) : (
-              <XCircle className="w-16 h-16 text-red-500" />
+              <XCircle className="w-10 h-10 text-red-600" />
             )}
           </div>
-          <CardTitle className={`text-2xl ${passed ? 'text-green-700' : 'text-red-700'}`}>
-            {passed ? 'Congratulations!' : 'Try Again'}
-          </CardTitle>
-        </CardHeader>
-        
-        <CardContent className="text-center">
-          <p className="text-lg mb-4">
-            You scored {score}% ({selectedAnswers.filter((answer, index) => answer === tests[index].correct).length} out of {tests.length} correct)
+          
+          <h3 className={`text-2xl font-bold mb-4 ${
+            results.passed ? 'text-green-800' : 'text-red-800'
+          }`}>
+            {results.passed ? 'Congratulations!' : 'Keep Learning!'}
+          </h3>
+          
+          <p className={`text-lg mb-6 ${
+            results.passed ? 'text-green-700' : 'text-red-700'
+          }`}>
+            You scored {results.score.toFixed(0)}% ({results.correct}/{results.total} correct)
           </p>
           
-          {passed ? (
-            <p className="text-dark-600 mb-6">
-              Great job! You can now proceed to the next video.
+          {results.passed ? (
+            <p className="text-green-600">
+              You've successfully completed this lesson and can move on to the next video!
             </p>
           ) : (
-            <p className="text-dark-600 mb-6">
+            <p className="text-red-600">
               You need at least 70% to pass. Review the video and try again.
             </p>
           )}
-          
-          <div className="space-y-4">
-            {tests.map((test, index) => {
-              const userAnswer = selectedAnswers[index]
-              const isCorrect = userAnswer === test.correct
-              
-              return (
-                <div key={test.id} className="text-left p-4 bg-dark-50 rounded-lg">
-                  <p className="font-medium mb-2">{index + 1}. {test.question}</p>
-                  <div className="space-y-1">
-                    {test.options.map((option, optionIndex) => (
-                      <div
-                        key={optionIndex}
-                        className={`p-2 rounded text-sm ${
-                          optionIndex === test.correct
-                            ? 'bg-green-100 text-green-800'
-                            : optionIndex === userAnswer && !isCorrect
-                            ? 'bg-red-100 text-red-800'
-                            : 'text-dark-600'
-                        }`}
-                      >
-                        {option}
-                        {optionIndex === test.correct && ' ✓'}
-                        {optionIndex === userAnswer && !isCorrect && ' ✗'}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
         </CardContent>
       </Card>
     )
   }
 
   return (
-    <Card className="max-w-2xl mx-auto">
+    <Card>
       <CardHeader>
-        <div className="flex justify-between items-center">
-          <CardTitle>Question {currentQuestion + 1} of {tests.length}</CardTitle>
-          <div className="text-sm text-dark-500">
-            Progress: {Math.round(((currentQuestion + 1) / tests.length) * 100)}%
+        <CardTitle className="flex items-center justify-between">
+          <span>Question {currentTestIndex + 1} of {tests.length}</span>
+          <span className="text-sm text-gray-500">Knowledge Check</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div>
+          <h3 className="text-lg font-medium mb-4">{currentTest.question}</h3>
+          
+          <div className="space-y-3">
+            {currentTest.options.map((option, index) => (
+              <button
+                key={index}
+                onClick={() => handleAnswerSelect(index)}
+                className={`w-full p-4 text-left rounded-lg border-2 transition-colors ${
+                  selectedAnswer === index
+                    ? 'border-primary-500 bg-primary-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center">
+                  <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
+                    selectedAnswer === index
+                      ? 'border-primary-500 bg-primary-500'
+                      : 'border-gray-300'
+                  }`}>
+                    {selectedAnswer === index && (
+                      <div className="w-full h-full rounded-full bg-white scale-50"></div>
+                    )}
+                  </div>
+                  <span>{option}</span>
+                </div>
+              </button>
+            ))}
           </div>
         </div>
-        <div className="w-full bg-dark-200 rounded-full h-2">
-          <div
-            className="bg-primary-600 h-2 rounded-full transition-all duration-300"
-            style={{ width: `${((currentQuestion + 1) / tests.length) * 100}%` }}
-          />
-        </div>
-      </CardHeader>
-      
-      <CardContent>
-        <h3 className="text-lg font-semibold mb-6">{currentTest.question}</h3>
         
-        <div className="space-y-3 mb-6">
-          {currentTest.options.map((option, index) => (
-            <button
-              key={index}
-              onClick={() => handleAnswerSelect(index)}
-              className={`w-full p-4 text-left rounded-lg border-2 transition-colors ${
-                selectedAnswers[currentQuestion] === index
-                  ? 'border-primary-500 bg-primary-50'
-                  : 'border-dark-200 hover:border-primary-300'
-              }`}
-            >
-              <div className="flex items-center">
-                <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
-                  selectedAnswers[currentQuestion] === index
-                    ? 'border-primary-500 bg-primary-500'
-                    : 'border-dark-300'
-                }`}>
-                  {selectedAnswers[currentQuestion] === index && (
-                    <div className="w-full h-full rounded-full bg-white scale-50" />
-                  )}
-                </div>
-                {option}
-              </div>
-            </button>
-          ))}
-        </div>
-        
-        <div className="flex justify-end">
+        <div className="flex justify-between items-center">
+          <div className="text-sm text-gray-500">
+            Select an answer to continue
+          </div>
+          
           <Button
             onClick={handleNext}
-            disabled={!hasSelectedAnswer}
-            className="min-w-32"
+            disabled={selectedAnswer === -1}
           >
-            {isLastQuestion ? 'Finish Test' : 'Next Question'}
-            <ArrowRight className="w-4 h-4 ml-2" />
+            {isLastTest ? 'Submit Test' : 'Next Question'}
           </Button>
         </div>
       </CardContent>
     </Card>
   )
 }
-   

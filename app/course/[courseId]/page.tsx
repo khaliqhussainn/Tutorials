@@ -291,7 +291,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                   <Users className="w-5 h-5 mr-2" />
                   <div>
                     <div className="text-sm">Students</div>
-                    <div className="font-semibold">{course._count.enrollments}</div>
+                    {/* <div className="font-semibold">{course._count.enrollments}</div> */}
                   </div>
                 </div>
                 <div className="flex items-center">
@@ -541,7 +541,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                 </div>
                 <div className="flex justify-between">
                   <span className="text-dark-600">Students</span>
-                  <span className="font-semibold">{course._count.enrollments}</span>
+                  {/* <span className="font-semibold">{course._count.enrollments}</span> */}
                 </div>
                 {isEnrolled && (
                   <div className="pt-4 border-t border-dark-200">

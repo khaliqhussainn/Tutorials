@@ -63,7 +63,7 @@ export async function GET(
 
     if (video.sectionId) {
       // Video is in a section
-      const section = video.section!
+      const section = video.course.sections.find((s: { id: any }) => s.id === video.sectionId)! as typeof video.course.sections[0]
       const sectionIndex = video.course.sections.findIndex((s: { id: any }) => s.id === section.id)
       const videoIndex = section.videos.findIndex((v: { id: string }) => v.id === video.id)
 
@@ -112,7 +112,7 @@ export async function GET(
             }
           }
         })
-        canWatch = prevProgress?.completed && prevProgress?.testPassed
+        canWatch = !!(prevProgress?.completed && prevProgress?.testPassed)
       }
     }
 

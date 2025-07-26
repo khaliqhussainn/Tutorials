@@ -21,7 +21,9 @@ import {
   FolderPlus,
   GripVertical,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  X,
+  RefreshCw
 } from 'lucide-react'
 
 interface CourseSection {
@@ -69,6 +71,14 @@ interface VideoFormData {
   sectionId: string
 }
 
+interface UploadState {
+  uploading: boolean
+  progress: number
+  stage: 'idle' | 'uploading' | 'processing' | 'success' | 'error'
+  error: string
+  retryCount: number
+}
+
 export default function CourseManagementPage({ params }: { params: { courseId: string } }) {
   const { data: session } = useSession()
   const router = useRouter()
@@ -77,7 +87,6 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
   const [showSectionForm, setShowSectionForm] = useState(false)
   const [showVideoForm, setShowVideoForm] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
-  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   
@@ -92,6 +101,14 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
     aiPrompt: '',
     videoFile: null,
     sectionId: ''
+  })
+
+  const [uploadState, setUploadState] = useState<UploadState>({
+    uploading: false,
+    progress: 0,
+    stage: 'idle',
+    error: '',
+    retryCount: 0
   })
 
   useEffect(() => {
@@ -109,7 +126,7 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
         const data = await response.json()
         setCourse(data)
         // Expand all sections by default
-        const sectionIds = new Set(data.sections?.map((s: CourseSection) => s.id) || [])
+        const sectionIds = new Set<string>(data.sections?.map((s: CourseSection) => s.id) || [])
         setExpandedSections(sectionIds)
       } else {
         router.push('/admin/courses')
@@ -161,42 +178,98 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      // Validate file
+      if (file.size > 200 * 1024 * 1024) {
+        setUploadState(prev => ({ ...prev, error: 'File size must be less than 200MB' }))
+        return
+      }
+      if (!file.type.startsWith('video/')) {
+        setUploadState(prev => ({ ...prev, error: 'Please select a valid video file' }))
+        return
+      }
+      
       setVideoForm(prev => ({ ...prev, videoFile: file }))
+      setUploadState(prev => ({ ...prev, error: '' }))
+    }
+  }
+
+  const uploadWithRetry = async (maxRetries = 3): Promise<any> => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        setUploadState(prev => ({ ...prev, retryCount: attempt - 1 }))
+        
+        const formDataToSend = new FormData()
+        formDataToSend.append('file', videoForm.videoFile!)
+
+        // Simulate progress updates
+        const progressInterval = setInterval(() => {
+          setUploadState(prev => ({
+            ...prev,
+            progress: Math.min(prev.progress + Math.random() * 15, 85)
+          }))
+        }, 2000)
+
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formDataToSend,
+          // Add timeout handling
+          signal: AbortSignal.timeout(600000) // 10 minutes
+        })
+
+        clearInterval(progressInterval)
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || `HTTP ${response.status}`)
+        }
+
+        setUploadState(prev => ({ ...prev, progress: 90 }))
+        return await response.json()
+
+      } catch (error: any) {
+        console.error(`Upload attempt ${attempt} failed:`, error)
+        
+        if (attempt === maxRetries) {
+          throw error
+        }
+        
+        // Wait before retry (exponential backoff)
+        const delay = Math.pow(2, attempt - 1) * 2000 // 2s, 4s, 8s
+        await new Promise(resolve => setTimeout(resolve, delay))
+        
+        // Reset progress for retry
+        setUploadState(prev => ({ ...prev, progress: 0 }))
+      }
     }
   }
 
   const handleVideoSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!videoForm.videoFile) {
-      setError('Please select a video file')
-      return
-    }
-    if (!videoForm.sectionId) {
-      setError('Please select a section')
+    if (!videoForm.videoFile || !videoForm.sectionId) {
+      setUploadState(prev => ({ ...prev, error: 'Please fill in all required fields' }))
       return
     }
 
-    setUploading(true)
-    setError('')
-    setSuccess('')
+    setUploadState({
+      uploading: true,
+      progress: 0,
+      stage: 'uploading',
+      error: '',
+      retryCount: 0
+    })
 
     try {
-      // Step 1: Upload video file
-      const formData = new FormData()
-      formData.append('file', videoForm.videoFile)
-
-      const uploadResponse = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData
-      })
-
-      if (!uploadResponse.ok) {
-        throw new Error('Failed to upload video')
-      }
-
-      const uploadData = await uploadResponse.json()
-
+      // Step 1: Upload video
+      setUploadState(prev => ({ ...prev, stage: 'uploading' }))
+      const uploadData = await uploadWithRetry()
+      
       // Step 2: Create video record
+      setUploadState(prev => ({ 
+        ...prev, 
+        progress: 95, 
+        stage: 'processing' 
+      }))
+      
       const videoResponse = await fetch(`/api/courses/${params.courseId}/videos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -211,18 +284,69 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
       })
 
       if (!videoResponse.ok) {
-        throw new Error('Failed to create video')
+        throw new Error('Failed to create video record')
       }
 
-      setSuccess('Video uploaded successfully with AI-generated tests!')
-      setShowVideoForm(false)
-      setVideoForm({ title: '', description: '', aiPrompt: '', videoFile: null, sectionId: '' })
-      await fetchCourse()
+      setUploadState(prev => ({ 
+        ...prev, 
+        progress: 100, 
+        stage: 'success' 
+      }))
 
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Upload failed')
-    } finally {
-      setUploading(false)
+      // Reset form and call success callback
+      setTimeout(() => {
+        setVideoForm({
+          title: '',
+          description: '',
+          aiPrompt: '',
+          videoFile: null,
+          sectionId: ''
+        })
+        setUploadState({
+          uploading: false,
+          progress: 0,
+          stage: 'idle',
+          error: '',
+          retryCount: 0
+        })
+        setShowVideoForm(false)
+        fetchCourse()
+      }, 2000)
+
+    } catch (error: any) {
+      console.error('Upload failed:', error)
+      setUploadState(prev => ({
+        ...prev,
+        uploading: false,
+        stage: 'error',
+        error: error.message || 'Upload failed'
+      }))
+    }
+  }
+
+  const resetUpload = () => {
+    setUploadState({
+      uploading: false,
+      progress: 0,
+      stage: 'idle',
+      error: '',
+      retryCount: 0
+    })
+  }
+
+  const getProgressColor = () => {
+    if (uploadState.stage === 'error') return 'bg-red-500'
+    if (uploadState.stage === 'success') return 'bg-green-500'
+    return 'bg-primary-600'
+  }
+
+  const getStageText = () => {
+    switch (uploadState.stage) {
+      case 'uploading': return `Uploading video... ${uploadState.retryCount > 0 ? `(Retry ${uploadState.retryCount})` : ''}`
+      case 'processing': return 'Processing and generating tests...'
+      case 'success': return 'Upload completed successfully!'
+      case 'error': return 'Upload failed'
+      default: return ''
     }
   }
 
@@ -455,14 +579,61 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
               </Card>
             )}
 
-            {/* Add Video Form */}
+            {/* Enhanced Add Video Form */}
             {showVideoForm && (
               <Card>
                 <CardHeader>
                   <CardTitle>Add New Video</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <form onSubmit={handleVideoSubmit} className="space-y-4">
+                  <form onSubmit={handleVideoSubmit} className="space-y-6">
+                    {/* Error Display */}
+                    {uploadState.error && (
+                      <div className="flex items-center p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+                        <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
+                        <div className="flex-1">
+                          <span className="text-sm">{uploadState.error}</span>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={resetUpload}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Upload Progress */}
+                    {uploadState.uploading && (
+                      <div className="space-y-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-blue-800 font-medium">{getStageText()}</span>
+                          <span className="text-blue-600">{uploadState.progress.toFixed(0)}%</span>
+                        </div>
+                        <div className="w-full bg-blue-200 rounded-full h-3">
+                          <div
+                            className={`h-3 rounded-full transition-all duration-500 ${getProgressColor()}`}
+                            style={{ width: `${uploadState.progress}%` }}
+                          />
+                        </div>
+                        {uploadState.stage === 'uploading' && (
+                          <p className="text-xs text-blue-600">
+                            Large files may take several minutes to upload. Please keep this page open.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Success Message */}
+                    {uploadState.stage === 'success' && (
+                      <div className="flex items-center p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
+                        <CheckCircle className="w-5 h-5 mr-2 flex-shrink-0" />
+                        <span className="text-sm">Video uploaded successfully with AI-generated tests!</span>
+                      </div>
+                    )}
+
                     <div className="grid md:grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-dark-700 block mb-2">
@@ -474,7 +645,7 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                           value={videoForm.title}
                           onChange={handleVideoFormChange}
                           required
-                          disabled={uploading}
+                          disabled={uploadState.uploading}
                         />
                       </div>
                       
@@ -488,7 +659,7 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                           onChange={handleVideoFormChange}
                           className="flex h-10 w-full rounded-md border border-dark-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                           required
-                          disabled={uploading}
+                          disabled={uploadState.uploading}
                         >
                           <option value="">Select a section</option>
                           {course.sections?.map(section => (
@@ -502,15 +673,25 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
 
                     <div>
                       <label className="text-sm font-medium text-dark-700 block mb-2">
-                        Video File * (Max 100MB)
+                        Video File * (Max 200MB)
                       </label>
-                      <Input
-                        type="file"
-                        accept="video/*"
-                        onChange={handleFileChange}
-                        required
-                        disabled={uploading}
-                      />
+                      <div className="relative">
+                        <Input
+                          type="file"
+                          accept="video/*,.mp4,.mov,.avi,.wmv,.mkv"
+                          onChange={handleFileChange}
+                          required
+                          disabled={uploadState.uploading}
+                          className="file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100"
+                        />
+                      </div>
+                      {videoForm.videoFile && (
+                        <div className="mt-2 p-2 bg-gray-50 rounded text-sm">
+                          <p><strong>File:</strong> {videoForm.videoFile.name}</p>
+                          <p><strong>Size:</strong> {(videoForm.videoFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                          <p><strong>Type:</strong> {videoForm.videoFile.type}</p>
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -524,7 +705,7 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                         value={videoForm.description}
                         onChange={handleVideoFormChange}
                         className="flex w-full rounded-md border border-dark-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                        disabled={uploading}
+                        disabled={uploadState.uploading}
                       />
                     </div>
 
@@ -535,21 +716,34 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                       <textarea
                         name="aiPrompt"
                         rows={3}
-                        placeholder="Provide context for AI to generate relevant test questions"
+                        placeholder="Provide context for AI to generate relevant test questions (e.g., 'This video covers HTML basics, including tags, attributes, and document structure')"
                         value={videoForm.aiPrompt}
                         onChange={handleVideoFormChange}
                         className="flex w-full rounded-md border border-dark-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                         required
-                        disabled={uploading}
+                        disabled={uploadState.uploading}
                       />
+                      <p className="text-xs text-dark-500 mt-1">
+                        This helps AI generate relevant test questions for this video
+                      </p>
                     </div>
 
+                    {/* Action Buttons */}
                     <div className="flex items-center space-x-4">
-                      <Button type="submit" disabled={uploading}>
-                        {uploading ? (
+                      <Button 
+                        type="submit" 
+                        disabled={uploadState.uploading || uploadState.stage === 'success'}
+                        className="min-w-32"
+                      >
+                        {uploadState.uploading ? (
                           <>
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
                             Uploading...
+                          </>
+                        ) : uploadState.stage === 'success' ? (
+                          <>
+                            <CheckCircle className="w-4 h-4 mr-2" />
+                            Uploaded
                           </>
                         ) : (
                           <>
@@ -559,14 +753,37 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                         )}
                       </Button>
                       
+                      {uploadState.stage === 'error' && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={resetUpload}
+                        >
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Try Again
+                        </Button>
+                      )}
+                      
                       <Button
                         type="button"
                         variant="outline"
                         onClick={() => setShowVideoForm(false)}
-                        disabled={uploading}
+                        disabled={uploadState.uploading}
                       >
                         Cancel
                       </Button>
+                    </div>
+
+                    {/* Upload Tips */}
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <h4 className="font-medium text-blue-900 mb-2">Upload Tips:</h4>
+                      <ul className="text-sm text-blue-800 space-y-1">
+                        <li>• Maximum file size: 200MB</li>
+                        <li>• Supported formats: MP4, MOV, AVI, WMV, MKV</li>
+                        <li>• For best results, use MP4 format with H.264 encoding</li>
+                        <li>• Ensure stable internet connection for large files</li>
+                        <li>• Upload will retry automatically if it fails</li>
+                      </ul>
                     </div>
                   </form>
                 </CardContent>

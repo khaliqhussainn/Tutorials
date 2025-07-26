@@ -1,117 +1,189 @@
-// app/api/upload/route.ts
+// app/api/upload/route.ts - FIXED with better video handling
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import cloudinary from "@/lib/cloudinary"
 
-// Increase timeout for video uploads (5 minutes)
-export const maxDuration = 300
+export const maxDuration = 600 // 10 minutes
+export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
+  console.log('=== VIDEO UPLOAD STARTED ===')
+  
   try {
     const session = await getServerSession(authOptions)
+    console.log('Session check:', !!session, session?.user?.role)
     
     if (!session || session.user.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      )
+      console.log('Authorization failed')
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    console.log('Getting form data...')
     const data = await request.formData()
     const file: File | null = data.get('file') as unknown as File
     
     if (!file) {
-      return NextResponse.json(
-        { error: "No file uploaded" },
-        { status: 400 }
-      )
+      console.log('No file found in form data')
+      return NextResponse.json({ error: "No file uploaded" }, { status: 400 })
     }
 
-    // Check file size (max 100MB)
-    const maxSize = 100 * 1024 * 1024 // 100MB
+    console.log('File details:', {
+      name: file.name,
+      size: `${(file.size / 1024 / 1024).toFixed(2)}MB`,
+      type: file.type,
+      lastModified: new Date(file.lastModified).toISOString()
+    })
+
+    // Enhanced file validation
+    const maxSize = 200 * 1024 * 1024 // 200MB
     if (file.size > maxSize) {
-      return NextResponse.json(
-        { error: "File size must be less than 100MB" },
-        { status: 400 }
-      )
+      console.log('File too large:', file.size, 'bytes')
+      return NextResponse.json({
+        error: "File size must be less than 200MB"
+      }, { status: 400 })
     }
 
-    // Check file type
-    if (!file.type.startsWith('video/')) {
-      return NextResponse.json(
-        { error: "Only video files are allowed" },
-        { status: 400 }
-      )
+    // Comprehensive video type checking
+    const videoExtensions = /\.(mp4|mov|avi|wmv|mkv|webm|m4v|3gp|flv|f4v)$/i
+    const videoMimeTypes = [
+      'video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo',
+      'video/x-ms-wmv', 'video/x-matroska', 'video/webm', 'video/3gpp'
+    ]
+    
+    const isVideoFile = videoMimeTypes.includes(file.type) || 
+                       videoExtensions.test(file.name) ||
+                       file.type.startsWith('video/')
+    
+    if (!isVideoFile) {
+      console.log('Invalid file type:', file.type, 'File name:', file.name)
+      return NextResponse.json({
+        error: "Only video files are allowed. Supported formats: MP4, MOV, AVI, WMV, MKV, WEBM"
+      }, { status: 400 })
     }
 
-    console.log(`Starting upload for file: ${file.name}, size: ${(file.size / 1024 / 1024).toFixed(2)}MB`)
-
+    console.log('Converting file to buffer...')
     const bytes = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
+    console.log('Buffer created, size:', buffer.length, 'bytes')
 
-    // Upload to Cloudinary with extended timeout and chunked upload
-    const result = await new Promise((resolve, reject) => {
+    console.log('Starting Cloudinary upload...')
+    
+    // Enhanced Cloudinary upload
+    const result = await new Promise<any>((resolve, reject) => {
+      const uploadOptions = {
+        resource_type: "video" as const,
+        folder: "training-videos",
+        public_id: `video_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+        chunk_size: 6000000, // 6MB chunks
+        timeout: 600000, // 10 minutes
+        
+        // Video optimization settings
+        quality: "auto:good",
+        format: "mp4", // Force MP4 output
+        video_codec: "h264",
+        audio_codec: "aac",
+        
+        // Upload settings
+        overwrite: true,
+        invalidate: true,
+        use_filename: false,
+        unique_filename: true,
+        
+        // Progress tracking
+        eager_async: true,
+        notification_url: undefined // Remove if not needed
+      }
+
+      console.log('Upload options:', JSON.stringify(uploadOptions, null, 2))
+
       const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          resource_type: "video",
-          folder: "training-videos",
-          chunk_size: 6000000, // 6MB chunks
-          timeout: 240000, // 4 minutes timeout
-          eager: [
-            { 
-              width: 1280, 
-              height: 720, 
-              crop: "limit",
-              quality: "auto",
-              format: "mp4"
-            }
-          ],
-          eager_async: true, // Process transformations asynchronously
-        },
+        uploadOptions,
         (error, result) => {
           if (error) {
             console.error("Cloudinary upload error:", error)
+            console.error("Error details:", {
+              message: error.message,
+              http_code: error.http_code,
+              name: error.name
+            })
             reject(error)
           } else {
-            console.log("Upload successful:", result?.public_id)
+            console.log("Upload successful!")
+            console.log("Result:", {
+              public_id: result?.public_id,
+              secure_url: result?.secure_url,
+              duration: result?.duration,
+              format: result?.format,
+              bytes: result?.bytes
+            })
             resolve(result)
           }
         }
       )
 
-      uploadStream.end(buffer)
-    }) as any
+      uploadStream.on('error', (error) => {
+        console.error("Stream error:", error)
+        reject(error)
+      })
 
-    return NextResponse.json({
-      url: result.secure_url,
-      duration: result.duration || 0,
-      publicId: result.public_id,
-      format: result.format,
-      bytes: result.bytes
+      console.log('Writing buffer to stream...')
+      uploadStream.end(buffer)
     })
 
-  } catch (error: any) {
-    console.error("Upload error:", error)
-    
-    // Handle specific Cloudinary errors
-    if (error.message?.includes('timeout') || error.http_code === 499) {
-      return NextResponse.json(
-        { error: "Upload timeout. Please try with a smaller file or check your internet connection." },
-        { status: 408 }
-      )
-    }
-    
-    if (error.http_code === 413) {
-      return NextResponse.json(
-        { error: "File too large. Maximum size is 100MB." },
-        { status: 413 }
-      )
+    const response = {
+      url: result.secure_url,
+      duration: Math.round(result.duration || 0),
+      publicId: result.public_id,
+      format: result.format,
+      bytes: result.bytes,
+      width: result.width,
+      height: result.height
     }
 
-    return NextResponse.json(
-      { error: error.message || "Upload failed" },
-      { status: 500 }
-    )
+    console.log('Upload completed successfully:', response)
+    return NextResponse.json(response)
+
+  } catch (error: any) {
+    console.error("=== UPLOAD ERROR ===")
+    console.error("Error type:", error.constructor?.name)
+    console.error("Error message:", error.message)
+    console.error("Error stack:", error.stack)
+    console.error("Cloudinary error details:", {
+      http_code: error.http_code,
+      error: error.error,
+      name: error.name
+    })
+    
+    // Enhanced error handling
+    if (error.http_code === 400) {
+      return NextResponse.json({
+        error: "Invalid file format or corrupted video file"
+      }, { status: 400 })
+    }
+    
+    if (error.http_code === 413 || error.name === 'PayloadTooLargeError') {
+      return NextResponse.json({
+        error: "File too large. Maximum size is 200MB"
+      }, { status: 413 })
+    }
+    
+    if (error.message?.includes('timeout') || error.http_code === 499) {
+      return NextResponse.json({
+        error: "Upload timeout. Please try with a smaller file or check your internet connection"
+      }, { status: 408 })
+    }
+    
+    if (error.code === 'ECONNRESET' || error.code === 'ENOTFOUND') {
+      return NextResponse.json({
+        error: "Network error. Please check your internet connection and try again"
+      }, { status: 502 })
+    }
+
+    return NextResponse.json({
+      error: error.message || "Upload failed. Please try again"
+    }, { status: 500 })
+  } finally {
+    console.log('=== VIDEO UPLOAD ENDED ===')
   }
 }

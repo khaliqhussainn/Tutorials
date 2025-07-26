@@ -1,5 +1,7 @@
-// app/api/courses/[courseId]/route.ts - Updated to include sections
+// app/api/courses/[courseId]/route.ts
 import { NextResponse } from "next/server"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
 export async function GET(
@@ -7,6 +9,12 @@ export async function GET(
   { params }: { params: { courseId: string } }
 ) {
   try {
+    const session = await getServerSession(authOptions)
+    
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     const course = await prisma.course.findUnique({
       where: { id: params.courseId },
       include: {
@@ -18,26 +26,19 @@ export async function GET(
               select: {
                 id: true,
                 title: true,
-                description: true,
-                duration: true,
                 order: true
               }
             }
           }
         },
         videos: {
-          where: { sectionId: null }, // Videos without sections
+          where: { sectionId: null }, // Legacy videos without sections
           orderBy: { order: 'asc' },
           select: {
             id: true,
             title: true,
-            description: true,
-            duration: true,
             order: true
           }
-        },
-        _count: {
-          select: { enrollments: true }
         }
       }
     })
@@ -52,4 +53,3 @@ export async function GET(
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
-
