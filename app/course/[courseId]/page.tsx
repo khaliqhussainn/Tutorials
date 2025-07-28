@@ -568,9 +568,9 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                 <CardContent className="text-center p-6">
                   <Target className="w-12 h-12 text-primary-600 mx-auto mb-4" />
                   <h3 className="font-semibold text-lg mb-2">Ready to Start Learning?</h3>
-                  <p className="text-dark-600 mb-4">
+                  {/* <p className="text-dark-600 mb-4">
                     Join {course._count.enrollments} other students and start your learning journey today.
-                  </p>
+                  </p> */}
                   <Button
                     className="w-full"
                     onClick={handleEnroll}
