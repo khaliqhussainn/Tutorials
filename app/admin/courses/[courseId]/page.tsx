@@ -1,4 +1,4 @@
-// app/admin/courses/[courseId]/page.tsx
+// app/admin/courses/[courseId]/page.tsx - Complete Integration
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { Badge } from '@/components/ui/Badge'
 import { 
   ArrowLeft, 
   Plus, 
@@ -19,11 +20,22 @@ import {
   AlertCircle,
   CheckCircle,
   FolderPlus,
-  GripVertical,
   ChevronDown,
   ChevronRight,
   X,
-  RefreshCw
+  RefreshCw,
+  Target,
+  Brain,
+  Settings,
+  Eye,
+  BarChart3,
+  Users,
+  TrendingUp,
+  Award,
+  HelpCircle,
+  Lightbulb,
+  BookOpen,
+  Zap
 } from 'lucide-react'
 
 interface CourseSection {
@@ -54,8 +66,17 @@ interface Video {
   duration?: number
   order: number
   aiPrompt?: string
-  tests: { id: string }[]
+  tests: Test[]
   sectionId?: string
+}
+
+interface Test {
+  id: string
+  question: string
+  options: string[]
+  correct: number
+  explanation?: string
+  difficulty: string
 }
 
 interface SectionFormData {
@@ -79,7 +100,59 @@ interface UploadState {
   retryCount: number
 }
 
-export default function CourseManagementPage({ params }: { params: { courseId: string } }) {
+interface TestManagementState {
+  videoId: string | null
+  showDialog: boolean
+  regenerating: boolean
+  settings: {
+    difficulty: 'mixed' | 'easy' | 'medium' | 'hard'
+    questionCount: number
+    focusAreas: string[]
+    avoidTopics: string[]
+  }
+}
+
+// AI Prompt Suggestions
+const AI_PROMPT_SUGGESTIONS = [
+  {
+    category: "HTML & Web Development",
+    examples: [
+      "This video covers HTML fundamentals including basic tags (h1-h6, p, div, span), semantic elements (header, nav, main, footer), and document structure. Students will learn how to create well-structured web pages with proper HTML5 syntax.",
+      "Introduction to HTML forms: form elements, input types (text, email, password, checkbox, radio), form validation attributes, labels for accessibility, and best practices for creating user-friendly web forms.",
+    ],
+    tips: [
+      "Include specific HTML tags and attributes covered",
+      "Mention practical applications and use cases",
+      "Note any accessibility or SEO concepts discussed"
+    ]
+  },
+  {
+    category: "CSS & Styling",
+    examples: [
+      "CSS fundamentals: selectors (element, class, ID), properties for text styling (color, font-size, font-family), layout basics with margin and padding, and understanding the CSS box model concept.",
+      "Advanced CSS layouts with Flexbox: container and item properties, justify-content, align-items, flex-direction, responsive design patterns, and solving common layout challenges with modern CSS.",
+    ],
+    tips: [
+      "Specify CSS properties and selectors taught",
+      "Include layout concepts and responsive design elements",
+      "Mention any design principles or best practices"
+    ]
+  },
+  {
+    category: "JavaScript & Programming",
+    examples: [
+      "JavaScript basics: variables (let, const, var), data types (strings, numbers, booleans, arrays, objects), basic operations, and understanding scope and hoisting concepts.",
+      "DOM manipulation: selecting elements with querySelector and getElementById, modifying content with innerHTML and textContent, event handling (click, submit, change), and creating interactive web pages.",
+    ],
+    tips: [
+      "List specific JavaScript concepts and syntax covered",
+      "Include any DOM methods or APIs used",
+      "Mention programming concepts like loops, functions, or conditionals"
+    ]
+  }
+]
+
+export default function CompleteAdminCoursePage({ params }: { params: { courseId: string } }) {
   const { data: session } = useSession()
   const router = useRouter()
   const [course, setCourse] = useState<Course | null>(null)
@@ -110,6 +183,23 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
     error: '',
     retryCount: 0
   })
+
+  const [testManagement, setTestManagement] = useState<TestManagementState>({
+    videoId: null,
+    showDialog: false,
+    regenerating: false,
+    settings: {
+      difficulty: 'mixed',
+      questionCount: 5,
+      focusAreas: [],
+      avoidTopics: []
+    }
+  })
+
+  // AI Helper state
+  const [showAIHelper, setShowAIHelper] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState<string>('')
+  const [promptQuality, setPromptQuality] = useState<'poor' | 'good' | 'excellent' | null>(null)
 
   useEffect(() => {
     if (session?.user.role !== 'ADMIN') {
@@ -173,6 +263,59 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
   const handleVideoFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     setVideoForm(prev => ({ ...prev, [name]: value }))
+    
+    // Analyze AI prompt quality
+    if (name === 'aiPrompt') {
+      analyzePromptQuality(value)
+    }
+  }
+
+  const analyzePromptQuality = (prompt: string) => {
+    const length = prompt.trim().length
+    const hasSpecificTerms = /\b(html|css|javascript|python|learn|concept|technique|method|function|element|property|tag|selector|variable|array|object)\b/i.test(prompt)
+    const hasStructure = prompt.includes(':') || prompt.includes(',') || prompt.includes('.')
+    const wordCount = prompt.trim().split(/\s+/).length
+
+    if (length < 20 || wordCount < 10) {
+      setPromptQuality('poor')
+    } else if (length > 50 && hasSpecificTerms && hasStructure && wordCount > 15) {
+      setPromptQuality('excellent')
+    } else if (length > 30 && (hasSpecificTerms || hasStructure)) {
+      setPromptQuality('good')
+    } else {
+      setPromptQuality('poor')
+    }
+  }
+
+  const useExamplePrompt = (example: string) => {
+    setVideoForm(prev => ({ ...prev, aiPrompt: example }))
+    analyzePromptQuality(example)
+    setShowAIHelper(false)
+  }
+
+  const getPromptQualityInfo = () => {
+    switch (promptQuality) {
+      case 'excellent':
+        return {
+          icon: <CheckCircle className="w-4 h-4 text-green-600" />,
+          text: "Excellent prompt! This will generate high-quality, relevant questions.",
+          color: "text-green-700 bg-green-50 border-green-200"
+        }
+      case 'good':
+        return {
+          icon: <Target className="w-4 h-4 text-blue-600" />,
+          text: "Good prompt. Consider adding more specific details for better questions.",
+          color: "text-blue-700 bg-blue-50 border-blue-200"
+        }
+      case 'poor':
+        return {
+          icon: <AlertCircle className="w-4 h-4 text-orange-600" />,
+          text: "Prompt needs improvement. Add more details about the content covered.",
+          color: "text-orange-700 bg-orange-50 border-orange-200"
+        }
+      default:
+        return null
+    }
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -212,7 +355,6 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
         const response = await fetch('/api/upload', {
           method: 'POST',
           body: formDataToSend,
-          // Add timeout handling
           signal: AbortSignal.timeout(600000) // 10 minutes
         })
 
@@ -234,7 +376,7 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
         }
         
         // Wait before retry (exponential backoff)
-        const delay = Math.pow(2, attempt - 1) * 2000 // 2s, 4s, 8s
+        const delay = Math.pow(2, attempt - 1) * 2000
         await new Promise(resolve => setTimeout(resolve, delay))
         
         // Reset progress for retry
@@ -263,7 +405,7 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
       setUploadState(prev => ({ ...prev, stage: 'uploading' }))
       const uploadData = await uploadWithRetry()
       
-      // Step 2: Create video record
+      // Step 2: Create video record with AI test generation
       setUploadState(prev => ({ 
         ...prev, 
         progress: 95, 
@@ -310,6 +452,7 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
           retryCount: 0
         })
         setShowVideoForm(false)
+        setPromptQuality(null)
         fetchCourse()
       }, 2000)
 
@@ -332,22 +475,6 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
       error: '',
       retryCount: 0
     })
-  }
-
-  const getProgressColor = () => {
-    if (uploadState.stage === 'error') return 'bg-red-500'
-    if (uploadState.stage === 'success') return 'bg-green-500'
-    return 'bg-primary-600'
-  }
-
-  const getStageText = () => {
-    switch (uploadState.stage) {
-      case 'uploading': return `Uploading video... ${uploadState.retryCount > 0 ? `(Retry ${uploadState.retryCount})` : ''}`
-      case 'processing': return 'Processing and generating tests...'
-      case 'success': return 'Upload completed successfully!'
-      case 'error': return 'Upload failed'
-      default: return ''
-    }
   }
 
   const toggleSection = (sectionId: string) => {
@@ -406,6 +533,72 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
+  // Test Management Functions
+  const openTestManagement = (videoId: string, currentTests: Test[]) => {
+    setTestManagement({
+      videoId,
+      showDialog: true,
+      regenerating: false,
+      settings: {
+        difficulty: 'mixed',
+        questionCount: Math.max(3, Math.min(8, currentTests.length || 5)),
+        focusAreas: [],
+        avoidTopics: []
+      }
+    })
+  }
+
+  const closeTestManagement = () => {
+    setTestManagement({
+      videoId: null,
+      showDialog: false,
+      regenerating: false,
+      settings: {
+        difficulty: 'mixed',
+        questionCount: 5,
+        focusAreas: [],
+        avoidTopics: []
+      }
+    })
+  }
+
+  const handleRegenerateTests = async () => {
+    if (!testManagement.videoId) return
+
+    setTestManagement(prev => ({ ...prev, regenerating: true }))
+    setError('')
+    setSuccess('')
+
+    try {
+      const response = await fetch(`/api/admin/videos/${testManagement.videoId}/regenerate-tests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(testManagement.settings)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to regenerate tests')
+      }
+
+      const result = await response.json()
+      setSuccess(`Successfully generated ${result.testsCreated} new test questions!`)
+      
+      // Refresh course data
+      await fetchCourse()
+      
+      // Close dialog after delay
+      setTimeout(() => {
+        closeTestManagement()
+      }, 2000)
+
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to regenerate tests')
+    } finally {
+      setTestManagement(prev => ({ ...prev, regenerating: false }))
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -448,7 +641,7 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                 {course.title}
               </h1>
               <p className="text-lg text-dark-600">
-                Manage course sections and videos
+                Manage course sections, videos, and AI-generated tests
               </p>
             </div>
           </div>
@@ -495,6 +688,14 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                     {(course.sections?.reduce((acc, section) => acc + section.videos.length, 0) || 0) + (course.videos?.length || 0)}
                   </p>
                 </div>
+                <div>
+                  <span className="text-sm font-medium text-dark-700">AI Tests:</span>
+                  <p className="text-dark-900">
+                    {course.sections?.reduce((acc, section) => 
+                      acc + section.videos.reduce((vidAcc, video) => vidAcc + video.tests.length, 0), 0
+                    ) || 0}
+                  </p>
+                </div>
               </CardContent>
             </Card>
 
@@ -520,6 +721,15 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Add Video
+                </Button>
+
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => router.push(`/course/${params.courseId}`)}
+                >
+                  <Eye className="w-4 h-4 mr-2" />
+                  Preview Course
                 </Button>
               </CardContent>
             </Card>
@@ -579,11 +789,14 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
               </Card>
             )}
 
-            {/* Enhanced Add Video Form */}
+            {/* Enhanced Video Upload Form */}
             {showVideoForm && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Add New Video</CardTitle>
+                  <CardTitle className="flex items-center">
+                    <Upload className="w-5 h-5 mr-2" />
+                    Add New Video with AI-Generated Tests
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleVideoSubmit} className="space-y-6">
@@ -609,18 +822,22 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                     {uploadState.uploading && (
                       <div className="space-y-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                         <div className="flex items-center justify-between text-sm">
-                          <span className="text-blue-800 font-medium">{getStageText()}</span>
+                          <span className="text-blue-800 font-medium">
+                            {uploadState.stage === 'uploading' ? 'Uploading video file...' :
+                             uploadState.stage === 'processing' ? 'AI is analyzing content and generating test questions...' :
+                             'Processing...'}
+                          </span>
                           <span className="text-blue-600">{uploadState.progress.toFixed(0)}%</span>
                         </div>
                         <div className="w-full bg-blue-200 rounded-full h-3">
                           <div
-                            className={`h-3 rounded-full transition-all duration-500 ${getProgressColor()}`}
+                            className="bg-blue-600 h-3 rounded-full transition-all duration-500"
                             style={{ width: `${uploadState.progress}%` }}
                           />
                         </div>
-                        {uploadState.stage === 'uploading' && (
+                        {uploadState.stage === 'processing' && (
                           <p className="text-xs text-blue-600">
-                            Large files may take several minutes to upload. Please keep this page open.
+                            AI is creating personalized test questions based on your prompt...
                           </p>
                         )}
                       </div>
@@ -641,7 +858,7 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                         </label>
                         <Input
                           name="title"
-                          placeholder="Enter video title"
+                          placeholder="Enter descriptive video title"
                           value={videoForm.title}
                           onChange={handleVideoFormChange}
                           required
@@ -675,16 +892,14 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                       <label className="text-sm font-medium text-dark-700 block mb-2">
                         Video File * (Max 200MB)
                       </label>
-                      <div className="relative">
-                        <Input
-                          type="file"
-                          accept="video/*,.mp4,.mov,.avi,.wmv,.mkv"
-                          onChange={handleFileChange}
-                          required
-                          disabled={uploadState.uploading}
-                          className="file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100"
-                        />
-                      </div>
+                      <Input
+                        type="file"
+                        accept="video/*,.mp4,.mov,.avi,.wmv,.mkv"
+                        onChange={handleFileChange}
+                        required
+                        disabled={uploadState.uploading}
+                        className="file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100"
+                      />
                       {videoForm.videoFile && (
                         <div className="mt-2 p-2 bg-gray-50 rounded text-sm">
                           <p><strong>File:</strong> {videoForm.videoFile.name}</p>
@@ -701,7 +916,7 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                       <textarea
                         name="description"
                         rows={3}
-                        placeholder="Describe what this video covers"
+                        placeholder="Describe what this video covers and what students will learn"
                         value={videoForm.description}
                         onChange={handleVideoFormChange}
                         className="flex w-full rounded-md border border-dark-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
@@ -709,60 +924,160 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                       />
                     </div>
 
+                    {/* Enhanced AI Prompt Section */}
                     <div>
-                      <label className="text-sm font-medium text-dark-700 block mb-2">
-                        AI Test Prompt *
-                      </label>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm font-medium text-dark-700">
+                          AI Test Generation Prompt *
+                        </label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowAIHelper(!showAIHelper)}
+                          disabled={uploadState.uploading}
+                        >
+                          <Brain className="w-4 h-4 mr-1" />
+                          AI Helper
+                        </Button>
+                      </div>
+                      
                       <textarea
                         name="aiPrompt"
-                        rows={3}
-                        placeholder="Provide context for AI to generate relevant test questions (e.g., 'This video covers HTML basics, including tags, attributes, and document structure')"
+                        rows={4}
+                        placeholder="Describe in detail what this video teaches. Include specific topics, concepts, techniques, and learning objectives. The more detailed and specific you are, the better the AI-generated test questions will be."
                         value={videoForm.aiPrompt}
                         onChange={handleVideoFormChange}
                         className="flex w-full rounded-md border border-dark-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                         required
                         disabled={uploadState.uploading}
                       />
-                      <p className="text-xs text-dark-500 mt-1">
-                        This helps AI generate relevant test questions for this video
-                      </p>
+
+                      {/* Prompt Quality Indicator */}
+                      {promptQuality && (
+                        <div className={`mt-2 p-3 rounded-lg border text-sm ${getPromptQualityInfo()?.color}`}>
+                          <div className="flex items-center">
+                            {getPromptQualityInfo()?.icon}
+                            <span className="ml-2">{getPromptQualityInfo()?.text}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="flex items-start">
+                          <Lightbulb className="w-4 h-4 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
+                          <div className="text-xs text-blue-800">
+                            <p className="font-medium mb-1">Tips for effective AI prompts:</p>
+                            <ul className="space-y-1">
+                              <li>• Be specific about topics, concepts, and techniques covered</li>
+                              <li>• Include technical terms, tools, or methods demonstrated</li>
+                              <li>• Mention skill level and learning objectives</li>
+                              <li>• Describe practical applications or examples shown</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
                     </div>
+
+                    {/* AI Helper Panel */}
+                    {showAIHelper && (
+                      <Card className="border-blue-200 bg-blue-50">
+                        <CardHeader>
+                          <CardTitle className="text-lg flex items-center">
+                            <Brain className="w-5 h-5 mr-2 text-blue-600" />
+                            AI Prompt Assistant
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div>
+                            <label className="text-sm font-medium text-blue-900 block mb-2">
+                              Select your content category:
+                            </label>
+                            <select
+                              value={selectedCategory}
+                              onChange={(e) => setSelectedCategory(e.target.value)}
+                              className="w-full rounded-md border border-blue-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="">Choose a category...</option>
+                              {AI_PROMPT_SUGGESTIONS.map((suggestion, index) => (
+                                <option key={index} value={suggestion.category}>
+                                  {suggestion.category}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {selectedCategory && (
+                            <div className="space-y-4">
+                              <div>
+                                <h4 className="font-medium text-blue-900 mb-2 flex items-center">
+                                  <Target className="w-4 h-4 mr-2" />
+                                  Example Prompts:
+                                </h4>
+                                <div className="space-y-2">
+                                  {AI_PROMPT_SUGGESTIONS
+                                    .find(s => s.category === selectedCategory)
+                                    ?.examples.map((example, index) => (
+                                    <div key={index} className="p-3 bg-white border border-blue-200 rounded-md">
+                                      <p className="text-sm text-gray-700 mb-2">{example}</p>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        onClick={() => useExamplePrompt(example)}
+                                        className="text-xs"
+                                      >
+                                        <Zap className="w-3 h-3 mr-1" />
+                                        Use This Example
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div>
+                                <h4 className="font-medium text-blue-900 mb-2 flex items-center">
+                                  <HelpCircle className="w-4 h-4 mr-2" />
+                                  Tips for {selectedCategory}:
+                                </h4>
+                                <ul className="space-y-1 text-sm text-blue-800">
+                                  {AI_PROMPT_SUGGESTIONS
+                                    .find(s => s.category === selectedCategory)
+                                    ?.tips.map((tip, index) => (
+                                    <li key={index}>• {tip}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
 
                     {/* Action Buttons */}
                     <div className="flex items-center space-x-4">
                       <Button 
                         type="submit" 
                         disabled={uploadState.uploading || uploadState.stage === 'success'}
-                        className="min-w-32"
+                        className="min-w-48"
                       >
                         {uploadState.uploading ? (
                           <>
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                            Uploading...
+                            {uploadState.stage === 'uploading' ? 'Uploading Video...' : 
+                             uploadState.stage === 'processing' ? 'Generating AI Tests...' : 'Processing...'}
                           </>
                         ) : uploadState.stage === 'success' ? (
                           <>
                             <CheckCircle className="w-4 h-4 mr-2" />
-                            Uploaded
+                            Upload Complete!
                           </>
                         ) : (
                           <>
                             <Upload className="w-4 h-4 mr-2" />
-                            Upload Video
+                            Upload Video & Generate Tests
                           </>
                         )}
                       </Button>
-                      
-                      {uploadState.stage === 'error' && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={resetUpload}
-                        >
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                          Try Again
-                        </Button>
-                      )}
                       
                       <Button
                         type="button"
@@ -775,22 +1090,41 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                     </div>
 
                     {/* Upload Tips */}
-                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <h4 className="font-medium text-blue-900 mb-2">Upload Tips:</h4>
-                      <ul className="text-sm text-blue-800 space-y-1">
-                        <li>• Maximum file size: 200MB</li>
-                        <li>• Supported formats: MP4, MOV, AVI, WMV, MKV</li>
-                        <li>• For best results, use MP4 format with H.264 encoding</li>
-                        <li>• Ensure stable internet connection for large files</li>
-                        <li>• Upload will retry automatically if it fails</li>
-                      </ul>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                        <h4 className="font-medium text-green-900 mb-2 flex items-center">
+                          <Zap className="w-4 h-4 mr-2" />
+                          AI Test Generation
+                        </h4>
+                        <ul className="text-sm text-green-800 space-y-1">
+                          <li>• Tests are automatically generated from your AI prompt</li>
+                          <li>• Questions test understanding, not just memorization</li>
+                          <li>• 3-7 questions per video (recommended)</li>
+                          <li>• Multiple difficulty levels supported</li>
+                          <li>• You can regenerate tests anytime</li>
+                        </ul>
+                      </div>
+
+                      <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <h4 className="font-medium text-blue-900 mb-2 flex items-center">
+                          <BookOpen className="w-4 h-4 mr-2" />
+                          Video Requirements
+                        </h4>
+                        <ul className="text-sm text-blue-800 space-y-1">
+                          <li>• Maximum file size: 200MB</li>
+                          <li>• Supported: MP4, MOV, AVI, WMV, MKV</li>
+                          <li>• Recommended: MP4 with H.264 encoding</li>
+                          <li>• Automatic duration detection</li>
+                          <li>• Progress tracking enabled</li>
+                        </ul>
+                      </div>
                     </div>
                   </form>
                 </CardContent>
               </Card>
             )}
 
-            {/* Course Sections */}
+            {/* Course Sections Display */}
             <Card>
               <CardHeader>
                 <CardTitle>Course Sections</CardTitle>
@@ -823,7 +1157,7 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                                 <p className="text-sm text-dark-600">{section.description}</p>
                               )}
                               <p className="text-xs text-dark-500 mt-1">
-                                {section.videos.length} videos
+                                {section.videos.length} videos • {section.videos.reduce((acc, v) => acc + v.tests.length, 0)} tests
                               </p>
                             </div>
                           </div>
@@ -851,9 +1185,9 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                                 {section.videos
                                   .sort((a, b) => a.order - b.order)
                                   .map((video, videoIndex) => (
-                                  <div key={video.id} className="flex items-center p-3 bg-white border border-dark-200 rounded-lg">
-                                    <div className="flex items-center mr-3">
-                                      <div className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center mr-3">
+                                  <div key={video.id} className="flex items-center p-4 bg-white border border-dark-200 rounded-lg">
+                                    <div className="flex items-center mr-4">
+                                      <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center mr-3">
                                         <span className="text-xs font-medium text-primary-600">
                                           {videoIndex + 1}
                                         </span>
@@ -861,12 +1195,12 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                                       <Play className="w-4 h-4 text-primary-600" />
                                     </div>
                                     
-                                    <div className="flex-1">
-                                      <h4 className="font-medium text-dark-900 mb-1">
+                                    <div className="flex-1 min-w-0">
+                                      <h4 className="font-medium text-dark-900 mb-1 truncate">
                                         {video.title}
                                       </h4>
                                       {video.description && (
-                                        <p className="text-sm text-dark-600 mb-1">
+                                        <p className="text-sm text-dark-600 mb-1 line-clamp-2">
                                           {video.description}
                                         </p>
                                       )}
@@ -875,16 +1209,36 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                                           <Clock className="w-3 h-3 mr-1" />
                                           {video.duration ? formatDuration(video.duration) : 'Processing...'}
                                         </div>
-                                        <div>
-                                          Tests: {video.tests.length}
+                                        <div className="flex items-center">
+                                          <Target className="w-3 h-3 mr-1" />
+                                          {video.tests.length} test{video.tests.length !== 1 ? 's' : ''}
                                         </div>
+                                        {video.aiPrompt && (
+                                          <div className="flex items-center">
+                                            <Brain className="w-3 h-3 mr-1" />
+                                            AI Enabled
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
                                     
-                                    <div className="flex items-center space-x-2">
+                                    <div className="flex items-center space-x-2 ml-4">
+                                      {video.tests.length > 0 && (
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => openTestManagement(video.id, video.tests)}
+                                          className="flex items-center"
+                                        >
+                                          <Settings className="w-3 h-3 mr-1" />
+                                          Tests
+                                        </Button>
+                                      )}
+                                      
                                       <Button variant="outline" size="sm">
                                         <Edit className="w-3 h-3" />
                                       </Button>
+                                      
                                       <Button
                                         variant="outline"
                                         size="sm"
@@ -935,41 +1289,70 @@ export default function CourseManagementPage({ params }: { params: { courseId: s
                 )}
               </CardContent>
             </Card>
-
-            {/* Legacy Videos (without sections) */}
-            {course.videos && course.videos.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Uncategorized Videos</CardTitle>
-                  <p className="text-sm text-dark-600">
-                    These videos don't belong to any section. Consider moving them to a section.
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {course.videos.map((video, index) => (
-                      <div key={video.id} className="flex items-center p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                        <Play className="w-4 h-4 text-yellow-600 mr-3" />
-                        <div className="flex-1">
-                          <h4 className="font-medium text-dark-900">{video.title}</h4>
-                          <p className="text-sm text-dark-600">{video.description}</p>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => deleteVideo(video.id)}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
           </div>
         </div>
+
+        {/* Test Management Dialog */}
+        {testManagement.showDialog && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-bold text-gray-900 flex items-center">
+                    <Brain className="w-6 h-6 mr-2 text-primary-600" />
+                    AI Test Management
+                  </h2>
+                  <button
+                    onClick={closeTestManagement}
+                    className="text-gray-400 hover:text-gray-600"
+                    disabled={testManagement.regenerating}
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h3 className="font-medium text-blue-900 mb-2">Current Tests</h3>
+                  <p className="text-sm text-blue-800">
+                    This video currently has {
+                      course.sections
+                        ?.flatMap(s => s.videos)
+                        ?.find(v => v.id === testManagement.videoId)?.tests.length || 0
+                    } test questions. Use the settings below to generate new ones.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end space-x-4 pt-4 border-t border-gray-200">
+                  <Button
+                    variant="outline"
+                    onClick={closeTestManagement}
+                    disabled={testManagement.regenerating}
+                  >
+                    Cancel
+                  </Button>
+                  
+                  <Button
+                    onClick={handleRegenerateTests}
+                    disabled={testManagement.regenerating}
+                    className="min-w-40"
+                  >
+                    {testManagement.regenerating ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Generate Tests
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-// app/api/admin/courses/route.ts
+// app/api/admin/courses/route.ts - List all courses for admin
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -13,16 +13,31 @@ export async function GET() {
     }
 
     const courses = await prisma.course.findMany({
-      orderBy: { createdAt: 'desc' },
       include: {
-        videos: { select: { id: true } },
-        _count: { select: { enrollments: true } }
+        videos: {
+          select: { id: true }
+        },
+        sections: {
+          include: {
+            videos: {
+              select: { id: true }
+            }
+          }
+        },
+        _count: {
+          select: {
+            enrollments: true
+          }
+        }
+      },
+      orderBy: {
+        updatedAt: 'desc'
       }
     })
 
     return NextResponse.json(courses)
   } catch (error) {
-    console.error("Error fetching courses:", error)
+    console.error("Error fetching admin courses:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

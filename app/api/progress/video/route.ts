@@ -1,4 +1,4 @@
-// app/api/progress/video/route.ts
+// app/api/progress/video/route.ts - Update video progress
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -22,15 +22,15 @@ export async function POST(request: Request) {
         }
       },
       update: {
-        ...(completed !== undefined && { completed }),
-        ...(watchTime !== undefined && { watchTime }),
+        completed: completed !== undefined ? completed : undefined,
+        watchTime: watchTime !== undefined ? Math.max(watchTime, 0) : undefined,
         updatedAt: new Date()
       },
       create: {
         userId: session.user.id,
         videoId,
         completed: completed || false,
-        watchTime: watchTime || 0
+        watchTime: Math.max(watchTime || 0, 0)
       }
     })
 

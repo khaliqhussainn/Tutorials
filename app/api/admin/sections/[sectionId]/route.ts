@@ -1,4 +1,4 @@
-// app/api/admin/sections/[sectionId]/route.ts
+// app/api/admin/sections/[sectionId]/route.ts - Delete section
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -15,57 +15,38 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Move videos in this section to uncategorized (remove sectionId)
-    await prisma.video.updateMany({
-      where: { sectionId: params.sectionId },
-      data: { sectionId: null }
+    // Get section with videos to move them to uncategorized
+    const section = await prisma.courseSection.findUnique({
+      where: { id: params.sectionId },
+      include: {
+        videos: { select: { id: true } },
+        course: { select: { id: true } }
+      }
     })
+
+    if (!section) {
+      return NextResponse.json({ error: "Section not found" }, { status: 404 })
+    }
+
+    // Move all videos in this section to be uncategorized (remove sectionId)
+    if (section.videos.length > 0) {
+      await prisma.video.updateMany({
+        where: { sectionId: params.sectionId },
+        data: { sectionId: null }
+      })
+    }
 
     // Delete the section
     await prisma.courseSection.delete({
       where: { id: params.sectionId }
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ 
+      success: true, 
+      message: `Section deleted successfully. ${section.videos.length} videos moved to uncategorized.` 
+    })
   } catch (error) {
     console.error("Error deleting section:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
-  }
-}
-
-export async function PATCH(
-  request: Request,
-  { params }: { params: { sectionId: string } }
-) {
-  try {
-    const session = await getServerSession(authOptions)
-    
-    if (!session || session.user.role !== 'ADMIN') {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    const data = await request.json()
-    
-    const section = await prisma.courseSection.update({
-      where: { id: params.sectionId },
-      data: {
-        ...(data.title && { title: data.title }),
-        ...(data.description !== undefined && { description: data.description }),
-        ...(data.order !== undefined && { order: data.order }),
-      },
-      include: {
-        videos: {
-          orderBy: { order: 'asc' },
-          include: {
-            tests: { select: { id: true } }
-          }
-        }
-      }
-    })
-
-    return NextResponse.json(section)
-  } catch (error) {
-    console.error("Error updating section:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    return NextResponse.json({ error: "Failed to delete section" }, { status: 500 })
   }
 }

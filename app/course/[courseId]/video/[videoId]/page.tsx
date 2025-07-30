@@ -1,4 +1,4 @@
-// app/course/[courseId]/video/[videoId]/page.tsx - Complete Enhanced Version
+// app/course/[courseId]/video/[videoId]/page.tsx - Enhanced with separate test system
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -13,7 +13,6 @@ import {
   ArrowRight, 
   CheckCircle, 
   Clock, 
-  FileText, 
   BookOpen, 
   Target, 
   Award,
@@ -30,10 +29,14 @@ import {
   SkipBack,
   SkipForward,
   Settings,
-  XCircle,
   Save,
   Eye,
-  EyeOff
+  EyeOff,
+  RotateCcw,
+  FileText,
+  AlertTriangle,
+  Download,
+  Share2
 } from 'lucide-react'
 import { formatDuration } from '@/lib/utils'
 
@@ -69,19 +72,30 @@ interface Course {
   videos: { id: string; order: number; title: string }[]
 }
 
+interface VideoProgress {
+  videoId: string
+  completed: boolean
+  testPassed: boolean
+  watchTime: number
+  testScore?: number
+  testAttempts?: number
+}
+
 // Enhanced Video Player Component
 function EnhancedVideoPlayer({ 
   videoUrl, 
   title, 
   onProgress, 
   onEnded, 
-  canWatch 
+  canWatch,
+  initialTime = 0
 }: {
   videoUrl: string
   title: string
   onProgress: (progress: { played: number; playedSeconds: number }) => void
   onEnded: () => void
   canWatch: boolean
+  initialTime?: number
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -93,6 +107,7 @@ function EnhancedVideoPlayer({
   const [showControls, setShowControls] = useState(true)
   const [playbackRate, setPlaybackRate] = useState(1)
   const [showSettings, setShowSettings] = useState(false)
+  const [hasStarted, setHasStarted] = useState(false)
 
   useEffect(() => {
     const video = videoRef.current
@@ -108,6 +123,10 @@ function EnhancedVideoPlayer({
 
     const handleLoadedMetadata = () => {
       setDuration(video.duration)
+      if (initialTime > 0) {
+        video.currentTime = initialTime
+        setCurrentTime(initialTime)
+      }
     }
 
     const handleEnded = () => {
@@ -115,7 +134,10 @@ function EnhancedVideoPlayer({
       onEnded()
     }
 
-    const handlePlay = () => setPlaying(true)
+    const handlePlay = () => {
+      setPlaying(true)
+      setHasStarted(true)
+    }
     const handlePause = () => setPlaying(false)
 
     video.addEventListener('timeupdate', handleTimeUpdate)
@@ -131,7 +153,7 @@ function EnhancedVideoPlayer({
       video.removeEventListener('play', handlePlay)
       video.removeEventListener('pause', handlePause)
     }
-  }, [onProgress, onEnded])
+  }, [onProgress, onEnded, initialTime])
 
   // Auto-hide controls
   useEffect(() => {
@@ -408,156 +430,6 @@ function EnhancedVideoPlayer({
   )
 }
 
-// Enhanced Test Interface Component  
-function TestInterface({ tests, onComplete }: {
-  tests: Test[]
-  onComplete: (passed: boolean, score: number) => void
-}) {
-  const [currentTestIndex, setCurrentTestIndex] = useState(0)
-  const [answers, setAnswers] = useState<number[]>(new Array(tests.length).fill(-1))
-  const [showResults, setShowResults] = useState(false)
-  const [selectedAnswer, setSelectedAnswer] = useState(-1)
-
-  const currentTest = tests[currentTestIndex]
-  const isLastTest = currentTestIndex === tests.length - 1
-
-  const handleAnswerSelect = (optionIndex: number) => {
-    setSelectedAnswer(optionIndex)
-  }
-
-  const handleNext = () => {
-    const newAnswers = [...answers]
-    newAnswers[currentTestIndex] = selectedAnswer
-    setAnswers(newAnswers)
-
-    if (isLastTest) {
-      const correctAnswers = newAnswers.filter((answer, index) => 
-        answer === tests[index].correct
-      ).length
-      
-      const score = (correctAnswers / tests.length) * 100
-      const passed = score >= 70
-      
-      setShowResults(true)
-      onComplete(passed, score)
-    } else {
-      setCurrentTestIndex(currentTestIndex + 1)
-      setSelectedAnswer(-1)
-    }
-  }
-
-  const calculateResults = () => {
-    const correctAnswers = answers.filter((answer, index) => 
-      answer === tests[index].correct
-    ).length
-    
-    return {
-      correct: correctAnswers,
-      total: tests.length,
-      score: (correctAnswers / tests.length) * 100,
-      passed: (correctAnswers / tests.length) * 100 >= 70
-    }
-  }
-
-  if (showResults) {
-    const results = calculateResults()
-    
-    return (
-      <Card className={`border-2 ${results.passed ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
-        <CardContent className="p-8 text-center">
-          <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${
-            results.passed ? 'bg-green-100' : 'bg-red-100'
-          }`}>
-            {results.passed ? (
-              <Award className="w-10 h-10 text-green-600" />
-            ) : (
-              <XCircle className="w-10 h-10 text-red-600" />
-            )}
-          </div>
-          
-          <h3 className={`text-2xl font-bold mb-4 ${
-            results.passed ? 'text-green-800' : 'text-red-800'
-          }`}>
-            {results.passed ? 'Congratulations!' : 'Keep Learning!'}
-          </h3>
-          
-          <p className={`text-lg mb-6 ${
-            results.passed ? 'text-green-700' : 'text-red-700'
-          }`}>
-            You scored {results.score.toFixed(0)}% ({results.correct}/{results.total} correct)
-          </p>
-          
-          {results.passed ? (
-            <p className="text-green-600">
-              You've successfully completed this lesson and can move on to the next video!
-            </p>
-          ) : (
-            <p className="text-red-600">
-              You need at least 70% to pass. Review the video and try again.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-    )
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          <span>Question {currentTestIndex + 1} of {tests.length}</span>
-          <Badge variant="secondary">Knowledge Check</Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div>
-          <h3 className="text-lg font-medium mb-4">{currentTest.question}</h3>
-          
-          <div className="space-y-3">
-            {currentTest.options.map((option, index) => (
-              <button
-                key={index}
-                onClick={() => handleAnswerSelect(index)}
-                className={`w-full p-4 text-left rounded-lg border-2 transition-colors ${
-                  selectedAnswer === index
-                    ? 'border-primary-500 bg-primary-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center">
-                  <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
-                    selectedAnswer === index
-                      ? 'border-primary-500 bg-primary-500'
-                      : 'border-gray-300'
-                  }`}>
-                    {selectedAnswer === index && (
-                      <div className="w-full h-full rounded-full bg-white scale-50"></div>
-                    )}
-                  </div>
-                  <span>{option}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-        
-        <div className="flex justify-between items-center">
-          <div className="text-sm text-gray-500">
-            Select an answer to continue
-          </div>
-          
-          <Button
-            onClick={handleNext}
-            disabled={selectedAnswer === -1}
-          >
-            {isLastTest ? 'Submit Test' : 'Next Question'}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
 // Main Video Page Component
 export default function VideoPage({ 
   params 
@@ -568,9 +440,7 @@ export default function VideoPage({
   const router = useRouter()
   const [video, setVideo] = useState<Video | null>(null)
   const [course, setCourse] = useState<Course | null>(null)
-  const [showTest, setShowTest] = useState(false)
-  const [testPassed, setTestPassed] = useState(false)
-  const [videoCompleted, setVideoCompleted] = useState(false)
+  const [videoProgress, setVideoProgress] = useState<VideoProgress | null>(null)
   const [watchTime, setWatchTime] = useState(0)
   const [canWatch, setCanWatch] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -581,6 +451,7 @@ export default function VideoPage({
     totalWatches: 0,
     avgRating: 0
   })
+  const [isRewatching, setIsRewatching] = useState(false)
 
   useEffect(() => {
     if (session) {
@@ -621,9 +492,8 @@ export default function VideoPage({
       if (response.ok) {
         const data = await response.json()
         setCanWatch(data.canWatch)
-        setVideoCompleted(data.completed)
-        setTestPassed(data.testPassed)
-        setWatchTime(data.watchTime || 0)
+        setVideoProgress(data.progress)
+        setWatchTime(data.progress?.watchTime || 0)
         setNotes(data.notes || '')
       }
     } catch (error) {
@@ -665,9 +535,7 @@ export default function VideoPage({
   }
 
   const handleVideoEnd = async () => {
-    if (!videoCompleted) {
-      setVideoCompleted(true)
-      
+    if (!videoProgress?.completed || isRewatching) {
       try {
         await fetch(`/api/progress/video`, {
           method: 'POST',
@@ -679,36 +547,17 @@ export default function VideoPage({
           })
         })
         
-        if (video?.tests.length && !testPassed) {
-          setTimeout(() => setShowTest(true), 1000)
-        }
+        await checkAccess() // Refresh progress
       } catch (error) {
         console.error('Error marking video complete:', error)
       }
     }
   }
 
-  const handleTestComplete = async (passed: boolean, score: number) => {
-    setTestPassed(passed)
-    setShowTest(false)
-    
-    try {
-      await fetch(`/api/progress/test`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoId: params.videoId,
-          passed,
-          score
-        })
-      })
-
-      if (passed) {
-        await fetch('/api/user/streak', { method: 'POST' })
-      }
-    } catch (error) {
-      console.error('Error saving test result:', error)
-    }
+  const handleRestartVideo = () => {
+    setIsRewatching(true)
+    setWatchTime(0)
+    window.location.reload() // Simple way to restart video
   }
 
   const getNextVideo = () => {
@@ -784,6 +633,18 @@ export default function VideoPage({
     }
   }
 
+  const getTestStatus = () => {
+    if (!video?.tests.length) return 'no-test'
+    if (!videoProgress?.completed) return 'locked'
+    if (videoProgress?.testPassed) return 'passed'
+    return 'available'
+  }
+
+  const getWatchProgress = () => {
+    if (!video?.duration) return 0
+    return Math.min((watchTime / video.duration) * 100, 100)
+  }
+
   if (!session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -833,6 +694,8 @@ export default function VideoPage({
   const nextVideo = getNextVideo()
   const prevVideo = getPrevVideo()
   const position = getCurrentVideoPosition()
+  const testStatus = getTestStatus()
+  const watchProgress = getWatchProgress()
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -856,7 +719,7 @@ export default function VideoPage({
             <span className="text-sm text-gray-500">
               Video {position.current} of {position.total}
             </span>
-            {testPassed && (
+            {videoProgress?.testPassed && (
               <Badge className="bg-green-100 text-green-800">
                 <CheckCircle className="w-3 h-3 mr-1" />
                 Completed
@@ -876,95 +739,154 @@ export default function VideoPage({
                 onProgress={handleVideoProgress}
                 onEnded={handleVideoEnd}
                 canWatch={canWatch}
+                initialTime={isRewatching ? 0 : watchTime}
               />
               
               {/* Video Info */}
               <div className="p-6">
-                <h1 className="text-2xl font-bold text-gray-900 mb-2">{video.title}</h1>
-                
-                <div className="flex items-center space-x-6 text-sm text-gray-500 mb-4">
-                  <div className="flex items-center">
-                    <Clock className="w-4 h-4 mr-1" />
-                    <span>{video.duration ? formatDuration(video.duration) : 'N/A'}</span>
-                  </div>
-                  <div className="flex items-center">
-                    <Users className="w-4 h-4 mr-1" />
-                    <span>{videoStats.totalWatches} views</span>
-                  </div>
-                  {videoStats.avgRating > 0 && (
-                    <div className="flex items-center">
-                      <Star className="w-4 h-4 mr-1 text-yellow-400" />
-                      <span>{videoStats.avgRating.toFixed(1)}</span>
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex-1">
+                    <h1 className="text-2xl font-bold text-gray-900 mb-2">{video.title}</h1>
+                    
+                    <div className="flex items-center space-x-6 text-sm text-gray-500 mb-4">
+                      <div className="flex items-center">
+                        <Clock className="w-4 h-4 mr-1" />
+                        <span>{video.duration ? formatDuration(video.duration) : 'N/A'}</span>
+                      </div>
+                      <div className="flex items-center">
+                        <Users className="w-4 h-4 mr-1" />
+                        <span>{videoStats.totalWatches} views</span>
+                      </div>
+                      {videoStats.avgRating > 0 && (
+                        <div className="flex items-center">
+                          <Star className="w-4 h-4 mr-1 text-yellow-400" />
+                          <span>{videoStats.avgRating.toFixed(1)}</span>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
+
+                  <div className="flex items-center space-x-2 ml-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRestartVideo}
+                      className="flex items-center"
+                    >
+                      <RotateCcw className="w-4 h-4 mr-1" />
+                      Rewatch
+                    </Button>
+                    <Button variant="outline" size="sm">
+                      <Download className="w-4 h-4" />
+                    </Button>
+                    <Button variant="outline" size="sm">
+                      <Share2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
 
                 {video.description && (
-                  <div className="prose max-w-none">
+                  <div className="prose max-w-none mb-6">
                     <p className="text-gray-700 leading-relaxed">{video.description}</p>
                   </div>
                 )}
 
                 {/* Progress Bar */}
                 {canWatch && video.duration && (
-                  <div className="mt-6">
+                  <div className="mb-6">
                     <div className="flex justify-between text-sm text-gray-600 mb-2">
-                      <span>Progress</span>
-                      <span>{Math.round((watchTime / video.duration) * 100)}%</span>
+                      <span>Your Progress</span>
+                      <span>{Math.round(watchProgress)}%</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div 
                         className="bg-primary-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${Math.min((watchTime / video.duration) * 100, 100)}%` }}
+                        style={{ width: `${watchProgress}%` }}
                       ></div>
                     </div>
                   </div>
                 )}
+
+                {/* Test Section - Now as a separate action */}
+                {video.tests.length > 0 && (
+                  <Card className={`border-2 ${
+                    testStatus === 'passed' ? 'border-green-200 bg-green-50' :
+                    testStatus === 'available' ? 'border-blue-200 bg-blue-50' :
+                    testStatus === 'locked' ? 'border-gray-200 bg-gray-50' :
+                    'border-yellow-200 bg-yellow-50'
+                  }`}>
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <div className={`w-12 h-12 rounded-full flex items-center justify-center mr-4 ${
+                            testStatus === 'passed' ? 'bg-green-100' :
+                            testStatus === 'available' ? 'bg-blue-100' :
+                            testStatus === 'locked' ? 'bg-gray-100' :
+                            'bg-yellow-100'
+                          }`}>
+                            {testStatus === 'passed' ? (
+                              <CheckCircle className="w-6 h-6 text-green-600" />
+                            ) : testStatus === 'available' ? (
+                              <FileText className="w-6 h-6 text-blue-600" />
+                            ) : testStatus === 'locked' ? (
+                              <Lock className="w-6 h-6 text-gray-400" />
+                            ) : (
+                              <AlertTriangle className="w-6 h-6 text-yellow-600" />
+                            )}
+                          </div>
+                          <div>
+                            <h3 className={`font-semibold text-lg ${
+                              testStatus === 'passed' ? 'text-green-800' :
+                              testStatus === 'available' ? 'text-blue-800' :
+                              testStatus === 'locked' ? 'text-gray-600' :
+                              'text-yellow-800'
+                            }`}>
+                              {testStatus === 'passed' ? 'Quiz Completed' :
+                               testStatus === 'available' ? 'Quiz Available' :
+                               testStatus === 'locked' ? 'Quiz Locked' :
+                               'No Quiz Available'}
+                            </h3>
+                            <p className={`text-sm ${
+                              testStatus === 'passed' ? 'text-green-600' :
+                              testStatus === 'available' ? 'text-blue-600' :
+                              testStatus === 'locked' ? 'text-gray-500' :
+                              'text-yellow-600'
+                            }`}>
+                              {testStatus === 'passed' ? 
+                                `Score: ${videoProgress?.testScore || 0}% • ${videoProgress?.testAttempts || 1} attempt${(videoProgress?.testAttempts || 1) > 1 ? 's' : ''}` :
+                               testStatus === 'available' ? 
+                                'Test your knowledge with a short quiz' :
+                               testStatus === 'locked' ? 
+                                'Complete the video to unlock the quiz' :
+                               'This video has no quiz'}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center space-x-3">
+                          {testStatus === 'available' && (
+                            <Link href={`/course/${params.courseId}/video/${video.id}/quiz`}>
+                              <Button className="flex items-center">
+                                <Target className="w-4 h-4 mr-2" />
+                                Take Quiz
+                              </Button>
+                            </Link>
+                          )}
+                          {testStatus === 'passed' && (
+                            <Link href={`/course/${params.courseId}/video/${video.id}/quiz`}>
+                              <Button variant="outline" className="flex items-center">
+                                <RotateCcw className="w-4 h-4 mr-2" />
+                                Retake Quiz
+                              </Button>
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             </div>
-
-            {/* Test Section */}
-            {showTest && video.tests.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                <div className="p-6">
-                  <h2 className="text-xl font-bold text-gray-900 mb-4">Knowledge Check</h2>
-                  <TestInterface tests={video.tests} onComplete={handleTestComplete} />
-                </div>
-              </div>
-            )}
-
-            {/* Test Results Display */}
-            {videoCompleted && video.tests.length > 0 && !showTest && (
-              <Card className={`border-2 ${testPassed ? 'border-green-200 bg-green-50' : 'border-orange-200 bg-orange-50'}`}>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      {testPassed ? (
-                        <CheckCircle className="w-6 h-6 text-green-600 mr-3" />
-                      ) : (
-                        <Target className="w-6 h-6 text-orange-600 mr-3" />
-                      )}
-                      <div>
-                        <h3 className={`font-semibold ${testPassed ? 'text-green-800' : 'text-orange-800'}`}>
-                          {testPassed ? 'Test Completed Successfully' : 'Test Available'}
-                        </h3>
-                        <p className={`text-sm ${testPassed ? 'text-green-600' : 'text-orange-600'}`}>
-                          {testPassed 
-                            ? 'You can now proceed to the next video'
-                            : 'Complete the knowledge check to unlock the next video'
-                          }
-                        </p>
-                      </div>
-                    </div>
-                    {!testPassed && (
-                      <Button onClick={() => setShowTest(true)} variant="outline">
-                        Take Test
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
 
             {/* Navigation */}
             <div className="flex justify-between items-center">
@@ -980,7 +902,7 @@ export default function VideoPage({
               </div>
               
               <div>
-                {nextVideo && (testPassed || video.tests.length === 0) && (
+                {nextVideo && (videoProgress?.testPassed || video.tests.length === 0) && (
                   <Link href={`/course/${params.courseId}/video/${nextVideo.id}`}>
                     <Button className="flex items-center">
                       Next Video
@@ -1110,7 +1032,7 @@ export default function VideoPage({
               </Card>
             )}
 
-            {/* Course Stats */}
+            {/* Learning Stats */}
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Learning Stats</CardTitle>
@@ -1128,9 +1050,13 @@ export default function VideoPage({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center">
                       <Target className="w-5 h-5 text-blue-500 mr-2" />
-                      <span className="text-sm text-gray-600">Tests Passed</span>
+                      <span className="text-sm text-gray-600">Quiz Status</span>
                     </div>
-                    <span className="font-medium">{testPassed ? '1' : '0'}</span>
+                    <span className="font-medium">
+                      {testStatus === 'passed' ? 'Passed' :
+                       testStatus === 'available' ? 'Available' :
+                       testStatus === 'locked' ? 'Locked' : 'N/A'}
+                    </span>
                   </div>
                   
                   <div className="flex items-center justify-between">
@@ -1140,7 +1066,59 @@ export default function VideoPage({
                     </div>
                     <span className="font-medium text-sm">{course.title}</span>
                   </div>
+
+                  {videoProgress?.testScore && (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <Award className="w-5 h-5 text-yellow-500 mr-2" />
+                        <span className="text-sm text-gray-600">Best Score</span>
+                      </div>
+                      <span className="font-medium">{videoProgress.testScore}%</span>
+                    </div>
+                  )}
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Quick Actions */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Quick Actions</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Button
+                  variant="outline"
+                  className="w-full flex items-center justify-center"
+                  onClick={handleRestartVideo}
+                >
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Restart Video
+                </Button>
+                
+                {video.tests.length > 0 && testStatus === 'available' && (
+                  <Link href={`/course/${params.courseId}/video/${video.id}/quiz`} className="block">
+                    <Button className="w-full flex items-center justify-center">
+                      <Target className="w-4 h-4 mr-2" />
+                      Take Quiz
+                    </Button>
+                  </Link>
+                )}
+
+                {video.tests.length > 0 && testStatus === 'passed' && (
+                  <Link href={`/course/${params.courseId}/video/${video.id}/quiz`} className="block">
+                    <Button variant="outline" className="w-full flex items-center justify-center">
+                      <RotateCcw className="w-4 h-4 mr-2" />
+                      Retake Quiz
+                    </Button>
+                  </Link>
+                )}
+
+                <Link href={`/course/${params.courseId}`} className="block">
+                  <Button variant="outline" className="w-full flex items-center justify-center">
+                    <BookOpen className="w-4 h-4 mr-2" />
+                    Course Overview
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
           </div>

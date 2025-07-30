@@ -1,4 +1,4 @@
-// app/api/videos/[videoId]/stats/route.ts
+// app/api/videos/[videoId]/stats/route.ts - Get video statistics
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -16,20 +16,24 @@ export async function GET(
     }
 
     // Get video statistics
-    const [totalWatches, avgWatchTime] = await Promise.all([
-      prisma.videoProgress.count({
-        where: { videoId: params.videoId }
-      }),
-      prisma.videoProgress.aggregate({
-        where: { videoId: params.videoId },
-        _avg: { watchTime: true }
-      })
-    ])
+    const stats = await prisma.videoProgress.aggregate({
+      where: { videoId: params.videoId },
+      _count: {
+        id: true
+      }
+    })
+
+    const quizStats = await prisma.quizAttempt.aggregate({
+      where: { videoId: params.videoId },
+      _avg: {
+        score: true
+      }
+    })
 
     return NextResponse.json({
-      totalWatches,
-      avgWatchTime: Math.round(avgWatchTime._avg.watchTime || 0),
-      avgRating: 4.5 // Placeholder for rating system
+      totalWatches: stats._count.id || 0,
+      avgRating: 0, // Placeholder for future rating system
+      avgQuizScore: quizStats._avg.score || 0
     })
   } catch (error) {
     console.error("Error fetching video stats:", error)
