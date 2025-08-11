@@ -1,4 +1,4 @@
-// app/course/[courseId]/page.tsx - Updated with sections support
+// app/course/[courseId]/page.tsx - Enhanced with better navigation and quiz status
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -19,7 +19,9 @@ import {
   ChevronDown,
   ChevronRight,
   Award,
-  Target
+  Target,
+  AlertTriangle,
+  FileText
 } from 'lucide-react'
 import { formatDuration, calculateProgress } from '@/lib/utils'
 
@@ -29,6 +31,7 @@ interface Video {
   description?: string
   duration?: number
   order: number
+  tests: { id: string }[] // Include tests count
 }
 
 interface CourseSection {
@@ -55,6 +58,8 @@ interface VideoProgress {
   videoId: string
   completed: boolean
   testPassed: boolean
+  testScore?: number
+  testAttempts?: number
 }
 
 export default function CoursePage({ params }: { params: { courseId: string } }) {
@@ -150,8 +155,12 @@ export default function CoursePage({ params }: { params: { courseId: string } })
   const getVideoStatus = (video: Video, sectionVideos: Video[], videoIndex: number, sectionIndex: number) => {
     const progress = videoProgress.find(p => p.videoId === video.id)
     
-    if (progress?.completed && progress?.testPassed) {
-      return 'completed'
+    // If video has no tests, just check if it's completed
+    if (!video.tests || video.tests.length === 0) {
+      if (progress?.completed) return 'completed'
+    } else {
+      // If video has tests, check both completion and test passing
+      if (progress?.completed && progress?.testPassed) return 'completed'
     }
     
     // First video of first section is always available
@@ -159,7 +168,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
       return 'available'
     }
     
-    // Check if previous video is completed
+    // Check if previous video is properly completed
     let prevVideo: Video | null = null
     
     if (videoIndex > 0) {
@@ -175,12 +184,26 @@ export default function CoursePage({ params }: { params: { courseId: string } })
     
     if (prevVideo) {
       const prevProgress = videoProgress.find(p => p.videoId === prevVideo!.id)
-      if (prevProgress?.completed && prevProgress?.testPassed) {
+      // Previous video must be completed AND (no tests OR test passed)
+      const prevCompleted = prevProgress?.completed && 
+        ((!prevVideo.tests || prevVideo.tests.length === 0) || prevProgress?.testPassed)
+      
+      if (prevCompleted) {
         return 'available'
       }
     }
     
     return 'locked'
+  }
+
+  const getQuizStatus = (video: Video) => {
+    if (!video.tests || video.tests.length === 0) return 'no-quiz'
+    
+    const progress = videoProgress.find(p => p.videoId === video.id)
+    
+    if (!progress?.completed) return 'quiz-locked'
+    if (progress?.testPassed) return 'quiz-passed'
+    return 'quiz-available'
   }
 
   const toggleSection = (sectionId: string) => {
@@ -210,7 +233,31 @@ export default function CoursePage({ params }: { params: { courseId: string } })
   }
 
   const getCompletedVideos = () => {
-    return videoProgress.filter(p => p.completed && p.testPassed).length
+    return videoProgress.filter(p => {
+      // Find the video to check if it has tests
+      const video = getAllVideos().find(v => v.id === p.videoId)
+      if (!video) return false
+      
+      // If no tests, just check completion
+      if (!video.tests || video.tests.length === 0) {
+        return p.completed
+      }
+      // If has tests, check both completion and test passing
+      return p.completed && p.testPassed
+    }).length
+  }
+
+  const getAllVideos = () => {
+    const allVideos: Video[] = []
+    if (course?.sections) {
+      for (const section of course.sections) {
+        allVideos.push(...section.videos)
+      }
+    }
+    if (course?.videos) {
+      allVideos.push(...course.videos)
+    }
+    return allVideos
   }
 
   const getProgressPercentage = () => {
@@ -245,7 +292,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
   const progressPercentage = getProgressPercentage()
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-gray-50">
       {/* Course Header */}
       <div className="bg-gradient-to-r from-primary-600 to-primary-700 text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -291,7 +338,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                   <Users className="w-5 h-5 mr-2" />
                   <div>
                     <div className="text-sm">Students</div>
-                    {/* <div className="font-semibold">{course._count.enrollments}</div> */}
+                    <div className="font-semibold">{course._count?.enrollments || 0}</div>
                   </div>
                 </div>
                 <div className="flex items-center">
@@ -423,6 +470,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                         <div className="border-t border-dark-200">
                           {section.videos.map((video, videoIndex) => {
                             const status = getVideoStatus(video, section.videos, videoIndex, sectionIndex)
+                            const quizStatus = getQuizStatus(video)
                             const progress = videoProgress.find(p => p.videoId === video.id)
                             
                             return (
@@ -459,10 +507,30 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                                       <Clock className="w-4 h-4 mr-1" />
                                       {formatDuration(video.duration || 0)}
                                     </div>
-                                    {status === 'completed' && (
-                                      <div className="flex items-center text-green-600">
-                                        <Target className="w-4 h-4 mr-1" />
-                                        Test Passed
+                                    
+                                    {/* Quiz Status Indicator */}
+                                    {quizStatus !== 'no-quiz' && (
+                                      <div className={`flex items-center ${
+                                        quizStatus === 'quiz-passed' ? 'text-green-600' :
+                                        quizStatus === 'quiz-available' ? 'text-blue-600' :
+                                        'text-gray-500'
+                                      }`}>
+                                        {quizStatus === 'quiz-passed' ? (
+                                          <>
+                                            <Target className="w-4 h-4 mr-1" />
+                                            Quiz Passed ({progress?.testScore}%)
+                                          </>
+                                        ) : quizStatus === 'quiz-available' ? (
+                                          <>
+                                            <FileText className="w-4 h-4 mr-1" />
+                                            Quiz Available
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Lock className="w-4 h-4 mr-1" />
+                                            Quiz Locked
+                                          </>
+                                        )}
                                       </div>
                                     )}
                                   </div>
@@ -491,23 +559,39 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                         <p className="text-sm text-yellow-700">Extra videos and materials</p>
                       </div>
                       <div className="border-t border-yellow-200">
-                        {course.videos.map((video, index) => (
-                          <div
-                            key={video.id}
-                            className="flex items-center p-4 border-b border-yellow-100 last:border-b-0 hover:bg-yellow-50 transition-colors"
-                          >
-                            <Play className="w-5 h-5 text-yellow-600 mr-4" />
-                            <div className="flex-1">
-                              <h4 className="font-medium text-dark-900">{video.title}</h4>
-                              {video.description && (
-                                <p className="text-sm text-dark-600">{video.description}</p>
-                              )}
+                        {course.videos.map((video, index) => {
+                          const quizStatus = getQuizStatus(video)
+                          const progress = videoProgress.find(p => p.videoId === video.id)
+                          
+                          return (
+                            <div
+                              key={video.id}
+                              className="flex items-center p-4 border-b border-yellow-100 last:border-b-0 hover:bg-yellow-50 transition-colors"
+                            >
+                              <Play className="w-5 h-5 text-yellow-600 mr-4" />
+                              <div className="flex-1">
+                                <h4 className="font-medium text-dark-900">{video.title}</h4>
+                                {video.description && (
+                                  <p className="text-sm text-dark-600">{video.description}</p>
+                                )}
+                                <div className="flex items-center text-sm text-dark-500 space-x-4 mt-1">
+                                  <span>{formatDuration(video.duration || 0)}</span>
+                                  {quizStatus !== 'no-quiz' && (
+                                    <span className={
+                                      quizStatus === 'quiz-passed' ? 'text-green-600' :
+                                      quizStatus === 'quiz-available' ? 'text-blue-600' :
+                                      'text-gray-500'
+                                    }>
+                                      {quizStatus === 'quiz-passed' ? `Quiz Passed (${progress?.testScore}%)` :
+                                       quizStatus === 'quiz-available' ? 'Quiz Available' :
+                                       'Quiz Locked'}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            <div className="text-sm text-dark-500">
-                              {formatDuration(video.duration || 0)}
-                            </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     </div>
                   )}
@@ -541,7 +625,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                 </div>
                 <div className="flex justify-between">
                   <span className="text-dark-600">Students</span>
-                  {/* <span className="font-semibold">{course._count.enrollments}</span> */}
+                  <span className="font-semibold">{course._count?.enrollments || 0}</span>
                 </div>
                 {isEnrolled && (
                   <div className="pt-4 border-t border-dark-200">
@@ -568,9 +652,9 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                 <CardContent className="text-center p-6">
                   <Target className="w-12 h-12 text-primary-600 mx-auto mb-4" />
                   <h3 className="font-semibold text-lg mb-2">Ready to Start Learning?</h3>
-                  {/* <p className="text-dark-600 mb-4">
-                    Join {course._count.enrollments} other students and start your learning journey today.
-                  </p> */}
+                  <p className="text-dark-600 mb-4">
+                    Join {course._count?.enrollments || 0} other students and start your learning journey today.
+                  </p>
                   <Button
                     className="w-full"
                     onClick={handleEnroll}
@@ -591,9 +675,14 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                 <CardContent>
                   <div className="space-y-3">
                     {course.sections?.slice(0, 3).map((section, index) => {
-                      const sectionProgress = section.videos.filter(v => 
-                        videoProgress.find(p => p.videoId === v.id && p.completed && p.testPassed)
-                      ).length
+                      const sectionProgress = section.videos.filter(v => {
+                        const progress = videoProgress.find(p => p.videoId === v.id)
+                        // Check if video is properly completed (with tests if applicable)
+                        if (!v.tests || v.tests.length === 0) {
+                          return progress?.completed
+                        }
+                        return progress?.completed && progress?.testPassed
+                      }).length
                       const sectionTotal = section.videos.length
                       const sectionPercentage = sectionTotal > 0 ? (sectionProgress / sectionTotal) * 100 : 0
                       
