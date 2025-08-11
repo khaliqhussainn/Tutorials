@@ -143,25 +143,25 @@ export default function AdminCoursesPage() {
     }
   }
 
-  // const duplicateCourse = async (courseId: string) => {
-  //   try {
-  //     const response = await fetch(`/api/admin/courses/${courseId}/duplicate`, {
-  //       method: 'POST'
-  //     })
+  const duplicateCourse = async (courseId: string) => {
+    try {
+      const response = await fetch(`/api/admin/courses/${courseId}/duplicate`, {
+        method: 'POST'
+      })
 
-  //     if (response.ok) {
-  //       const duplicatedCourse = await response.json()
-  //       setCourses(prev => [...prev, duplicatedCourse])
-  //       setSuccess('Course duplicated successfully!')
-  //       setTimeout(() => setSuccess(''), 3000)
-  //     } else {
-  //       setError('Failed to duplicate course')
-  //     }
-  //   } catch (error) {
-  //     console.error('Error duplicating course:', error)
-  //     setError('Failed to duplicate course')
-  //   }
-  // }
+      if (response.ok) {
+        const duplicatedCourse = await response.json()
+        setCourses(prev => [...prev, duplicatedCourse])
+        setSuccess('Course duplicated successfully!')
+        setTimeout(() => setSuccess(''), 3000)
+      } else {
+        setError('Failed to duplicate course')
+      }
+    } catch (error) {
+      console.error('Error duplicating course:', error)
+      setError('Failed to duplicate course')
+    }
+  }
 
   const deleteCourse = async (courseId: string) => {
     const course = courses.find(c => c.id === courseId)
@@ -460,7 +460,7 @@ export default function AdminCoursesPage() {
                       <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-10 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
                         <div className="py-1 min-w-32">
                           <button
-                            // onClick={() => duplicateCourse(course.id)}
+                            onClick={() => duplicateCourse(course.id)}
                             className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
                           >
                             <Copy className="w-4 h-4 mr-2" />

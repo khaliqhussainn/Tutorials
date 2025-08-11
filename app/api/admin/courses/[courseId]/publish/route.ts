@@ -1,4 +1,4 @@
-// app/api/admin/courses/[courseId]/publish/route.ts - Publish/Unpublish course
+// app/api/admin/courses/[courseId]/publish/route.ts - Publish/unpublish course
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -26,7 +26,9 @@ export async function PATCH(
             videos: true
           }
         },
-        videos: true
+        videos: {
+          where: { sectionId: null }
+        }
       }
     })
 
@@ -35,26 +37,37 @@ export async function PATCH(
     }
 
     // Check if course has content before publishing
-    const totalVideos = existingCourse.sections.reduce((acc, section) => acc + section.videos.length, 0) + existingCourse.videos.length
-    
-    if (isPublished && totalVideos === 0) {
-      return NextResponse.json({ 
-        error: "Cannot publish course without videos. Please add at least one video before publishing." 
-      }, { status: 400 })
+    if (isPublished) {
+      const totalVideos = existingCourse.videos.length + 
+        existingCourse.sections.reduce((acc, section) => acc + section.videos.length, 0)
+      
+      if (totalVideos === 0) {
+        return NextResponse.json({ 
+          error: "Cannot publish course without any videos" 
+        }, { status: 400 })
+      }
+
+      if (!existingCourse.thumbnail) {
+        return NextResponse.json({ 
+          error: "Cannot publish course without a thumbnail" 
+        }, { status: 400 })
+      }
     }
 
-    // Update course publication status
+    // Update the course
     const updatedCourse = await prisma.course.update({
       where: { id: params.courseId },
-      data: { 
-        isPublished,
+      data: {
+        isPublished: isPublished,
         updatedAt: new Date()
       }
     })
 
     return NextResponse.json(updatedCourse)
   } catch (error) {
-    console.error("Error updating course publication status:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("Error updating course publish status:", error)
+    return NextResponse.json({ 
+      error: "Failed to update course publish status" 
+    }, { status: 500 })
   }
 }
