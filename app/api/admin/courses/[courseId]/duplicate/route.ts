@@ -1,3 +1,4 @@
+// app/api/admin/courses/[courseId]/duplicate/route.ts - Fixed duplicate course
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -60,17 +61,14 @@ export async function POST(
 
       // Then create sections with their videos
       for (const section of originalCourse.sections) {
-       // Assuming your model is named `CourseSection` in the schema
-const newSection = await tx.courseSection.create({
-  data: {
-    title: section.title,
-    description: section.description,
-    order: section.order,
-    courseId: newCourse.id,
-  },
-});
-
-
+        const newSection = await tx.courseSection.create({
+          data: {
+            title: section.title,
+            description: section.description,
+            order: section.order,
+            courseId: newCourse.id,
+          },
+        });
 
         // Create videos for this section
         for (const video of section.videos) {
@@ -159,6 +157,23 @@ const newSection = await tx.courseSection.create({
     return NextResponse.json(duplicatedCourse);
   } catch (error) {
     console.error("Error duplicating course:", error);
+    
+    // Better error handling
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2002') {
+        return NextResponse.json(
+          { error: "Duplicate constraint violation" },
+          { status: 400 }
+        );
+      }
+      if (error.code === 'P2025') {
+        return NextResponse.json(
+          { error: "Course not found" },
+          { status: 404 }
+        );
+      }
+    }
+    
     return NextResponse.json(
       {
         error: "Failed to duplicate course",
