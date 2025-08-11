@@ -1,10 +1,10 @@
-// app/api/upload/route.ts - FIXED with better video handling
+// app/api/upload/route.ts - FIXED with correct maxDuration for Hobby plan
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import cloudinary from "@/lib/cloudinary"
 
-export const maxDuration = 600 // 10 minutes
+export const maxDuration = 300 // 5 minutes (max for Hobby plan)
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
@@ -35,12 +35,12 @@ export async function POST(request: Request) {
       lastModified: new Date(file.lastModified).toISOString()
     })
 
-    // Enhanced file validation
-    const maxSize = 200 * 1024 * 1024 // 200MB
+    // Reduced file size limit for faster uploads within 5-minute timeout
+    const maxSize = 100 * 1024 * 1024 // 100MB (reduced from 200MB)
     if (file.size > maxSize) {
       console.log('File too large:', file.size, 'bytes')
       return NextResponse.json({
-        error: "File size must be less than 200MB"
+        error: "File size must be less than 100MB for reliable uploads"
       }, { status: 400 })
     }
 
@@ -69,30 +69,33 @@ export async function POST(request: Request) {
 
     console.log('Starting Cloudinary upload...')
     
-    // Enhanced Cloudinary upload
+    // Optimized Cloudinary upload for faster processing
     const result = await new Promise<any>((resolve, reject) => {
       const uploadOptions = {
         resource_type: "video" as const,
         folder: "training-videos",
         public_id: `video_${Date.now()}_${Math.random().toString(36).substring(7)}`,
-        chunk_size: 6000000, // 6MB chunks
-        timeout: 600000, // 10 minutes
+        chunk_size: 8000000, // 8MB chunks (increased for faster upload)
+        timeout: 280000, // 4 minutes 40 seconds (leave buffer for processing)
         
-        // Video optimization settings
+        // Optimized video settings for faster processing
         quality: "auto:good",
         format: "mp4", // Force MP4 output
         video_codec: "h264",
         audio_codec: "aac",
         
-        // Upload settings
+        // Fast upload settings
         overwrite: true,
-        invalidate: true,
+        invalidate: false, // Disable to speed up
         use_filename: false,
         unique_filename: true,
         
-        // Progress tracking
-        eager_async: true,
-        notification_url: undefined // Remove if not needed
+        // Disable eager transformations to speed up initial upload
+        eager_async: false,
+        eager: [], // No transformations during upload
+        
+        // Optimize for speed
+        flags: "progressive"
       }
 
       console.log('Upload options:', JSON.stringify(uploadOptions, null, 2))
@@ -125,6 +128,15 @@ export async function POST(request: Request) {
       uploadStream.on('error', (error) => {
         console.error("Stream error:", error)
         reject(error)
+      })
+
+      // Add timeout handling
+      const timeoutId = setTimeout(() => {
+        reject(new Error('Upload timeout - please try with a smaller file'))
+      }, 270000) // 4.5 minutes
+
+      uploadStream.on('finish', () => {
+        clearTimeout(timeoutId)
       })
 
       console.log('Writing buffer to stream...')
@@ -164,13 +176,13 @@ export async function POST(request: Request) {
     
     if (error.http_code === 413 || error.name === 'PayloadTooLargeError') {
       return NextResponse.json({
-        error: "File too large. Maximum size is 200MB"
+        error: "File too large. Maximum size is 100MB"
       }, { status: 413 })
     }
     
-    if (error.message?.includes('timeout') || error.http_code === 499) {
+    if (error.message?.includes('timeout') || error.http_code === 499 || error.message?.includes('Upload timeout')) {
       return NextResponse.json({
-        error: "Upload timeout. Please try with a smaller file or check your internet connection"
+        error: "Upload timeout. Please try with a smaller file (under 50MB recommended) or compress your video"
       }, { status: 408 })
     }
     
@@ -181,7 +193,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      error: error.message || "Upload failed. Please try again"
+      error: error.message || "Upload failed. Please try again with a smaller file"
     }, { status: 500 })
   } finally {
     console.log('=== VIDEO UPLOAD ENDED ===')
