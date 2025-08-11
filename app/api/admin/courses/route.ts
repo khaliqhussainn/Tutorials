@@ -1,8 +1,11 @@
-// app/api/admin/courses/route.ts - List all courses for admin
+// app/api/admin/courses/route.ts
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+
+// Force dynamic rendering
+export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
