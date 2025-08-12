@@ -1,4 +1,4 @@
-// app/api/admin/sections/[sectionId]/route.ts - Delete section
+// app/api/admin/sections/[sectionId]/route.ts - FIXED
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -15,12 +15,12 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Get section with videos to move them to uncategorized
+    // Get section with videos
     const section = await prisma.courseSection.findUnique({
       where: { id: params.sectionId },
       include: {
         videos: { select: { id: true } },
-        course: { select: { id: true } }
+        course: { select: { id: true, title: true } }
       }
     })
 

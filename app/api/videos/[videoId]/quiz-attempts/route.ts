@@ -1,4 +1,4 @@
-// app/api/videos/[videoId]/quiz-attempts/route.ts - Get previous quiz attempts
+// app/api/videos/[videoId]/quiz-attempts/route.ts
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -21,19 +21,26 @@ export async function GET(
         videoId: params.videoId
       },
       orderBy: {
-        createdAt: 'desc'
+        completedAt: 'desc'
       },
       select: {
         id: true,
         score: true,
         passed: true,
         timeSpent: true,
-        attemptNumber: true,
-        createdAt: true
+        completedAt: true,
+        answers: true
       }
     })
 
-    return NextResponse.json(attempts)
+    // Parse answers and add attempt numbers
+    const formattedAttempts = attempts.map((attempt, index) => ({
+      ...attempt,
+      answers: JSON.parse(attempt.answers),
+      attemptNumber: attempts.length - index
+    }))
+
+    return NextResponse.json(formattedAttempts)
   } catch (error) {
     console.error("Error fetching quiz attempts:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

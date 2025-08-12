@@ -1,4 +1,4 @@
-// app/api/courses/[courseId]/route.ts
+// app/api/courses/[courseId]/route.ts - FIXED to properly include video durations
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -9,35 +9,51 @@ export async function GET(
   { params }: { params: { courseId: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions)
-    
-    if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
     const course = await prisma.course.findUnique({
-      where: { id: params.courseId },
+      where: { 
+        id: params.courseId,
+        isPublished: true 
+      },
       include: {
         sections: {
-          orderBy: { order: 'asc' },
           include: {
             videos: {
               orderBy: { order: 'asc' },
               select: {
                 id: true,
                 title: true,
-                order: true
+                description: true,
+                duration: true,
+                order: true,
+                tests: {
+                  select: {
+                    id: true
+                  }
+                }
               }
             }
-          }
+          },
+          orderBy: { order: 'asc' }
         },
         videos: {
-          where: { sectionId: null }, // Legacy videos without sections
+          where: { sectionId: null },
           orderBy: { order: 'asc' },
           select: {
             id: true,
             title: true,
-            order: true
+            description: true,
+            duration: true,
+            order: true,
+            tests: {
+              select: {
+                id: true
+              }
+            }
+          }
+        },
+        _count: {
+          select: {
+            enrollments: true
           }
         }
       }

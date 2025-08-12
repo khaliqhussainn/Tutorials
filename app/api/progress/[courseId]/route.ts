@@ -11,30 +11,24 @@ export async function GET(
   try {
     const session = await getServerSession(authOptions)
     
-    if (!session) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const course = await prisma.course.findUnique({
-      where: { id: params.courseId },
-      include: {
-        videos: { select: { id: true } }
-      }
-    })
-
-    if (!course) {
-      return NextResponse.json({ error: "Course not found" }, { status: 404 })
-    }
-
+    // Get all video progress for this user and course
     const progress = await prisma.videoProgress.findMany({
       where: {
         userId: session.user.id,
-        videoId: { in: course.videos.map((v: { id: any }) => v.id) }
+        video: {
+          courseId: params.courseId
+        }
       },
       select: {
         videoId: true,
         completed: true,
-        testPassed: true
+        testPassed: true,
+        testScore: true,
+        testAttempts: true
       }
     })
 

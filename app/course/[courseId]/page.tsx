@@ -1,20 +1,18 @@
-// app/course/[courseId]/page.tsx - Enhanced with better navigation and quiz status
-'use client'
-
-import { useState, useEffect } from 'react'
-import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
-import Image from 'next/image'
-import Link from 'next/link'
-import { Button } from '@/components/ui/Button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { 
-  Clock, 
-  Users, 
-  Star, 
-  Play, 
-  Lock, 
-  CheckCircle, 
+'use client';
+import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+import Link from 'next/link';
+import { Button } from '@/components/ui/Button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import {
+  Clock,
+  Users,
+  Star,
+  Play,
+  Lock,
+  CheckCircle,
   BookOpen,
   ChevronDown,
   ChevronRight,
@@ -22,256 +20,250 @@ import {
   Target,
   AlertTriangle,
   FileText
-} from 'lucide-react'
-import { formatDuration, calculateProgress } from '@/lib/utils'
+} from 'lucide-react';
+import { formatDuration, calculateProgress } from '@/lib/utils';
+
+interface Test {
+  id: string;
+}
 
 interface Video {
-  id: string
-  title: string
-  description?: string
-  duration?: number
-  order: number
-  tests: { id: string }[] // Include tests count
+  id: string;
+  title: string;
+  description?: string;
+  duration?: number;
+  order: number;
+  tests: Test[];
 }
 
 interface CourseSection {
-  id: string
-  title: string
-  description?: string
-  order: number
-  videos: Video[]
+  id: string;
+  title: string;
+  description?: string;
+  order: number;
+  videos: Video[];
 }
 
 interface Course {
-  id: string
-  title: string
-  description: string
-  thumbnail?: string
-  category: string
-  level: string
-  sections: CourseSection[]
-  videos: Video[] // Legacy videos without sections
-  _count: { enrollments: number }
+  id: string;
+  title: string;
+  description: string;
+  thumbnail?: string;
+  category: string;
+  level: string;
+  sections: CourseSection[];
+  videos: Video[];
+  _count: { enrollments: number };
 }
 
 interface VideoProgress {
-  videoId: string
-  completed: boolean
-  testPassed: boolean
-  testScore?: number
-  testAttempts?: number
+  videoId: string;
+  completed: boolean;
+  testPassed: boolean;
+  testScore?: number;
+  testAttempts?: number;
 }
 
-export default function CoursePage({ params }: { params: { courseId: string } }) {
-  const { data: session } = useSession()
-  const router = useRouter()
-  const [course, setCourse] = useState<Course | null>(null)
-  const [isEnrolled, setIsEnrolled] = useState(false)
-  const [videoProgress, setVideoProgress] = useState<VideoProgress[]>([])
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
-  const [loading, setLoading] = useState(true)
-  const [enrolling, setEnrolling] = useState(false)
+interface CoursePageProps {
+  params: { courseId: string };
+}
+
+export default function CoursePage({ params }: CoursePageProps) {
+  const { data: session } = useSession();
+  const router = useRouter();
+  const [course, setCourse] = useState<Course | null>(null);
+  const [isEnrolled, setIsEnrolled] = useState<boolean>(false);
+  const [videoProgress, setVideoProgress] = useState<VideoProgress[]>([]);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState<boolean>(true);
+  const [enrolling, setEnrolling] = useState<boolean>(false);
 
   useEffect(() => {
-    fetchCourse()
+    fetchCourse();
     if (session) {
-      checkEnrollment()
-      fetchProgress()
+      checkEnrollment();
+      fetchProgress();
     }
-  }, [params.courseId, session])
+  }, [params.courseId, session]);
 
   useEffect(() => {
-    // Expand all sections by default
     if (course?.sections) {
-      const sectionIds = new Set(course.sections.map(s => s.id))
-      setExpandedSections(sectionIds)
+      const sectionIds = new Set(course.sections.map(s => s.id));
+      setExpandedSections(sectionIds);
     }
-  }, [course])
+  }, [course]);
 
   const fetchCourse = async () => {
     try {
-      const response = await fetch(`/api/courses/${params.courseId}`)
+      const response = await fetch(`/api/courses/${params.courseId}`);
       if (response.ok) {
-        const data = await response.json()
-        setCourse(data)
+        const data: Course = await response.json();
+        setCourse(data);
       }
     } catch (error) {
-      console.error('Error fetching course:', error)
+      console.error('Error fetching course:', error);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const checkEnrollment = async () => {
     try {
-      const response = await fetch(`/api/enrollments/${params.courseId}`)
-      setIsEnrolled(response.ok)
+      const response = await fetch(`/api/enrollments/${params.courseId}`);
+      setIsEnrolled(response.ok);
     } catch (error) {
-      console.error('Error checking enrollment:', error)
+      console.error('Error checking enrollment:', error);
     }
-  }
+  };
 
   const fetchProgress = async () => {
     try {
-      const response = await fetch(`/api/progress/${params.courseId}`)
+      const response = await fetch(`/api/progress/${params.courseId}`);
       if (response.ok) {
-        const data = await response.json()
-        setVideoProgress(data)
+        const data: VideoProgress[] = await response.json();
+        setVideoProgress(data);
       }
     } catch (error) {
-      console.error('Error fetching progress:', error)
+      console.error('Error fetching progress:', error);
     }
-  }
+  };
 
   const handleEnroll = async () => {
     if (!session) {
-      router.push('/auth/signin')
-      return
+      router.push('/auth/signin');
+      return;
     }
-
-    setEnrolling(true)
+    setEnrolling(true);
     try {
       const response = await fetch('/api/enrollments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ courseId: params.courseId })
-      })
-
+      });
       if (response.ok) {
-        setIsEnrolled(true)
-        // Navigate to first video in first section or first video overall
-        const firstVideo = course?.sections?.[0]?.videos?.[0] || course?.videos?.[0]
+        setIsEnrolled(true);
+        const firstVideo = course?.sections?.[0]?.videos?.[0] || course?.videos?.[0];
         if (firstVideo) {
-          router.push(`/course/${params.courseId}/video/${firstVideo.id}`)
+          router.push(`/course/${params.courseId}/video/${firstVideo.id}`);
         }
       }
     } catch (error) {
-      console.error('Error enrolling:', error)
+      console.error('Error enrolling:', error);
     } finally {
-      setEnrolling(false)
+      setEnrolling(false);
     }
-  }
+  };
 
-  const getVideoStatus = (video: Video, sectionVideos: Video[], videoIndex: number, sectionIndex: number) => {
-    const progress = videoProgress.find(p => p.videoId === video.id)
-    
-    // If video has no tests, just check if it's completed
+  const getVideoStatus = (video: Video, sectionVideos: Video[], videoIndex: number, sectionIndex: number): string => {
+    const progress = videoProgress.find(p => p.videoId === video.id);
+
     if (!video.tests || video.tests.length === 0) {
-      if (progress?.completed) return 'completed'
+      if (progress?.completed) return 'completed';
     } else {
-      // If video has tests, check both completion and test passing
-      if (progress?.completed && progress?.testPassed) return 'completed'
+      if (progress?.completed && progress?.testPassed) return 'completed';
     }
-    
-    // First video of first section is always available
-    if (sectionIndex === 0 && videoIndex === 0) {
-      return 'available'
-    }
-    
-    // Check if previous video is properly completed
-    let prevVideo: Video | null = null
-    
-    if (videoIndex > 0) {
-      // Previous video in same section
-      prevVideo = sectionVideos[videoIndex - 1]
-    } else if (sectionIndex > 0) {
-      // Last video of previous section
-      const prevSection = course?.sections?.[sectionIndex - 1]
-      if (prevSection && prevSection.videos.length > 0) {
-        prevVideo = prevSection.videos[prevSection.videos.length - 1]
-      }
-    }
-    
-    if (prevVideo) {
-      const prevProgress = videoProgress.find(p => p.videoId === prevVideo!.id)
-      // Previous video must be completed AND (no tests OR test passed)
-      const prevCompleted = prevProgress?.completed && 
-        ((!prevVideo.tests || prevVideo.tests.length === 0) || prevProgress?.testPassed)
-      
-      if (prevCompleted) {
-        return 'available'
-      }
-    }
-    
-    return 'locked'
-  }
 
-  const getQuizStatus = (video: Video) => {
-    if (!video.tests || video.tests.length === 0) return 'no-quiz'
-    
-    const progress = videoProgress.find(p => p.videoId === video.id)
-    
-    if (!progress?.completed) return 'quiz-locked'
-    if (progress?.testPassed) return 'quiz-passed'
-    return 'quiz-available'
-  }
+    if (sectionIndex === 0 && videoIndex === 0) {
+      return 'available';
+    }
+
+    let prevVideo: Video | null = null;
+
+    if (videoIndex > 0) {
+      prevVideo = sectionVideos[videoIndex - 1];
+    } else if (sectionIndex > 0) {
+      const prevSection = course?.sections?.[sectionIndex - 1];
+      if (prevSection && prevSection.videos.length > 0) {
+        prevVideo = prevSection.videos[prevSection.videos.length - 1];
+      }
+    }
+
+    if (prevVideo) {
+      const prevProgress = videoProgress.find(p => p.videoId === prevVideo!.id);
+      const prevCompleted = prevProgress?.completed &&
+        ((!prevVideo.tests || prevVideo.tests.length === 0) || prevProgress?.testPassed);
+
+      if (prevCompleted) {
+        return 'available';
+      }
+    }
+
+    return 'locked';
+  };
+
+  const getQuizStatus = (video: Video): string => {
+    if (!video.tests || video.tests.length === 0) return 'no-quiz';
+
+    const progress = videoProgress.find(p => p.videoId === video.id);
+
+    if (!progress?.completed) return 'quiz-locked';
+    if (progress?.testPassed) return 'quiz-passed';
+    return 'quiz-available';
+  };
 
   const toggleSection = (sectionId: string) => {
     setExpandedSections(prev => {
-      const newSet = new Set(prev)
+      const newSet = new Set(prev);
       if (newSet.has(sectionId)) {
-        newSet.delete(sectionId)
+        newSet.delete(sectionId);
       } else {
-        newSet.add(sectionId)
+        newSet.add(sectionId);
       }
-      return newSet
-    })
-  }
+      return newSet;
+    });
+  };
 
-  const getTotalVideos = () => {
-    const sectionVideos = course?.sections?.reduce((acc, section) => acc + section.videos.length, 0) || 0
-    const legacyVideos = course?.videos?.length || 0
-    return sectionVideos + legacyVideos
-  }
+  const getTotalVideos = (): number => {
+    const sectionVideos = course?.sections?.reduce((acc, section) => acc + section.videos.length, 0) || 0;
+    const legacyVideos = course?.videos?.length || 0;
+    return sectionVideos + legacyVideos;
+  };
 
-  const getTotalDuration = () => {
-    const sectionDuration = course?.sections?.reduce((acc, section) => 
+  const getTotalDuration = (): number => {
+    const sectionDuration = course?.sections?.reduce((acc, section) =>
       acc + section.videos.reduce((videoAcc, video) => videoAcc + (video.duration || 0), 0), 0
-    ) || 0
-    const legacyDuration = course?.videos?.reduce((acc, video) => acc + (video.duration || 0), 0) || 0
-    return sectionDuration + legacyDuration
-  }
+    ) || 0;
+    const legacyDuration = course?.videos?.reduce((acc, video) => acc + (video.duration || 0), 0) || 0;
+    return sectionDuration + legacyDuration;
+  };
 
-  const getCompletedVideos = () => {
+  const getCompletedVideos = (): number => {
     return videoProgress.filter(p => {
-      // Find the video to check if it has tests
-      const video = getAllVideos().find(v => v.id === p.videoId)
-      if (!video) return false
-      
-      // If no tests, just check completion
-      if (!video.tests || video.tests.length === 0) {
-        return p.completed
-      }
-      // If has tests, check both completion and test passing
-      return p.completed && p.testPassed
-    }).length
-  }
+      const video = getAllVideos().find(v => v.id === p.videoId);
+      if (!video) return false;
 
-  const getAllVideos = () => {
-    const allVideos: Video[] = []
+      if (!video.tests || video.tests.length === 0) {
+        return p.completed;
+      }
+      return p.completed && p.testPassed;
+    }).length;
+  };
+
+  const getAllVideos = (): Video[] => {
+    const allVideos: Video[] = [];
     if (course?.sections) {
       for (const section of course.sections) {
-        allVideos.push(...section.videos)
+        allVideos.push(...section.videos);
       }
     }
     if (course?.videos) {
-      allVideos.push(...course.videos)
+      allVideos.push(...course.videos);
     }
-    return allVideos
-  }
+    return allVideos;
+  };
 
-  const getProgressPercentage = () => {
-    const total = getTotalVideos()
-    const completed = getCompletedVideos()
-    return calculateProgress(completed, total)
-  }
+  const getProgressPercentage = (): number => {
+    const total = getTotalVideos();
+    const completed = getCompletedVideos();
+    return calculateProgress(completed, total);
+  };
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600"></div>
       </div>
-    )
+    );
   }
 
   if (!course) {
@@ -284,12 +276,12 @@ export default function CoursePage({ params }: { params: { courseId: string } })
           </Link>
         </div>
       </div>
-    )
+    );
   }
 
-  const totalVideos = getTotalVideos()
-  const totalDuration = getTotalDuration()
-  const progressPercentage = getProgressPercentage()
+  const totalVideos = getTotalVideos();
+  const totalDuration = getTotalDuration();
+  const progressPercentage = getProgressPercentage();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -310,15 +302,15 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                   {course.level}
                 </span>
               </div>
-              
+
               <h1 className="text-3xl md:text-4xl font-display font-bold mb-4">
                 {course.title}
               </h1>
-              
+
               <p className="text-lg text-primary-100 mb-6">
                 {course.description}
               </p>
-              
+
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-primary-200 mb-8">
                 <div className="flex items-center">
                   <Clock className="w-5 h-5 mr-2" />
@@ -349,7 +341,6 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                   </div>
                 </div>
               </div>
-
               {!isEnrolled ? (
                 <Button
                   size="lg"
@@ -381,7 +372,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                       <span>{totalVideos - getCompletedVideos()} remaining</span>
                     </div>
                   </div>
-                  
+
                   <Link href={`/course/${course.id}/video/${course.sections?.[0]?.videos?.[0]?.id || course.videos?.[0]?.id}`}>
                     <Button size="lg" variant="secondary" className="min-w-40">
                       <Play className="w-5 h-5 mr-2" />
@@ -391,7 +382,6 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                 </div>
               )}
             </div>
-
             <div className="lg:flex justify-end">
               {course.thumbnail ? (
                 <div className="relative aspect-video w-full max-w-md rounded-lg overflow-hidden shadow-xl">
@@ -411,7 +401,6 @@ export default function CoursePage({ params }: { params: { courseId: string } })
           </div>
         </div>
       </div>
-
       {/* Course Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid lg:grid-cols-3 gap-8">
@@ -433,7 +422,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                   {course.sections?.map((section, sectionIndex) => (
                     <div key={section.id} className="border border-dark-200 rounded-lg overflow-hidden">
                       {/* Section Header */}
-                      <div 
+                      <div
                         className="flex items-center justify-between p-4 bg-dark-50 cursor-pointer hover:bg-dark-100 transition-colors"
                         onClick={() => toggleSection(section.id)}
                       >
@@ -454,7 +443,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                             )}
                           </div>
                         </div>
-                        
+
                         <div className="flex items-center space-x-4 text-sm text-dark-500">
                           <span>{section.videos.length} videos</span>
                           <span>
@@ -464,15 +453,14 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                           </span>
                         </div>
                       </div>
-
                       {/* Section Videos */}
                       {expandedSections.has(section.id) && (
                         <div className="border-t border-dark-200">
                           {section.videos.map((video, videoIndex) => {
-                            const status = getVideoStatus(video, section.videos, videoIndex, sectionIndex)
-                            const quizStatus = getQuizStatus(video)
-                            const progress = videoProgress.find(p => p.videoId === video.id)
-                            
+                            const status = getVideoStatus(video, section.videos, videoIndex, sectionIndex);
+                            const quizStatus = getQuizStatus(video);
+                            const progress = videoProgress.find(p => p.videoId === video.id);
+
                             return (
                               <div
                                 key={video.id}
@@ -494,7 +482,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                                     <Lock className="w-5 h-5 text-dark-400" />
                                   )}
                                 </div>
-                                
+
                                 <div className="flex-1">
                                   <h4 className="font-medium text-dark-900 mb-1">
                                     {video.title}
@@ -507,7 +495,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                                       <Clock className="w-4 h-4 mr-1" />
                                       {formatDuration(video.duration || 0)}
                                     </div>
-                                    
+
                                     {/* Quiz Status Indicator */}
                                     {quizStatus !== 'no-quiz' && (
                                       <div className={`flex items-center ${
@@ -535,7 +523,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                                     )}
                                   </div>
                                 </div>
-                                
+
                                 {isEnrolled && status === 'available' && (
                                   <Link href={`/course/${course.id}/video/${video.id}`}>
                                     <Button size="sm">
@@ -544,13 +532,12 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                                   </Link>
                                 )}
                               </div>
-                            )
+                            );
                           })}
                         </div>
                       )}
                     </div>
                   ))}
-
                   {/* Legacy Videos (without sections) */}
                   {course.videos && course.videos.length > 0 && (
                     <div className="border border-yellow-200 rounded-lg overflow-hidden">
@@ -560,9 +547,9 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                       </div>
                       <div className="border-t border-yellow-200">
                         {course.videos.map((video, index) => {
-                          const quizStatus = getQuizStatus(video)
-                          const progress = videoProgress.find(p => p.videoId === video.id)
-                          
+                          const quizStatus = getQuizStatus(video);
+                          const progress = videoProgress.find(p => p.videoId === video.id);
+
                           return (
                             <div
                               key={video.id}
@@ -590,7 +577,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                                 </div>
                               </div>
                             </div>
-                          )
+                          );
                         })}
                       </div>
                     </div>
@@ -599,7 +586,6 @@ export default function CoursePage({ params }: { params: { courseId: string } })
               </CardContent>
             </Card>
           </div>
-
           {/* Course Stats Sidebar */}
           <div className="space-y-6">
             <Card>
@@ -646,7 +632,6 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                 )}
               </CardContent>
             </Card>
-
             {!isEnrolled && (
               <Card className="border-primary-200">
                 <CardContent className="text-center p-6">
@@ -665,7 +650,6 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                 </CardContent>
               </Card>
             )}
-
             {/* Learning Path */}
             {isEnrolled && (
               <Card>
@@ -676,16 +660,15 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                   <div className="space-y-3">
                     {course.sections?.slice(0, 3).map((section, index) => {
                       const sectionProgress = section.videos.filter(v => {
-                        const progress = videoProgress.find(p => p.videoId === v.id)
-                        // Check if video is properly completed (with tests if applicable)
+                        const progress = videoProgress.find(p => p.videoId === v.id);
                         if (!v.tests || v.tests.length === 0) {
-                          return progress?.completed
+                          return progress?.completed;
                         }
-                        return progress?.completed && progress?.testPassed
-                      }).length
-                      const sectionTotal = section.videos.length
-                      const sectionPercentage = sectionTotal > 0 ? (sectionProgress / sectionTotal) * 100 : 0
-                      
+                        return progress?.completed && progress?.testPassed;
+                      }).length;
+                      const sectionTotal = section.videos.length;
+                      const sectionPercentage = sectionTotal > 0 ? (sectionProgress / sectionTotal) * 100 : 0;
+
                       return (
                         <div key={section.id} className="p-3 border border-dark-200 rounded-lg">
                           <div className="flex items-center justify-between mb-2">
@@ -699,7 +682,7 @@ export default function CoursePage({ params }: { params: { courseId: string } })
                             />
                           </div>
                         </div>
-                      )
+                      );
                     })}
                     {course.sections && course.sections.length > 3 && (
                       <p className="text-xs text-dark-500 text-center">
@@ -714,5 +697,5 @@ export default function CoursePage({ params }: { params: { courseId: string } })
         </div>
       </div>
     </div>
-  )
+  );
 }

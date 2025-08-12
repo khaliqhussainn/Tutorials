@@ -1,4 +1,4 @@
-// app/api/progress/video/route.ts - Update video progress
+// app/api/progress/video/route.ts
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { videoId, completed, watchTime } = await request.json()
+    const { videoId, watchTime, completed } = await request.json()
 
     const progress = await prisma.videoProgress.upsert({
       where: {
@@ -22,15 +22,15 @@ export async function POST(request: Request) {
         }
       },
       update: {
-        completed: completed !== undefined ? completed : undefined,
-        watchTime: watchTime !== undefined ? Math.max(watchTime, 0) : undefined,
-        updatedAt: new Date()
+        watchTime: Math.max(watchTime, 0),
+        ...(completed && { completed: true, completedAt: new Date() })
       },
       create: {
         userId: session.user.id,
         videoId,
+        watchTime: Math.max(watchTime, 0),
         completed: completed || false,
-        watchTime: Math.max(watchTime || 0, 0)
+        ...(completed && { completedAt: new Date() })
       }
     })
 

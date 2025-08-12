@@ -1,4 +1,4 @@
-// app/admin/courses/page.tsx
+// app/courses/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'

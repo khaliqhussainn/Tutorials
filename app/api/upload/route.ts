@@ -1,4 +1,4 @@
-// app/api/upload/route.ts - FIXED with correct maxDuration for Hobby plan
+// app/api/upload/route.ts - ENHANCED to properly extract and return video duration
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
 
     console.log('Starting Cloudinary upload...')
     
-    // Optimized Cloudinary upload for faster processing
+    // Optimized Cloudinary upload for faster processing with duration extraction
     const result = await new Promise<any>((resolve, reject) => {
       const uploadOptions = {
         resource_type: "video" as const,
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
         
         // Optimized video settings for faster processing
         quality: "auto:good",
-        format: "mp4", // Force MP4 output
+        format: "mp4", // Force MP4 output for consistency
         video_codec: "h264",
         audio_codec: "aac",
         
@@ -90,9 +90,17 @@ export async function POST(request: Request) {
         use_filename: false,
         unique_filename: true,
         
-        // Disable eager transformations to speed up initial upload
+        // Enable eager transformations to get video info
         eager_async: false,
-        eager: [], // No transformations during upload
+        eager: [
+          {
+            width: 1920,
+            height: 1080,
+            crop: "limit",
+            quality: "auto:good",
+            format: "mp4"
+          }
+        ],
         
         // Optimize for speed
         flags: "progressive"
@@ -118,7 +126,9 @@ export async function POST(request: Request) {
               secure_url: result?.secure_url,
               duration: result?.duration,
               format: result?.format,
-              bytes: result?.bytes
+              bytes: result?.bytes,
+              width: result?.width,
+              height: result?.height
             })
             resolve(result)
           }
@@ -143,17 +153,30 @@ export async function POST(request: Request) {
       uploadStream.end(buffer)
     })
 
+    // Prepare response with all video metadata including duration
     const response = {
       url: result.secure_url,
-      duration: Math.round(result.duration || 0),
+      duration: result.duration ? Math.round(result.duration) : null, // Duration in seconds, rounded
       publicId: result.public_id,
       format: result.format,
       bytes: result.bytes,
       width: result.width,
-      height: result.height
+      height: result.height,
+      // Additional metadata that might be useful
+      aspectRatio: result.width && result.height ? (result.width / result.height).toFixed(2) : null,
+      bitRate: result.bit_rate || null,
+      frameRate: result.frame_rate || null
     }
 
     console.log('Upload completed successfully:', response)
+    
+    // Log duration specifically for debugging
+    if (response.duration) {
+      console.log(`Video duration detected: ${response.duration} seconds (${Math.floor(response.duration / 60)}:${(response.duration % 60).toString().padStart(2, '0')})`)
+    } else {
+      console.warn('Warning: Video duration not detected from Cloudinary response')
+    }
+
     return NextResponse.json(response)
 
   } catch (error: any) {

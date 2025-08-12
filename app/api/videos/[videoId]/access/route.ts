@@ -1,4 +1,4 @@
-// app/api/videos/[videoId]/access/route.ts - Updated for section-based access control
+// app/api/videos/[videoId]/access/route.ts - FIXED with proper duration handling
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -15,28 +15,40 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    // Get the video details with all related data
     const video = await prisma.video.findUnique({
       where: { id: params.videoId },
       include: {
         course: {
           include: {
             sections: {
-              orderBy: { order: 'asc' },
               include: {
                 videos: {
                   orderBy: { order: 'asc' },
-                  select: { id: true, order: true }
+                  include: {
+                    tests: {
+                      select: {
+                        id: true
+                      }
+                    }
+                  }
                 }
-              }
+              },
+              orderBy: { order: 'asc' }
             },
             videos: {
               where: { sectionId: null },
               orderBy: { order: 'asc' },
-              select: { id: true, order: true }
+              include: {
+                tests: {
+                  select: {
+                    id: true
+                  }
+                }
+              }
             }
           }
-        },
-        section: true
+        }
       }
     })
 
@@ -55,83 +67,75 @@ export async function GET(
     })
 
     if (!enrollment) {
-      return NextResponse.json({ canWatch: false })
+      return NextResponse.json({ canWatch: false, reason: "Not enrolled" })
     }
 
-    // Determine if this video can be watched based on section structure
-    let canWatch = false
-
-    if (video.sectionId) {
-      // Video is in a section
-      const section = video.course.sections.find((s: { id: any }) => s.id === video.sectionId)! as typeof video.course.sections[0]
-      const sectionIndex = video.course.sections.findIndex((s: { id: any }) => s.id === section.id)
-      const videoIndex = section.videos.findIndex((v: { id: string }) => v.id === video.id)
-
-      if (sectionIndex === 0 && videoIndex === 0) {
-        // First video of first section
-        canWatch = true
-      } else {
-        // Check if previous video is completed
-        let prevVideoId: string | null = null
-
-        if (videoIndex > 0) {
-          // Previous video in same section
-          prevVideoId = section.videos[videoIndex - 1].id
-        } else if (sectionIndex > 0) {
-          // Last video of previous section
-          const prevSection = video.course.sections[sectionIndex - 1]
-          if (prevSection.videos.length > 0) {
-            prevVideoId = prevSection.videos[prevSection.videos.length - 1].id
-          }
-        }
-
-        if (prevVideoId) {
-          const prevProgress = await prisma.videoProgress.findUnique({
-            where: {
-              userId_videoId: {
-                userId: session.user.id,
-                videoId: prevVideoId
-              }
-            }
-          })
-          canWatch = !!(prevProgress?.completed && prevProgress?.testPassed)
-        }
-      }
-    } else {
-      // Legacy video without section
-      const videoIndex = video.course.videos.findIndex((v: { id: string }) => v.id === video.id)
-      if (videoIndex === 0) {
-        canWatch = true
-      } else {
-        const prevVideo = video.course.videos[videoIndex - 1]
-        const prevProgress = await prisma.videoProgress.findUnique({
-          where: {
-            userId_videoId: {
-              userId: session.user.id,
-              videoId: prevVideo.id
-            }
-          }
+    // Get all videos in order (both sectioned and legacy)
+    const allVideos = []
+    
+    // Add sectioned videos
+    for (const section of video.course.sections) {
+      for (const sectionVideo of section.videos) {
+        allVideos.push({
+          ...sectionVideo,
+          hasTests: sectionVideo.tests.length > 0
         })
-        canWatch = !!(prevProgress?.completed && prevProgress?.testPassed)
       }
     }
+    
+    // Add legacy videos (videos without sections)
+    allVideos.push(...video.course.videos.map(v => ({
+      ...v,
+      hasTests: v.tests.length > 0
+    })))
+    
+    // Sort by global order
+    allVideos.sort((a, b) => a.order - b.order)
+    
+    // Find current video position
+    const currentVideoIndex = allVideos.findIndex(v => v.id === video.id)
+    
+    if (currentVideoIndex === 0) {
+      // First video is always accessible
+      return NextResponse.json({ canWatch: true })
+    }
 
-    // Get current video progress
-    const progress = await prisma.videoProgress.findUnique({
+    // Get all previous video progress
+    const previousVideoIds = allVideos.slice(0, currentVideoIndex).map(v => v.id)
+    const progressRecords = await prisma.videoProgress.findMany({
       where: {
-        userId_videoId: {
-          userId: session.user.id,
-          videoId: params.videoId
+        userId: session.user.id,
+        videoId: {
+          in: previousVideoIds
         }
       }
     })
 
-    return NextResponse.json({
-      canWatch,
-      completed: progress?.completed || false,
-      testPassed: progress?.testPassed || false,
-      watchTime: progress?.watchTime || 0
-    })
+    // Check all previous videos
+    for (let i = 0; i < currentVideoIndex; i++) {
+      const prevVideo = allVideos[i]
+      
+      const prevProgress = progressRecords.find(p => p.videoId === prevVideo.id)
+
+      if (!prevProgress?.completed) {
+        return NextResponse.json({ 
+          canWatch: false, 
+          reason: "Previous video not completed",
+          requiredVideo: prevVideo.title
+        })
+      }
+
+      // If previous video has tests, check if passed
+      if (prevVideo.hasTests && !prevProgress.testPassed) {
+        return NextResponse.json({ 
+          canWatch: false, 
+          reason: "Previous video quiz not passed",
+          requiredVideo: prevVideo.title
+        })
+      }
+    }
+
+    return NextResponse.json({ canWatch: true })
   } catch (error) {
     console.error("Error checking video access:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

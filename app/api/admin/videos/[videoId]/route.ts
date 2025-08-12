@@ -1,13 +1,9 @@
-// app/api/admin/videos/[videoId]/route.ts
-import { NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { NextResponse } from "next/server"
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: { videoId: string } }
-) {
+// app/api/admin/videos/route.ts - For creating videos with proper duration
+export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions)
     
@@ -15,14 +11,46 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Delete video and all related data (tests, progress, etc.)
-    await prisma.video.delete({
-      where: { id: params.videoId }
+    const { 
+      title, 
+      description, 
+      videoUrl, 
+      duration, // This should come from the upload response
+      courseId, 
+      sectionId, 
+      order 
+    } = await request.json()
+
+    const video = await prisma.video.create({
+      data: {
+        title,
+        description,
+        videoUrl,
+        duration: duration ? Math.round(duration) : null, // Store duration in seconds
+        courseId,
+        sectionId: sectionId || null,
+        order
+      },
+      include: {
+        tests: true
+      }
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json(video)
   } catch (error) {
-    console.error("Error deleting video:", error)
+    console.error("Error creating video:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
+type Session = {
+  user: {
+    role: string;
+    // add other user properties if needed
+  };
+  // add other session properties if needed
+};
+
+function getServerSession(authOptions: any): Promise<Session | null> {
+  throw new Error("Function not implemented.");
+}
+

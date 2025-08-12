@@ -11,7 +11,11 @@ export async function GET(
   try {
     const session = await getServerSession(authOptions)
     
-    if (!session) {
+    console.log("Enrollment check - Session:", session) // Debug log
+    console.log("Checking enrollment for course:", params.courseId) // Debug log
+    
+    if (!session?.user?.id) {
+      console.log("No session found for enrollment check")
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
@@ -24,11 +28,13 @@ export async function GET(
       }
     })
 
-    if (!enrollment) {
+    console.log("Enrollment found:", !!enrollment) // Debug log
+
+    if (enrollment) {
+      return NextResponse.json(enrollment)
+    } else {
       return NextResponse.json({ error: "Not enrolled" }, { status: 404 })
     }
-
-    return NextResponse.json(enrollment)
   } catch (error) {
     console.error("Error checking enrollment:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

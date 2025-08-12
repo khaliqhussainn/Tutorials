@@ -1,4 +1,4 @@
-// app/api/videos/[videoId]/route.ts
+// app/api/videos/[videoId]/route.ts - FIXED to include duration properly
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -23,7 +23,20 @@ export async function GET(
             id: true,
             question: true,
             options: true,
-            correct: true
+            correct: true,
+            explanation: true
+          }
+        },
+        course: {
+          select: {
+            id: true,
+            title: true
+          }
+        },
+        section: {
+          select: {
+            id: true,
+            title: true
           }
         }
       }

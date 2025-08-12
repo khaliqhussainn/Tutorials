@@ -1,4 +1,4 @@
-// app/api/progress/quiz/route.ts - Handle quiz submissions
+// app/api/progress/quiz/route.ts - FIXED to properly handle quiz completion
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -12,139 +12,63 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Parse videoId from request body
-    const { videoId } = await request.json();
+    const { videoId, score, passed, timeSpent, answers } = await request.json()
 
-    // Get video with course information
-    const video = await prisma.video.findUnique({
-      where: { id: videoId },
-      include: {
-        course: {
-          include: {
-            sections: {
-              orderBy: { order: 'asc' },
-              include: {
-                videos: {
-                  orderBy: { order: 'asc' },
-                  select: { id: true, order: true }
-                }
-              }
-            },
-            videos: {
-              where: { sectionId: null },
-              orderBy: { order: 'asc' },
-              select: { id: true, order: true }
-            }
-          }
-        },
-        section: true
-      }
-    })
-
-    if (!video) {
-      return NextResponse.json({ error: "Video not found" }, { status: 404 })
-    }
-
-    // Check if user is enrolled
-    const enrollment = await prisma.enrollment.findUnique({
-      where: {
-        userId_courseId: {
-          userId: session.user.id,
-          courseId: video.courseId
-        }
-      }
-    })
-
-    if (!enrollment) {
-      return NextResponse.json({ 
-        canWatch: false, 
-        reason: "Not enrolled in course" 
-      })
-    }
-
-    // Get user's progress for this video
-    const progress = await prisma.videoProgress.findUnique({
+    // Get current attempt count
+    const currentProgress = await prisma.videoProgress.findUnique({
       where: {
         userId_videoId: {
           userId: session.user.id,
-          videoId: videoId
+          videoId
         }
       }
     })
 
-    // Get user's notes
-    const notes = await prisma.videoNote.findUnique({
+    // Update video progress with test results
+    const progress = await prisma.videoProgress.upsert({
       where: {
         userId_videoId: {
           userId: session.user.id,
-          videoId: videoId
+          videoId
         }
-      }
-    })
-
-    // Check if this is the first video or if previous video is completed
-    let canWatch = false
-    
-    // Find video position in course
-    let allVideos: any[] = []
-    if (video.course.sections) {
-      for (const section of video.course.sections) {
-        allVideos.push(...section.videos)
-      }
-    }
-    if (video.course.videos) {
-      allVideos.push(...video.course.videos)
-    }
-    
-    // Sort by order
-    allVideos.sort((a, b) => a.order - b.order)
-    
-    const currentVideoIndex = allVideos.findIndex(v => v.id === video.id)
-    
-    if (currentVideoIndex === 0) {
-      // First video is always accessible
-      canWatch = true
-    } else {
-      // Check if previous video is completed with test passed
-      const previousVideo = allVideos[currentVideoIndex - 1]
-      
-      const previousProgress = await prisma.videoProgress.findUnique({
-        where: {
-          userId_videoId: {
-            userId: session.user.id,
-            videoId: previousVideo.id
-          }
-        }
-      })
-
-      // Get previous video to check if it has tests
-      const prevVideoData = await prisma.video.findUnique({
-        where: { id: previousVideo.id },
-        include: { tests: { select: { id: true } } }
-      })
-
-      // Can watch if previous video is completed and either has no tests or test is passed
-      canWatch = !!previousProgress?.completed && 
-                 (prevVideoData?.tests.length === 0 || !!previousProgress?.testPassed)
-    }
-
-    return NextResponse.json({
-      canWatch,
-      progress: {
-        completed: progress?.completed || false,
-        testPassed: progress?.testPassed || false,
-        watchTime: progress?.watchTime || 0,
-        testScore: progress?.testScore || null,
-        testAttempts: progress?.testAttempts || 0
       },
-      notes: notes?.content || '',
-      videoPosition: {
-        current: currentVideoIndex + 1,
-        total: allVideos.length
+      update: {
+        testPassed: passed,
+        testScore: Math.max(score, currentProgress?.testScore || 0), // Keep highest score
+        testAttempts: {
+          increment: 1
+        },
+        ...(passed && { testPassedAt: new Date() })
+      },
+      create: {
+        userId: session.user.id,
+        videoId,
+        testPassed: passed,
+        testScore: Math.max(score, 0),
+        testAttempts: 1,
+        completed: true,
+        completedAt: new Date(),
+        ...(passed && { testPassedAt: new Date() })
       }
     })
+
+    // Save detailed quiz attempt record
+    if (answers) {
+      await prisma.quizAttempt.create({
+        data: {
+          userId: session.user.id,
+          videoId,
+          answers: JSON.stringify(answers),
+          score,
+          passed,
+          timeSpent: timeSpent || 0
+        }
+      })
+    }
+
+    return NextResponse.json(progress)
   } catch (error) {
-    console.error("Error checking video access:", error)
+    console.error("Error updating quiz progress:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

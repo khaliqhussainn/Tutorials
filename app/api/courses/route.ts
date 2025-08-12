@@ -1,3 +1,4 @@
+// app/api/courses/route.ts - Fixed with better error handling
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -16,10 +17,26 @@ export async function GET(request: Request) {
         ...(level && { level: level as any }),
       },
       include: {
+        sections: {
+          orderBy: { order: 'asc' },
+          include: {
+            videos: {
+              orderBy: { order: 'asc' },
+              select: {
+                id: true,
+                duration: true,
+                tests: { select: { id: true } }
+              }
+            }
+          }
+        },
         videos: {
+          where: { sectionId: null },
+          orderBy: { order: 'asc' },
           select: {
             id: true,
             duration: true,
+            tests: { select: { id: true } }
           }
         },
         _count: {

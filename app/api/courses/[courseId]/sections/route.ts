@@ -17,11 +17,20 @@ export async function POST(
 
     const { title, description } = await request.json()
 
-    if (!title) {
-      return NextResponse.json({ error: "Title is required" }, { status: 400 })
+    if (!title?.trim()) {
+      return NextResponse.json({ error: "Section title is required" }, { status: 400 })
     }
 
-    // Get the next order number for this course
+    // Verify course exists
+    const course = await prisma.course.findUnique({
+      where: { id: params.courseId }
+    })
+
+    if (!course) {
+      return NextResponse.json({ error: "Course not found" }, { status: 404 })
+    }
+
+    // Get next order number
     const lastSection = await prisma.courseSection.findFirst({
       where: { courseId: params.courseId },
       orderBy: { order: 'desc' }
@@ -31,8 +40,8 @@ export async function POST(
 
     const section = await prisma.courseSection.create({
       data: {
-        title,
-        description: description || null,
+        title: title.trim(),
+        description: description?.trim() || null,
         order: nextOrder,
         courseId: params.courseId
       },
@@ -49,6 +58,6 @@ export async function POST(
     return NextResponse.json(section)
   } catch (error) {
     console.error("Error creating section:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    return NextResponse.json({ error: "Failed to create section" }, { status: 500 })
   }
 }

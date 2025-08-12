@@ -1,119 +1,159 @@
-// lib/utils.ts - Enhanced utility functions
+// lib/utils.ts - UPDATED with proper duration formatting
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
 
-export function cn(...inputs: ClassValue[]): string {
+export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// Enhanced duration formatting with more precise time display
-export const formatDuration = (seconds: number): string => {
-  if (!seconds || seconds <= 0) return "0:00"
+export function formatDuration(seconds: number | null | undefined): string {
+  if (!seconds || seconds === 0) {
+    return "0:00"
+  }
   
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = Math.floor(seconds % 60)
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-  }
-  return `${minutes}:${secs.toString().padStart(2, '0')}`
-}
-
-// Alternative duration format for course listings (keeps the original for backward compatibility)
-export function formatDurationHuman(seconds: number): string {
-  if (!seconds || seconds <= 0) return '0 min'
-  
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
+  const remainingSeconds = Math.floor(seconds % 60)
   
   if (hours > 0) {
-    if (minutes > 0) {
-      return `${hours}h ${minutes}m`
-    }
-    return `${hours}h`
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
   }
   
-  return `${minutes}m`
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }
 
-// Enhanced progress calculation
-export const calculateProgress = (completed: number, total: number): number => {
+export function calculateProgress(completed: number, total: number): number {
   if (total === 0) return 0
   return Math.round((completed / total) * 100)
 }
 
-// Video file validation utility
-export const validateVideoFile = (file: File): { valid: boolean; error?: string } => {
-  const maxSize = 200 * 1024 * 1024 // 200MB
-  const allowedTypes = [
-    'video/mp4',
-    'video/mov', 
-    'video/avi',
-    'video/wmv',
-    'video/mkv',
-    'video/webm',
-    'video/quicktime',
-    'video/x-msvideo',
-    'video/x-ms-wmv'
-  ]
-
-  if (file.size > maxSize) {
-    return { valid: false, error: 'File size must be less than 200MB' }
-  }
-
-  const isValidType = allowedTypes.includes(file.type) || 
-                     /\.(mp4|mov|avi|wmv|mkv|webm|m4v|3gp|flv)$/i.test(file.name)
-
-  if (!isValidType) {
-    return { valid: false, error: 'Unsupported file format. Please use MP4, MOV, AVI, WMV, or MKV' }
-  }
-
-  return { valid: true }
-}
-
-// Additional utility functions
-export function formatEnrollmentCount(count: number): string {
-  if (count >= 1000000) {
-    return `${(count / 1000000).toFixed(1)}M`
-  } else if (count >= 1000) {
-    return `${(count / 1000).toFixed(1)}K`
-  }
-  return count.toString()
-}
-
-export function getRelativeTime(date: Date | string): string {
+export function formatTimeAgo(date: Date | string): string {
   const now = new Date()
-  const targetDate = new Date(date)
-  const diffInSeconds = Math.floor((now.getTime() - targetDate.getTime()) / 1000)
+  const past = new Date(date)
+  const diffInSeconds = Math.floor((now.getTime() - past.getTime()) / 1000)
   
-  if (diffInSeconds < 60) return 'Just now'
+  if (diffInSeconds < 60) return 'just now'
   if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`
   if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`
-  if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 86400)}d ago`
-  if (diffInSeconds < 31536000) return `${Math.floor(diffInSeconds / 2592000)}mo ago`
-  return `${Math.floor(diffInSeconds / 31536000)}y ago`
+  if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`
+  
+  return past.toLocaleDateString()
 }
 
-export function getDifficultyColor(level: string): string {
-  switch (level.toUpperCase()) {
-    case 'BEGINNER':
-      return 'text-green-600 bg-green-50 border-green-200'
-    case 'INTERMEDIATE':
-      return 'text-yellow-600 bg-yellow-50 border-yellow-200'
-    case 'ADVANCED':
-      return 'text-red-600 bg-red-50 border-red-200'
-    default:
-      return 'text-gray-600 bg-gray-50 border-gray-200'
+export function getVideoProgressStatus(
+  video: { tests?: any[] },
+  progress?: { completed: boolean; testPassed: boolean }
+): 'locked' | 'available' | 'completed' | 'quiz-required' {
+  if (!progress) return 'available'
+  
+  if (!progress.completed) return 'available'
+  
+  if (!video.tests || video.tests.length === 0) {
+    return progress.completed ? 'completed' : 'available'
+  }
+  
+  if (progress.completed && !progress.testPassed) {
+    return 'quiz-required'
+  }
+  
+  if (progress.completed && progress.testPassed) {
+    return 'completed'
+  }
+  
+  return 'available'
+}
+
+export function validateVideoAccess(
+  allVideos: any[],
+  currentVideoIndex: number,
+  videoProgress: any[]
+): { canWatch: boolean; reason?: string; requiredVideo?: string } {
+  // First video is always accessible
+  if (currentVideoIndex === 0) {
+    return { canWatch: true }
+  }
+
+  // Check all previous videos
+  for (let i = 0; i < currentVideoIndex; i++) {
+    const prevVideo = allVideos[i]
+    const prevProgress = videoProgress.find(p => p.videoId === prevVideo.id)
+
+    // Check if previous video is completed
+    if (!prevProgress?.completed) {
+      return { 
+        canWatch: false, 
+        reason: "Previous video not completed",
+        requiredVideo: prevVideo.title
+      }
+    }
+
+    // If previous video has tests, check if passed
+    if (prevVideo.tests && prevVideo.tests.length > 0 && !prevProgress.testPassed) {
+      return { 
+        canWatch: false, 
+        reason: "Previous video quiz not passed",
+        requiredVideo: prevVideo.title
+      }
+    }
+  }
+
+  return { canWatch: true }
+}
+
+export function getNextAvailableVideo(
+  allVideos: any[],
+  videoProgress: any[]
+): any | null {
+  for (let i = 0; i < allVideos.length; i++) {
+    const video = allVideos[i]
+    const progress = videoProgress.find(p => p.videoId === video.id)
+    
+    const status = getVideoProgressStatus(video, progress)
+    
+    if (status === 'available' || status === 'quiz-required') {
+      return video
+    }
+  }
+  
+  return null
+}
+
+export function getCourseStats(
+  course: any,
+  videoProgress: any[]
+) {
+  // Get all videos from sections and legacy videos
+  const allVideos = [
+    ...(course.sections?.flatMap((section: any) => section.videos) || []),
+    ...(course.videos || [])
+  ]
+  
+  const totalVideos = allVideos.length
+  const totalDuration = allVideos.reduce((acc: number, video: any) => acc + (video.duration || 0), 0)
+  
+  const completedVideos = videoProgress.filter(p => {
+    const video = allVideos.find(v => v.id === p.videoId)
+    if (!video) return false
+    
+    // If video has no tests, just check completion
+    if (!video.tests || video.tests.length === 0) {
+      return p.completed
+    }
+    
+    // If video has tests, check both completion and test passed
+    return p.completed && p.testPassed
+  }).length
+  
+  const progressPercentage = calculateProgress(completedVideos, totalVideos)
+  
+  return {
+    totalVideos,
+    totalDuration,
+    completedVideos,
+    progressPercentage
   }
 }
 
-export function truncateText(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text
-  return text.substring(0, maxLength).trim() + '...'
-}
-
-// File size formatting utility
 export function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 Bytes'
   
@@ -124,92 +164,26 @@ export function formatFileSize(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-// Slug generation utility
-export function generateSlug(text: string): string {
-  return text
+export function getVideoQuality(width?: number, height?: number): string {
+  if (!width || !height) return 'Unknown'
+  
+  if (height >= 2160) return '4K'
+  if (height >= 1440) return '1440p'
+  if (height >= 1080) return '1080p'
+  if (height >= 720) return '720p'
+  if (height >= 480) return '480p'
+  return '360p'
+}
+
+export function isValidVideoFormat(filename: string): boolean {
+  const validExtensions = /\.(mp4|mov|avi|wmv|mkv|webm|m4v|3gp|flv|f4v)$/i
+  return validExtensions.test(filename)
+}
+
+export function sanitizeFilename(filename: string): string {
+  return filename
     .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '') // Remove special characters
-    .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with hyphens
-    .replace(/^-+|-+$/g, '') // Remove leading/trailing hyphens
-}
-
-// Password strength validator
-export function validatePassword(password: string): { valid: boolean; errors: string[] } {
-  const errors: string[] = []
-  
-  if (password.length < 8) {
-    errors.push('Password must be at least 8 characters long')
-  }
-  
-  if (!/[A-Z]/.test(password)) {
-    errors.push('Password must contain at least one uppercase letter')
-  }
-  
-  if (!/[a-z]/.test(password)) {
-    errors.push('Password must contain at least one lowercase letter')
-  }
-  
-  if (!/\d/.test(password)) {
-    errors.push('Password must contain at least one number')
-  }
-  
-  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
-    errors.push('Password must contain at least one special character')
-  }
-  
-  return {
-    valid: errors.length === 0,
-    errors
-  }
-}
-
-// Email validation utility
-export function validateEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  return emailRegex.test(email)
-}
-
-// Course completion percentage with color coding
-export function getProgressColor(progress: number): string {
-  if (progress === 0) return 'bg-gray-200'
-  if (progress < 25) return 'bg-red-400'
-  if (progress < 50) return 'bg-yellow-400'
-  if (progress < 75) return 'bg-blue-400'
-  if (progress < 100) return 'bg-green-400'
-  return 'bg-green-500'
-}
-
-// Generate random color for avatars/placeholders
-export function generateRandomColor(): string {
-  const colors = [
-    'bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500',
-    'bg-purple-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500'
-  ]
-  return colors[Math.floor(Math.random() * colors.length)]
-}
-
-// Format course price
-export function formatPrice(price: number, currency: string = 'USD'): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: currency,
-  }).format(price)
-}
-
-// Deep clone utility
-export function deepClone<T>(obj: T): T {
-  if (obj === null || typeof obj !== 'object') return obj
-  if (obj instanceof Date) return new Date(obj.getTime()) as unknown as T
-  if (obj instanceof Array) return obj.map(item => deepClone(item)) as unknown as T
-  if (typeof obj === 'object') {
-    const clonedObj = {} as { [key: string]: any }
-    for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
-        clonedObj[key] = deepClone(obj[key])
-      }
-    }
-    return clonedObj as T
-  }
-  return obj
+    .replace(/[^a-z0-9.-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
 }
