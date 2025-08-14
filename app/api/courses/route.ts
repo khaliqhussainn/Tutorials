@@ -1,4 +1,4 @@
-// app/api/courses/route.ts - Fixed with better error handling
+// app/api/courses/route.ts - Enhanced with better filtering and category support
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -9,12 +9,22 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const category = searchParams.get('category')
     const level = searchParams.get('level')
+    const featured = searchParams.get('featured')
+    const search = searchParams.get('search')
     
     const courses = await prisma.course.findMany({
       where: {
         isPublished: true,
-        ...(category && { category }),
-        ...(level && { level: level as any }),
+        ...(category && category !== 'All' && { category }),
+        ...(level && level !== 'All' && { level: level as any }),
+        ...(featured === 'true' && { isFeatured: true }),
+        ...(search && {
+          OR: [
+            { title: { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } },
+            { category: { contains: search, mode: 'insensitive' } }
+          ]
+        })
       },
       include: {
         sections: {
@@ -42,9 +52,14 @@ export async function GET(request: Request) {
         _count: {
           select: {
             enrollments: true,
+            favoritedBy: true
           }
         }
-      }
+      },
+      orderBy: [
+        { isFeatured: 'desc' },
+        { createdAt: 'desc' }
+      ]
     })
 
     return NextResponse.json(courses)
@@ -77,6 +92,9 @@ export async function POST(request: Request) {
         category: data.category,
         level: data.level,
         thumbnail: data.thumbnail,
+        price: data.price || 0,
+        isFree: data.isFree !== false,
+        isFeatured: data.isFeatured || false
       }
     })
 

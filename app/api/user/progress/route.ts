@@ -1,4 +1,4 @@
-// app/api/user/progress/route.ts
+// app/api/user/progress/route.ts - Enhanced progress tracking
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
@@ -8,22 +8,14 @@ export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
     
-    if (!session?.user?.email) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    })
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
-    // Get user's course progress
-    const userProgress = await prisma.enrollment.findMany({
+    // Get user's course progress from enrollments
+    const enrollmentsWithProgress = await prisma.enrollment.findMany({
       where: {
-        userId: user.id,
+        userId: session.user.id,
         progress: {
           gt: 0, // Only courses with some progress
           lt: 100, // But not completed courses
@@ -32,8 +24,19 @@ export async function GET(request: NextRequest) {
       include: {
         course: {
           include: {
+            sections: {
+              include: {
+                videos: {
+                  select: {
+                    id: true,
+                    duration: true,
+                  },
+                },
+              },
+            },
             videos: {
               select: {
+                id: true,
                 duration: true,
               },
             },
@@ -51,7 +54,7 @@ export async function GET(request: NextRequest) {
     })
 
     // Transform the data to match the expected format
-    const formattedProgress = userProgress.map((enrollment) => ({
+    const formattedProgress = enrollmentsWithProgress.map((enrollment) => ({
       courseId: enrollment.courseId,
       progress: enrollment.progress,
       lastWatched: enrollment.updatedAt.toISOString(),
@@ -67,3 +70,4 @@ export async function GET(request: NextRequest) {
     )
   }
 }
+
