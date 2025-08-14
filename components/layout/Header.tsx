@@ -494,10 +494,10 @@ export default function Header() {
           {/* Navigation Links - Desktop */}
           <nav className="hidden lg:flex items-center space-x-8">
             <Link
-              href="/online-degrees"
+              href="/courses"
               className="text-gray-700 hover:text-[#001e62] transition-colors font-medium whitespace-nowrap"
             >
-              Online Degrees
+              Courses
             </Link>
             <Link
               href="/careers"

@@ -73,7 +73,7 @@ const Footer = () => {
   return (
     <footer className="bg-white border-t border-gray-200">
       {/* Newsletter Section */}
-      <div className="bg-gradient-to-r from-primary-600 to-blue-700">
+      <div className="bg-primary-600 ">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="grid lg:grid-cols-2 gap-8 items-center">
             <div>
@@ -92,7 +92,7 @@ const Footer = () => {
                   className="w-full px-6 py-4 rounded-xl border-0 focus:ring-2 focus:ring-yellow-400 text-gray-900 placeholder:text-gray-500"
                 />
               </div>
-              <button className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold px-8 py-4 rounded-xl transition-colors flex items-center justify-center whitespace-nowrap">
+              <button className="bg-indigo-900 hover:bg-indigo-600 text-white font-bold px-8 py-4 rounded-xl transition-colors flex items-center justify-center whitespace-nowrap">
                 Subscribe
                 <Mail className="w-5 h-5 ml-2" />
               </button>

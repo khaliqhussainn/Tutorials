@@ -1262,12 +1262,7 @@ export default function CoursesPage() {
             <div className="absolute bottom-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl transform translate-x-32 translate-y-32"></div>
 
             <div className="relative">
-              <div className="inline-flex items-center bg-white/20 backdrop-blur-sm rounded-full px-6 py-3 mb-8">
-                <Award className="w-5 h-5 mr-2" />
-                <span className="font-medium">
-                  Start Your Learning Journey Today
-                </span>
-              </div>
+           
 
               <h2 className="text-4xl md:text-5xl font-bold mb-6 leading-tight">
                 Ready to Transform Your
@@ -1311,21 +1306,6 @@ export default function CoursesPage() {
                     </Button>
                   </Link>
                 )}
-              </div>
-
-              <div className="mt-12 grid grid-cols-3 gap-8 max-w-lg mx-auto">
-                <div className="text-center">
-                  <div className="text-2xl font-bold mb-1">Free</div>
-                  <div className="text-blue-200 text-sm">Forever Access</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold mb-1">24/7</div>
-                  <div className="text-blue-200 text-sm">Learning Support</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold mb-1">∞</div>
-                  <div className="text-blue-200 text-sm">Lifetime Updates</div>
-                </div>
               </div>
             </div>
           </div>
