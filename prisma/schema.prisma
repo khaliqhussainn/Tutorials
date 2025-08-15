@@ -344,6 +344,8 @@ model VideoNote {
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
 
+  // Add this unique constraint to prevent duplicate notes per user per video
+  @@unique([userId, videoId])
   @@map("VideoNote")
 }
 

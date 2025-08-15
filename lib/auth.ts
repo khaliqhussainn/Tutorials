@@ -69,12 +69,17 @@ export const authOptions: NextAuthOptions = {
             return null
           }
 
+          // Map Prisma role to NextAuth role ("USER" or "ADMIN")
+          let mappedRole: 'USER' | 'ADMIN' = 'USER';
+          if (user.role === 'ADMIN') mappedRole = 'ADMIN';
+          // You can add more mapping logic if needed
+
           // Return user without password
           return {
             id: user.id,
             email: user.email!,
             name: user.name,
-            role: user.role,
+            role: mappedRole,
           }
         } catch (error) {
           console.error("Auth error:", error)

@@ -4,7 +4,7 @@
 import { useState, useRef } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Textarea } from '@/components/ui/Textarea'
+// import { Textarea } from '@/components/ui/Textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { 
   Upload, 
@@ -345,13 +345,13 @@ export default function VideoUploadForm({
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Description
               </label>
-              <Textarea
+              {/* <Textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Enter video description..."
                 rows={3}
                 className="w-full"
-              />
+              /> */}
             </div>
 
             <div>
