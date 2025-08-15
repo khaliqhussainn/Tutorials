@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Disable static optimization for pages that use session/dynamic content
+  // Experimental features
   experimental: {
     serverComponentsExternalPackages: ['@prisma/client', 'bcryptjs'],
     esmExternals: 'loose'
@@ -10,7 +10,7 @@ const nextConfig = {
   images: {
     domains: [
       'lh3.googleusercontent.com',
-      'avatars.githubusercontent.com',
+      'avatars.githubusercontent.com', 
       'images.unsplash.com',
       'via.placeholder.com'
     ],
@@ -22,7 +22,7 @@ const nextConfig = {
     ],
   },
 
-  // Webpack configuration to handle chunking issues
+  // Webpack configuration
   webpack: (config, { dev, isServer }) => {
     // Handle external packages
     config.externals.push({
@@ -30,38 +30,35 @@ const nextConfig = {
       'bufferutil': 'commonjs bufferutil',
     })
 
-    // Optimize chunks for production
-    if (!dev && !isServer) {
-      config.optimization = {
-        ...config.optimization,
-        splitChunks: {
-          chunks: 'all',
-          cacheGroups: {
-            vendor: {
-              test: /[\\/]node_modules[\\/]/,
-              name: 'vendors',
-              chunks: 'all',
-            },
-          },
-        },
+    // Fix for client-side builds
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+        crypto: false,
       }
     }
 
     return config
   },
 
-  // Force dynamic for pages that use session
-  output: undefined, // Remove standalone for now to fix build issues
-  
-  // Disable static generation for dynamic pages
-  trailingSlash: false,
-  
   // Build configuration
   productionBrowserSourceMaps: false,
   optimizeFonts: true,
+  trailingSlash: false,
   
-  // Disable static optimization for problematic routes
+  // Force dynamic rendering for all pages (fixes static generation issues)
+  output: 'standalone',
+  
+  // Disable static optimization
   generateStaticParams: false,
+  
+  // Environment variables
+  env: {
+    CUSTOM_KEY: 'my-value',
+  },
 }
 
 module.exports = nextConfig

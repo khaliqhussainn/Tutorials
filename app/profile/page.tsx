@@ -32,6 +32,9 @@ import { formatDuration } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+
 interface UserStats {
   totalEnrollments: number;
   completedCourses: number;
@@ -59,7 +62,7 @@ interface RecentActivity {
 }
 
 export default function ProfilePage() {
-  const { data: session, update } = useSession();
+  const { data: session, update, status } = useSession();
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -75,10 +78,15 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (session?.user?.email) {
+    if (status === 'unauthenticated') {
+      router.push('/auth/signin');
+      return;
+    }
+
+    if (status === 'authenticated' && session?.user?.email) {
       fetchAllData();
     }
-  }, [session]);
+  }, [session, status, router]);
 
   const fetchAllData = async () => {
     try {
@@ -99,25 +107,42 @@ export default function ProfilePage() {
   };
 
   const fetchUserProfile = async () => {
-    const response = await fetch("/api/user/profile");
-    if (!response.ok) {
-      throw new Error("Failed to fetch profile");
+    try {
+      const response = await fetch("/api/user/profile");
+      if (!response.ok) {
+        throw new Error("Failed to fetch profile");
+      }
+      const data = await response.json();
+      setUserProfile(data);
+      setFormData({
+        name: data.name || "",
+        email: data.email || "",
+      });
+    } catch (error) {
+      console.error("Error fetching profile:", error);
+      throw error;
     }
-    const data = await response.json();
-    setUserProfile(data);
-    setFormData({
-      name: data.name || "",
-      email: data.email || "",
-    });
   };
 
   const fetchUserStats = async () => {
-    const response = await fetch("/api/user/course-stats");
-    if (!response.ok) {
-      throw new Error("Failed to fetch stats");
+    try {
+      const response = await fetch("/api/user/course-stats");
+      if (!response.ok) {
+        throw new Error("Failed to fetch stats");
+      }
+      const data = await response.json();
+      setUserStats(data);
+    } catch (error) {
+      console.error("Error fetching stats:", error);
+      // Don't throw - stats are not critical
+      setUserStats({
+        totalEnrollments: 0,
+        completedCourses: 0,
+        inProgressCourses: 0,
+        totalWatchTime: 0,
+        favoriteCount: 0,
+      });
     }
-    const data = await response.json();
-    setUserStats(data);
   };
 
   const fetchRecentActivity = async () => {
@@ -349,7 +374,8 @@ export default function ProfilePage() {
     return date.toLocaleDateString();
   };
 
-  if (loading) {
+  // Show loading spinner while session is loading or data is fetching
+  if (status === 'loading' || loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
         <div className="text-center">
@@ -360,9 +386,9 @@ export default function ProfilePage() {
     );
   }
 
-  if (!session) {
-    router.push("/auth/signin");
-    return null;
+  // Redirect if not authenticated
+  if (status === 'unauthenticated') {
+    return null; // Will redirect in useEffect
   }
 
   if (error) {

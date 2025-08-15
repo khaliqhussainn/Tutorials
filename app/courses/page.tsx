@@ -48,6 +48,10 @@ import {
 } from "lucide-react";
 import { formatDuration, calculateProgress } from "@/lib/utils";
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 interface Course {
   id: string;
   title: string;
@@ -106,7 +110,7 @@ const categories = [
 const levels = ["All", "BEGINNER", "INTERMEDIATE", "ADVANCED"];
 
 export default function CoursesPage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -132,18 +136,18 @@ export default function CoursesPage() {
   const [favoriteLoading, setFavoriteLoading] = useState<string | null>(null);
 
   useEffect(() => {
-    const searchParam = searchParams.get("search");
-    const categoryParam = searchParams.get("category");
+    const searchParam = searchParams?.get("search");
+    const categoryParam = searchParams?.get("category");
 
     if (searchParam) setSearchTerm(searchParam);
     if (categoryParam) setSelectedCategory(categoryParam);
 
     fetchCourses();
 
-    if (session) {
+    if (status === 'authenticated') {
       fetchUserData();
     }
-  }, [session, searchParams]);
+  }, [status, searchParams]);
 
   useEffect(() => {
     filterCourses();
@@ -155,28 +159,32 @@ export default function CoursesPage() {
       const response = await fetch("/api/courses");
       if (response.ok) {
         const data = await response.json();
-        setCourses(data);
+        setCourses(data || []);
 
         // Get featured courses
-        const featured = data
+        const featured = (data || [])
           .filter((course: Course) => course.isFeatured)
           .slice(0, 8);
         setFeaturedCourses(featured);
       }
     } catch (error) {
       console.error("Error fetching courses:", error);
+      setCourses([]);
+      setFeaturedCourses([]);
     } finally {
       setLoading(false);
     }
   };
 
   const fetchUserData = async () => {
+    if (status !== 'authenticated') return;
+
     try {
       // Fetch enrollments
       const enrollmentsResponse = await fetch("/api/user/enrollments");
       if (enrollmentsResponse.ok) {
         const enrollmentsData = await enrollmentsResponse.json();
-        setEnrolledCourses(enrollmentsData);
+        setEnrolledCourses(enrollmentsData || []);
       }
 
       // Fetch progress for continue learning
@@ -184,7 +192,7 @@ export default function CoursesPage() {
       if (progressResponse.ok) {
         const progressData = await progressResponse.json();
         setContinueCourses(
-          progressData
+          (progressData || [])
             .filter(
               (item: UserProgress) => item.progress > 0 && item.progress < 100
             )
@@ -196,15 +204,18 @@ export default function CoursesPage() {
       const favoritesResponse = await fetch("/api/user/favorites");
       if (favoritesResponse.ok) {
         const favoritesData = await favoritesResponse.json();
-        setFavoriteCourses(favoritesData);
+        setFavoriteCourses(favoritesData || []);
       }
     } catch (error) {
       console.error("Error fetching user data:", error);
+      setEnrolledCourses([]);
+      setContinueCourses([]);
+      setFavoriteCourses([]);
     }
   };
 
   const filterCourses = () => {
-    let filtered = courses;
+    let filtered = [...courses];
 
     if (searchTerm) {
       filtered = filtered.filter(
@@ -228,11 +239,11 @@ export default function CoursesPage() {
     filtered = [...filtered].sort((a, b) => {
       switch (sortBy) {
         case "popular":
-          return b._count.enrollments - a._count.enrollments;
+          return (b._count?.enrollments || 0) - (a._count?.enrollments || 0);
         case "trending":
-          return b._count.enrollments - a._count.enrollments;
+          return (b._count?.enrollments || 0) - (a._count?.enrollments || 0);
         case "rating":
-          return b.rating - a.rating;
+          return (b.rating || 0) - (a.rating || 0);
         case "newest":
         default:
           return (
@@ -256,7 +267,7 @@ export default function CoursesPage() {
 
       if (categoryCourses.length > 0) {
         organized[category.name] = categoryCourses.sort(
-          (a, b) => b._count.enrollments - a._count.enrollments
+          (a, b) => (b._count?.enrollments || 0) - (a._count?.enrollments || 0)
         );
       }
     });
@@ -270,7 +281,7 @@ export default function CoursesPage() {
       event.stopPropagation();
     }
 
-    if (!session) {
+    if (status !== 'authenticated') {
       router.push("/auth/signin");
       return;
     }
@@ -317,7 +328,7 @@ export default function CoursesPage() {
       event.stopPropagation();
     }
 
-    if (!session) {
+    if (status !== 'authenticated') {
       router.push("/auth/signin");
       return;
     }
@@ -475,7 +486,7 @@ export default function CoursesPage() {
 
             {/* Favorite & Play buttons */}
             <div className="absolute bottom-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-              {session && (
+              {status === 'authenticated' && (
                 <button
                   onClick={(e) => toggleFavorite(course.id, e)}
                   disabled={isLoadingFavorite}
@@ -520,7 +531,7 @@ export default function CoursesPage() {
               </span>
               <div className="flex items-center text-xs text-gray-500">
                 <Users className="w-3 h-3 mr-1" />
-                {course._count.enrollments}
+                {course._count?.enrollments || 0}
               </div>
             </div>
 
@@ -549,7 +560,7 @@ export default function CoursesPage() {
               </div>
               <div className="flex items-center">
                 <Star className="w-3 h-3 mr-1 fill-yellow-400 text-yellow-400" />
-                <span>{course.rating}</span>
+                <span>{course.rating || 4.8}</span>
               </div>
             </div>
 
@@ -768,7 +779,7 @@ export default function CoursesPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* User Dashboard Sections - DYNAMIC */}
-        {session && (
+        {status === 'authenticated' && (
           <>
             {/* Continue Learning Section */}
             {continueCourses.length > 0 && (
@@ -1126,7 +1137,7 @@ export default function CoursesPage() {
                           </div>
                           <div className="text-center">
                             <div className="text-xl md:text-2xl font-bold text-[#001e62]">
-                              {featuredCourses[0]._count.enrollments}+
+                              {featuredCourses[0]._count?.enrollments || 0}+
                             </div>
                             <div className="text-sm text-gray-600">
                               Students
@@ -1262,8 +1273,6 @@ export default function CoursesPage() {
             <div className="absolute bottom-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl transform translate-x-32 translate-y-32"></div>
 
             <div className="relative">
-           
-
               <h2 className="text-4xl md:text-5xl font-bold mb-6 leading-tight">
                 Ready to Transform Your
                 <span className="block text-blue-300">Career?</span>
@@ -1276,7 +1285,7 @@ export default function CoursesPage() {
               </p>
 
               <div className="flex flex-col sm:flex-row gap-6 justify-center max-w-md mx-auto">
-                {!session ? (
+                {status !== 'authenticated' ? (
                   <>
                     <Link href="/auth/signup" className="flex-1">
                       <Button
