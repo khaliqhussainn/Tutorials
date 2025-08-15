@@ -1,4 +1,4 @@
-// schema.prisma - ENHANCED VERSION with favorites and progress tracking
+// schema.prisma - FIXED VERSION with complete relations
 generator client {
   provider = "prisma-client-js"
 }
@@ -19,6 +19,13 @@ model User {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  // Profile fields
+  bio             String?   @db.Text
+  location        String?
+  website         String?
+  timezone        String?   @default("UTC")
+  language        String?   @default("en")
+
   // Relations
   accounts        Account[]
   sessions        Session[]
@@ -27,8 +34,72 @@ model User {
   videoNotes      VideoNote[]
   quizAttempts    QuizAttempt[]
   favoriteCourses FavoriteCourse[]
+  courseReviews   CourseReview[]     // ADDED: Missing relation
+  preferences     UserPreferences?
+  notifications   Notification[]
+  activities      UserActivity[]
+  streaks         DailyStreak[]
 
   @@map("User")
+}
+
+model UserPreferences {
+  id                    String  @id @default(cuid())
+  userId                String  @unique
+  emailNotifications    Boolean @default(true)
+  pushNotifications     Boolean @default(false)
+  weeklyDigest          Boolean @default(true)
+  courseRecommendations Boolean @default(true)
+  theme                 String  @default("system") // light, dark, system
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("UserPreferences")
+}
+
+model Notification {
+  id        String            @id @default(cuid())
+  userId    String
+  title     String
+  message   String            @db.Text
+  type      NotificationType  @default(INFO)
+  read      Boolean           @default(false)
+  actionUrl String?
+  metadata  Json?
+  createdAt DateTime          @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("Notification")
+}
+
+model UserActivity {
+  id          String       @id @default(cuid())
+  userId      String
+  type        ActivityType
+  title       String
+  description String?      @db.Text
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("UserActivity")
+}
+
+model DailyStreak {
+  id       String   @id @default(cuid())
+  userId   String
+  date     DateTime
+  count    Int      @default(1)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("DailyStreak")
 }
 
 model Account {
@@ -73,12 +144,30 @@ model VerificationToken {
 enum Role {
   USER
   ADMIN
+  INSTRUCTOR
 }
 
 enum Level {
   BEGINNER
   INTERMEDIATE
   ADVANCED
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+enum ActivityType {
+  ENROLLMENT
+  VIDEO_COMPLETED
+  COURSE_COMPLETED
+  QUIZ_PASSED
+  COURSE_FAVORITED
+  PROFILE_UPDATED
+  STREAK_MILESTONE
 }
 
 model Course {
@@ -88,11 +177,17 @@ model Course {
   thumbnail   String?
   category    String
   level       Level
-  price       Float    @default(0) // Free courses have price 0
+  price       Float    @default(0)
   isFree      Boolean  @default(true)
   isPublished Boolean  @default(false)
   isFeatured  Boolean  @default(false)
   rating      Float    @default(4.8)
+  
+  // Enhanced course fields
+  duration    Int?     // Total course duration in seconds
+  prerequisites String[] // Array of prerequisite skills
+  tags        String[] // Course tags for better categorization
+  
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -101,8 +196,25 @@ model Course {
   videos         Video[]
   enrollments    Enrollment[]
   favoritedBy    FavoriteCourse[]
+  reviews        CourseReview[]
 
   @@map("Course")
+}
+
+model CourseReview {
+  id       String @id @default(cuid())
+  userId   String
+  courseId String
+  rating   Int    // 1-5 stars
+  comment  String? @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@map("CourseReview")
 }
 
 model FavoriteCourse {
@@ -127,7 +239,6 @@ model CourseSection {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Relations
   course Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
   videos Video[]
 
@@ -143,12 +254,17 @@ model Video {
   duration    Int?     // in seconds
   order       Int
   courseId    String
-  sectionId   String?  // nullable for legacy videos
-  aiPrompt    String?  // for AI test generation
+  sectionId   String?
+  
+  // Enhanced video fields
+  thumbnail   String?
+  transcript  String?  @db.Text
+  downloadable Boolean @default(false)
+  
+  aiPrompt    String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Relations
   course        Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
   section       CourseSection?  @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   tests         Test[]
@@ -164,14 +280,14 @@ model Test {
   id          String   @id @default(cuid())
   videoId     String
   question    String
-  options     String[] // Array of answer options
-  correct     Int      // Index of correct answer (0-based)
-  explanation String?  // Optional explanation for the answer
-  difficulty  String   @default("medium") // easy, medium, hard
+  options     String[]
+  correct     Int
+  explanation String?
+  difficulty  String   @default("medium")
+  points      Int      @default(10)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Relations
   video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
 
   @@map("Test")
@@ -184,8 +300,8 @@ model Enrollment {
   progress   Float    @default(0) // 0-100 percentage
   enrolledAt DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  completedAt DateTime?
 
-  // Relations
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
@@ -200,6 +316,7 @@ model VideoProgress {
   completed     Boolean   @default(false)
   completedAt   DateTime?
   watchTime     Int       @default(0) // in seconds
+  lastPosition  Int       @default(0) // Last watched position in seconds
   testPassed    Boolean   @default(false)
   testPassedAt  DateTime?
   testScore     Int       @default(0) // percentage 0-100
@@ -207,7 +324,6 @@ model VideoProgress {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  // Relations
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
 
@@ -220,14 +336,14 @@ model VideoNote {
   userId    String
   videoId   String
   content   String   @db.Text
+  timestamp Int?     // Position in video where note was taken
+  isPrivate Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, videoId])
   @@map("VideoNote")
 }
 
@@ -241,7 +357,6 @@ model QuizAttempt {
   timeSpent   Int      @default(0) // in seconds
   completedAt DateTime @default(now())
 
-  // Relations
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
 

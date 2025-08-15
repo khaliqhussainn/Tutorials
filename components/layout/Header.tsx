@@ -313,7 +313,9 @@ export default function Header() {
     setIsExploreOpen(false);
   };
 
-  const showSearchBar = pathname !== "/";
+  // Show search bar on all pages except auth pages and admin pages
+  const hideSearchOnPages = ['/auth/signin', '/auth/signup', '/admin'];
+  const showSearchBar = !hideSearchOnPages.some(page => pathname.startsWith(page));
 
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
@@ -404,7 +406,7 @@ export default function Header() {
             </div>
           </div>
 
-          {/* Search Bar - Desktop */}
+          {/* Search Bar - Desktop - Now shows on all pages except specified ones */}
           {showSearchBar && (
             <div className="hidden md:flex flex-1 max-w-2xl mx-8">
               <div ref={searchRef} className="w-full relative">
@@ -520,6 +522,16 @@ export default function Header() {
                     My Learning
                   </Button>
                 </Link>
+                <Link href="/favorites">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-gray-700 hover:text-[#001e62] font-medium flex items-center"
+                  >
+                    <Heart className="w-4 h-4 mr-1" />
+                    Favorites
+                  </Button>
+                </Link>
                 <button className="relative p-2 text-gray-600 hover:text-[#001e62] transition-colors">
                   <Bell className="w-5 h-5" />
                   <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full text-xs"></span>
@@ -529,13 +541,21 @@ export default function Header() {
                     onClick={() => setIsProfileOpen(!isProfileOpen)}
                     className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 transition-colors"
                   >
-                    <div className="w-8 h-8 bg-gradient-to-br from-[#001e62] to-blue-700 rounded-full flex items-center justify-center">
-                      <span className="text-sm font-semibold text-white">
-                        {session.user?.name?.charAt(0) ||
-                          session.user?.email?.charAt(0) ||
-                          "U"}
-                      </span>
-                    </div>
+                    {session.user?.image ? (
+                      <img
+                        src={session.user.image}
+                        alt="Profile"
+                        className="w-8 h-8 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 bg-gradient-to-br from-[#001e62] to-blue-700 rounded-full flex items-center justify-center">
+                        <span className="text-sm font-semibold text-white">
+                          {session.user?.name?.charAt(0) ||
+                            session.user?.email?.charAt(0) ||
+                            "U"}
+                        </span>
+                      </div>
+                    )}
                     <ChevronDown className="w-4 h-4 text-gray-500" />
                   </button>
                   {isProfileOpen && (
@@ -564,6 +584,14 @@ export default function Header() {
                         >
                           <BookOpen className="w-4 h-4 mr-3" />
                           My Learning
+                        </Link>
+                        <Link
+                          href="/favorites"
+                          className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                          onClick={() => setIsProfileOpen(false)}
+                        >
+                          <Heart className="w-4 h-4 mr-3" />
+                          My Favorites
                         </Link>
                         {session.user?.role === "ADMIN" && (
                           <Link
@@ -636,7 +664,7 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Mobile Search Bar */}
+        {/* Mobile Search Bar - Now shows on all pages except specified ones */}
         {showSearchBar && (
           <div className="md:hidden py-3 border-t border-gray-100">
             <div ref={searchRef} className="relative">
@@ -766,11 +794,19 @@ export default function Header() {
                 <>
                   <hr className="border-gray-200" />
                   <div className="flex items-center py-2">
-                    <div className="w-8 h-8 bg-gradient-to-br from-[#001e62] to-blue-700 rounded-full flex items-center justify-center mr-3">
-                      <span className="text-sm font-semibold text-white">
-                        {session.user?.name?.charAt(0) || "U"}
-                      </span>
-                    </div>
+                    {session.user?.image ? (
+                      <img
+                        src={session.user.image}
+                        alt="Profile"
+                        className="w-8 h-8 rounded-full object-cover mr-3"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 bg-gradient-to-br from-[#001e62] to-blue-700 rounded-full flex items-center justify-center mr-3">
+                        <span className="text-sm font-semibold text-white">
+                          {session.user?.name?.charAt(0) || "U"}
+                        </span>
+                      </div>
+                    )}
                     <div>
                       <p className="text-sm font-semibold text-gray-900">
                         {session.user?.name || "User"}
@@ -798,6 +834,16 @@ export default function Header() {
                     >
                       <BookOpen className="w-4 h-4 mr-3" />
                       My Learning
+                    </Button>
+                  </Link>
+                  <Link href="/favorites" onClick={() => setIsMenuOpen(false)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start hover:bg-[#001e62]/5"
+                    >
+                      <Heart className="w-4 h-4 mr-3" />
+                      My Favorites
                     </Button>
                   </Link>
                   {session.user?.role === "ADMIN" && (

@@ -1,67 +1,79 @@
-// app/api/user/progress/route.ts - Enhanced progress tracking
-import { NextRequest, NextResponse } from 'next/server'
+// app/api/user/progress/route.ts
+import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const session = await getServerSession(authOptions)
     
-    if (!session?.user?.id) {
+    if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user's course progress from enrollments
-    const enrollmentsWithProgress = await prisma.enrollment.findMany({
-      where: {
-        userId: session.user.id,
-        progress: {
-          gt: 0, // Only courses with some progress
-          lt: 100, // But not completed courses
-        },
-      },
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true }
+    })
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    const enrollments = await prisma.enrollment.findMany({
+      where: { userId: user.id },
       include: {
         course: {
           include: {
-            sections: {
-              include: {
-                videos: {
-                  select: {
-                    id: true,
-                    duration: true,
-                  },
-                },
-              },
-            },
             videos: {
-              select: {
-                id: true,
-                duration: true,
-              },
-            },
-            _count: {
-              select: {
-                enrollments: true,
-              },
-            },
-          },
-        },
+              select: { id: true, title: true, duration: true }
+            }
+          }
+        }
       },
-      orderBy: {
-        updatedAt: 'desc', // Most recently updated first
-      },
+      orderBy: { updatedAt: 'desc' }
     })
 
-    // Transform the data to match the expected format
-    const formattedProgress = enrollmentsWithProgress.map((enrollment) => ({
-      courseId: enrollment.courseId,
-      progress: enrollment.progress,
-      lastWatched: enrollment.updatedAt.toISOString(),
-      course: enrollment.course,
-    }))
+    // Calculate progress for each enrollment
+    const progressData = await Promise.all(
+      enrollments.map(async (enrollment) => {
+        const totalVideos = enrollment.course.videos.length
+        
+        if (totalVideos === 0) {
+          return {
+            courseId: enrollment.courseId,
+            progress: 0,
+            lastWatched: enrollment.updatedAt.toISOString(),
+            course: enrollment.course
+          }
+        }
 
-    return NextResponse.json(formattedProgress)
+        const completedVideos = await prisma.videoProgress.count({
+          where: {
+            userId: user.id,
+            videoId: { in: enrollment.course.videos.map(v => v.id) },
+            completed: true
+          }
+        })
+
+        const progress = Math.round((completedVideos / totalVideos) * 100)
+
+        return {
+          courseId: enrollment.courseId,
+          progress,
+          lastWatched: enrollment.updatedAt.toISOString(),
+          course: enrollment.course
+        }
+      })
+    )
+
+    // Filter out completed courses for progress view
+    const inProgressCourses = progressData.filter(item => 
+      item.progress > 0 && item.progress < 100
+    )
+
+    return NextResponse.json(inProgressCourses)
   } catch (error) {
     console.error('Error fetching user progress:', error)
     return NextResponse.json(
@@ -70,4 +82,3 @@ export async function GET(request: NextRequest) {
     )
   }
 }
-

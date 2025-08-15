@@ -1,65 +1,313 @@
-// lib/utils.ts - UPDATED with proper duration formatting
-import { type ClassValue, clsx } from "clsx"
+// lib/utils.ts - Merged and enhanced utilities
+import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+// --- Duration Formatting ---
+// Keep your existing formatDuration for backward compatibility
 export function formatDuration(seconds: number | null | undefined): string {
   if (!seconds || seconds === 0) {
     return "0:00"
   }
-  
+
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
   const remainingSeconds = Math.floor(seconds % 60)
-  
+
   if (hours > 0) {
     return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
   }
-  
+
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }
 
+// New: Detailed duration formatting
+export function formatDetailedDuration(seconds: number): string {
+  if (!seconds || seconds < 0) return '0 minutes'
+
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const remainingSeconds = seconds % 60
+
+  const parts = []
+  if (hours > 0) parts.push(`${hours} hour${hours > 1 ? 's' : ''}`)
+  if (minutes > 0) parts.push(`${minutes} minute${minutes > 1 ? 's' : ''}`)
+  if (remainingSeconds > 0 && hours === 0) parts.push(`${remainingSeconds} second${remainingSeconds > 1 ? 's' : ''}`)
+
+  return parts.join(', ') || '0 minutes'
+}
+
+// --- Progress Calculations ---
 export function calculateProgress(completed: number, total: number): number {
   if (total === 0) return 0
   return Math.round((completed / total) * 100)
 }
 
-export function formatTimeAgo(date: Date | string): string {
-  const now = new Date()
-  const past = new Date(date)
-  const diffInSeconds = Math.floor((now.getTime() - past.getTime()) / 1000)
-  
-  if (diffInSeconds < 60) return 'just now'
-  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`
-  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`
-  if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`
-  
-  return past.toLocaleDateString()
+// New: Progress color utilities
+export function getProgressColor(progress: number): string {
+  if (progress === 0) return 'text-gray-500'
+  if (progress < 25) return 'text-red-500'
+  if (progress < 50) return 'text-orange-500'
+  if (progress < 75) return 'text-yellow-500'
+  if (progress < 100) return 'text-blue-500'
+  return 'text-green-500'
 }
 
+export function getProgressBgColor(progress: number): string {
+  if (progress === 0) return 'bg-gray-200'
+  if (progress < 25) return 'bg-red-200'
+  if (progress < 50) return 'bg-orange-200'
+  if (progress < 75) return 'bg-yellow-200'
+  if (progress < 100) return 'bg-blue-200'
+  return 'bg-green-200'
+}
+
+// --- Time Formatting ---
+export function formatTimeAgo(dateString: string): string {
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+  if (diffInSeconds < 60) return 'Just now'
+
+  const diffInMinutes = Math.floor(diffInSeconds / 60)
+  if (diffInMinutes < 60) return `${diffInMinutes}m ago`
+
+  const diffInHours = Math.floor(diffInMinutes / 60)
+  if (diffInHours < 24) return `${diffInHours}h ago`
+
+  const diffInDays = Math.floor(diffInHours / 24)
+  if (diffInDays < 7) return `${diffInDays}d ago`
+
+  const diffInWeeks = Math.floor(diffInDays / 7)
+  if (diffInWeeks < 4) return `${diffInWeeks}w ago`
+
+  const diffInMonths = Math.floor(diffInDays / 30)
+  if (diffInMonths < 12) return `${diffInMonths}mo ago`
+
+  const diffInYears = Math.floor(diffInDays / 365)
+  return `${diffInYears}y ago`
+}
+
+// New: Date formatting with options
+export function formatDate(dateString: string, options?: Intl.DateTimeFormatOptions): string {
+  const date = new Date(dateString)
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    ...options
+  })
+}
+
+// --- String Utilities ---
+export function getInitials(name: string): string {
+  if (!name) return 'U'
+  return name
+    .split(' ')
+    .map(word => word.charAt(0))
+    .join('')
+    .substring(0, 2)
+    .toUpperCase()
+}
+
+// New: Truncate text
+export function truncateText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text
+  return text.substring(0, maxLength).trim() + '...'
+}
+
+// New: Slugify text
+export function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w ]+/g, '')
+    .replace(/ +/g, '-')
+}
+
+// --- Validation Utilities ---
+export function validateEmail(email: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  return emailRegex.test(email.trim())
+}
+
+export function validateName(name: string): boolean {
+  const trimmed = name.trim()
+  return trimmed.length >= 2 && trimmed.length <= 100
+}
+
+// New: Password validation
+export function validatePassword(password: string): {
+  isValid: boolean
+  errors: string[]
+} {
+  const errors: string[] = []
+
+  if (password.length < 8) {
+    errors.push('Password must be at least 8 characters long')
+  }
+
+  if (!/[A-Z]/.test(password)) {
+    errors.push('Password must contain at least one uppercase letter')
+  }
+
+  if (!/[a-z]/.test(password)) {
+    errors.push('Password must contain at least one lowercase letter')
+  }
+
+  if (!/\d/.test(password)) {
+    errors.push('Password must contain at least one number')
+  }
+
+  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+    errors.push('Password must contain at least one special character')
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  }
+}
+
+// New: File size validation
+export function validateFileSize(file: File, maxSizeMB: number): boolean {
+  return file.size <= maxSizeMB * 1024 * 1024
+}
+
+// New: Image file validation
+export function validateImageFile(file: File): {
+  isValid: boolean
+  error?: string
+} {
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+
+  if (!allowedTypes.includes(file.type)) {
+    return {
+      isValid: false,
+      error: 'Only JPEG, PNG, GIF, and WebP images are allowed'
+    }
+  }
+
+  if (!validateFileSize(file, 5)) {
+    return {
+      isValid: false,
+      error: 'Image size must be less than 5MB'
+    }
+  }
+
+  return { isValid: true }
+}
+
+// --- Number Formatting ---
+export function formatNumber(num: number): string {
+  if (num >= 1000000) {
+    return (num / 1000000).toFixed(1) + 'M'
+  }
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1) + 'K'
+  }
+  return num.toString()
+}
+
+// New: Currency formatting
+export function formatCurrency(amount: number, currency = 'USD'): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+  }).format(amount)
+}
+
+// New: Percentage formatting
+export function formatPercentage(value: number, decimals = 0): string {
+  return `${value.toFixed(decimals)}%`
+}
+
+// --- Learning Analytics ---
+// New: Completion rate (alias for calculateProgress)
+export function calculateCompletionRate(completed: number, total: number): number {
+  if (total === 0) return 0
+  return Math.round((completed / total) * 100)
+}
+
+// New: Learning streak calculation
+export function getLearningStreak(activities: Array<{ date: string }>): number {
+  if (activities.length === 0) return 0
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  let streak = 0
+  let currentDate = new Date(today)
+
+  const activityDates = activities
+    .map(activity => {
+      const date = new Date(activity.date)
+      date.setHours(0, 0, 0, 0)
+      return date.getTime()
+    })
+    .sort((a, b) => b - a) // Sort descending
+
+  const uniqueDates = [...new Set(activityDates)]
+
+  for (const dateTime of uniqueDates) {
+    const activityDate = new Date(dateTime)
+    const dayDiff = Math.floor((currentDate.getTime() - activityDate.getTime()) / (1000 * 60 * 60 * 24))
+
+    if (dayDiff === streak || (streak === 0 && dayDiff <= 1)) {
+      streak++
+      currentDate = new Date(activityDate)
+    } else {
+      break
+    }
+  }
+
+  return streak
+}
+
+// New: Achievement badge
+export function getAchievementBadge(completedCourses: number): {
+  name: string
+  color: string
+  icon: string
+} {
+  if (completedCourses >= 20) {
+    return { name: 'Master Learner', color: 'text-purple-600', icon: '👑' }
+  } else if (completedCourses >= 10) {
+    return { name: 'Course Master', color: 'text-yellow-600', icon: '🏆' }
+  } else if (completedCourses >= 5) {
+    return { name: 'Learning Champion', color: 'text-blue-600', icon: '🎯' }
+  } else if (completedCourses >= 1) {
+    return { name: 'Quick Learner', color: 'text-green-600', icon: '⚡' }
+  } else {
+    return { name: 'Getting Started', color: 'text-gray-600', icon: '🌱' }
+  }
+}
+
+// --- Video Utilities ---
+// Keep your existing video utilities
 export function getVideoProgressStatus(
   video: { tests?: any[] },
   progress?: { completed: boolean; testPassed: boolean }
 ): 'locked' | 'available' | 'completed' | 'quiz-required' {
   if (!progress) return 'available'
-  
+
   if (!progress.completed) return 'available'
-  
+
   if (!video.tests || video.tests.length === 0) {
     return progress.completed ? 'completed' : 'available'
   }
-  
+
   if (progress.completed && !progress.testPassed) {
     return 'quiz-required'
   }
-  
+
   if (progress.completed && progress.testPassed) {
     return 'completed'
   }
-  
+
   return 'available'
 }
 
@@ -68,35 +316,30 @@ export function validateVideoAccess(
   currentVideoIndex: number,
   videoProgress: any[]
 ): { canWatch: boolean; reason?: string; requiredVideo?: string } {
-  // First video is always accessible
   if (currentVideoIndex === 0) {
     return { canWatch: true }
   }
 
-  // Check all previous videos
   for (let i = 0; i < currentVideoIndex; i++) {
     const prevVideo = allVideos[i]
     const prevProgress = videoProgress.find(p => p.videoId === prevVideo.id)
 
-    // Check if previous video is completed
     if (!prevProgress?.completed) {
-      return { 
-        canWatch: false, 
+      return {
+        canWatch: false,
         reason: "Previous video not completed",
         requiredVideo: prevVideo.title
       }
     }
 
-    // If previous video has tests, check if passed
     if (prevVideo.tests && prevVideo.tests.length > 0 && !prevProgress.testPassed) {
-      return { 
-        canWatch: false, 
+      return {
+        canWatch: false,
         reason: "Previous video quiz not passed",
         requiredVideo: prevVideo.title
       }
     }
   }
-
   return { canWatch: true }
 }
 
@@ -107,14 +350,14 @@ export function getNextAvailableVideo(
   for (let i = 0; i < allVideos.length; i++) {
     const video = allVideos[i]
     const progress = videoProgress.find(p => p.videoId === video.id)
-    
+
     const status = getVideoProgressStatus(video, progress)
-    
+
     if (status === 'available' || status === 'quiz-required') {
       return video
     }
   }
-  
+
   return null
 }
 
@@ -122,30 +365,27 @@ export function getCourseStats(
   course: any,
   videoProgress: any[]
 ) {
-  // Get all videos from sections and legacy videos
   const allVideos = [
     ...(course.sections?.flatMap((section: any) => section.videos) || []),
     ...(course.videos || [])
   ]
-  
+
   const totalVideos = allVideos.length
   const totalDuration = allVideos.reduce((acc: number, video: any) => acc + (video.duration || 0), 0)
-  
+
   const completedVideos = videoProgress.filter(p => {
     const video = allVideos.find(v => v.id === p.videoId)
     if (!video) return false
-    
-    // If video has no tests, just check completion
+
     if (!video.tests || video.tests.length === 0) {
       return p.completed
     }
-    
-    // If video has tests, check both completion and test passed
+
     return p.completed && p.testPassed
   }).length
-  
+
   const progressPercentage = calculateProgress(completedVideos, totalVideos)
-  
+
   return {
     totalVideos,
     totalDuration,
@@ -156,17 +396,17 @@ export function getCourseStats(
 
 export function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 Bytes'
-  
+
   const k = 1024
   const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
-  
+
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 export function getVideoQuality(width?: number, height?: number): string {
   if (!width || !height) return 'Unknown'
-  
+
   if (height >= 2160) return '4K'
   if (height >= 1440) return '1440p'
   if (height >= 1080) return '1080p'
@@ -187,3 +427,142 @@ export function sanitizeFilename(filename: string): string {
     .replace(/_+/g, '_')
     .replace(/^_|_$/g, '')
 }
+
+// --- Error Handling ---
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number = 500,
+    public code?: string
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
+export function handleApiError(error: unknown): ApiError {
+  if (error instanceof ApiError) {
+    return error
+  }
+
+  if (error instanceof Error) {
+    return new ApiError(error.message)
+  }
+
+  return new ApiError('An unexpected error occurred')
+}
+
+// --- Local Storage ---
+// New: Local storage utilities
+export function getFromLocalStorage<T>(key: string, defaultValue: T): T {
+  try {
+    if (typeof window === 'undefined') return defaultValue
+    const item = localStorage.getItem(key)
+    return item ? JSON.parse(item) : defaultValue
+  } catch {
+    return defaultValue
+  }
+}
+
+export function setToLocalStorage<T>(key: string, value: T): boolean {
+  try {
+    if (typeof window === 'undefined') return false
+    localStorage.setItem(key, JSON.stringify(value))
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function removeFromLocalStorage(key: string): boolean {
+  try {
+    if (typeof window === 'undefined') return false
+    localStorage.removeItem(key)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// --- Type Definitions ---
+export interface UserStats {
+  totalEnrollments: number
+  completedCourses: number
+  inProgressCourses: number
+  totalWatchTime: number
+  favoriteCount: number
+}
+
+export interface UserProfile {
+  id: string
+  name: string | null
+  email: string
+  image: string | null
+  createdAt: string
+  role: string
+  bio?: string | null
+  location?: string | null
+  website?: string | null
+}
+
+export interface Course {
+  id: string
+  title: string
+  description: string
+  thumbnail?: string
+  category: string
+  level: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED'
+  price: number
+  isFree: boolean
+  isPublished: boolean
+  rating: number
+  videos: { id: string; duration: number | null }[]
+  _count: { enrollments: number }
+}
+
+export interface Enrollment {
+  id: string
+  userId: string
+  courseId: string
+  progress: number
+  enrolledAt: string
+  updatedAt: string
+  course: Course
+  calculatedProgress?: number
+}
+
+export interface RecentActivity {
+  id: string
+  type: 'completed' | 'enrolled' | 'favorited' | 'progress'
+  title: string
+  subtitle: string
+  timestamp: string
+  progress?: number
+  courseId?: string
+}
+
+// --- Constants ---
+export const FILE_SIZE_LIMITS = {
+  AVATAR: 5 * 1024 * 1024, // 5MB
+  VIDEO: 100 * 1024 * 1024, // 100MB
+  IMAGE: 10 * 1024 * 1024, // 10MB
+} as const
+
+export const ALLOWED_IMAGE_TYPES = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp'
+] as const
+
+export const ALLOWED_VIDEO_TYPES = [
+  'video/mp4',
+  'video/mpeg',
+  'video/quicktime',
+  'video/x-msvideo',
+  'video/x-ms-wmv',
+  'video/x-matroska',
+  'video/webm',
+  'video/3gpp'
+] as const
