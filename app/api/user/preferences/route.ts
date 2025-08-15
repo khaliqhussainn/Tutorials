@@ -22,19 +22,45 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // In a real application, you would have a UserPreferences table
-    // For now, return default preferences
-    const defaultPreferences: UserPreferences = {
-      emailNotifications: true,
-      pushNotifications: false,
-      weeklyDigest: true,
-      courseRecommendations: true,
-      theme: 'system',
-      language: 'en',
-      timezone: 'UTC'
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true }
+    })
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    return NextResponse.json(defaultPreferences)
+    // Try to get user preferences from database
+    let userPrefs = await prisma.userPreferences.findUnique({
+      where: { userId: user.id }
+    })
+
+    // If no preferences exist, create default ones
+    if (!userPrefs) {
+      userPrefs = await prisma.userPreferences.create({
+        data: {
+          userId: user.id,
+          emailNotifications: true,
+          pushNotifications: false,
+          weeklyDigest: true,
+          courseRecommendations: true,
+          theme: 'system'
+        }
+      })
+    }
+
+    const preferences: UserPreferences = {
+      emailNotifications: userPrefs.emailNotifications,
+      pushNotifications: userPrefs.pushNotifications,
+      weeklyDigest: userPrefs.weeklyDigest,
+      courseRecommendations: userPrefs.courseRecommendations,
+      theme: userPrefs.theme as 'light' | 'dark' | 'system',
+      language: 'en', // Default since not in schema
+      timezone: 'UTC' // Default since not in schema
+    }
+
+    return NextResponse.json(preferences)
   } catch (error) {
     console.error('Error fetching user preferences:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -49,6 +75,15 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true }
+    })
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
     const preferences = await request.json()
 
     // Validate preferences
@@ -57,16 +92,26 @@ export async function PUT(request: NextRequest) {
       pushNotifications: Boolean(preferences.pushNotifications),
       weeklyDigest: Boolean(preferences.weeklyDigest),
       courseRecommendations: Boolean(preferences.courseRecommendations),
-      theme: ['light', 'dark', 'system'].includes(preferences.theme) ? preferences.theme : 'system',
-      language: typeof preferences.language === 'string' ? preferences.language : 'en',
-      timezone: typeof preferences.timezone === 'string' ? preferences.timezone : 'UTC'
+      theme: ['light', 'dark', 'system'].includes(preferences.theme) ? preferences.theme : 'system'
     }
 
-    // In a real application, you would save to UserPreferences table
-    // For now, just return the validated preferences
+    // Update or create user preferences
+    const updatedPrefs = await prisma.userPreferences.upsert({
+      where: { userId: user.id },
+      update: validPreferences,
+      create: {
+        userId: user.id,
+        ...validPreferences
+      }
+    })
+
     return NextResponse.json({
       success: true,
-      preferences: validPreferences,
+      preferences: {
+        ...validPreferences,
+        language: 'en',
+        timezone: 'UTC'
+      },
       message: 'Preferences updated successfully'
     })
   } catch (error) {

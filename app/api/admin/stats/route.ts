@@ -8,7 +8,17 @@ export async function GET() {
   try {
     const session = await getServerSession(authOptions)
     
-    if (!session || session.user.role !== 'ADMIN') {
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // Get user from database to verify admin role
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true, role: true }
+    })
+
+    if (!user || user.role !== 'ADMIN') {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
@@ -46,10 +56,10 @@ export async function GET() {
         where: { progress: 100 }
       }),
       
-      // Recent enrollments (fixed orderBy field)
+      // Recent enrollments
       prisma.enrollment.findMany({
         take: 10,
-        orderBy: { enrolledAt: 'desc' }, // Changed from 'createdAt' to 'enrolledAt'
+        orderBy: { enrolledAt: 'desc' },
         include: {
           user: { select: { name: true, email: true, image: true } },
           course: { select: { title: true, category: true, thumbnail: true } }

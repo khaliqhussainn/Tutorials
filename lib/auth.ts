@@ -1,38 +1,18 @@
-// lib/auth.ts - Fixed auth configuration
+// lib/auth.ts - Enhanced based on your existing structure
 import { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
+import GoogleProvider from "next-auth/providers/google"
+import { PrismaAdapter } from "@next-auth/prisma-adapter"
 import { prisma } from "./prisma"
 import bcrypt from "bcryptjs"
 
-// Extend NextAuth types
-declare module "next-auth" {
-  interface Session {
-    user: {
-      id: string
-      role?: 'USER' | 'ADMIN'
-      name?: string | null
-      email?: string | null
-      image?: string | null
-    }
-  }
-
-  interface User {
-    id: string
-    email?: string | null
-    name?: string | null
-    role?: 'USER' | 'ADMIN'
-  }
-}
-
-declare module "next-auth/jwt" {
-  interface JWT {
-    role?: 'USER' | 'ADMIN'
-    userId: string
-  }
-}
-
 export const authOptions: NextAuthOptions = {
+  adapter: PrismaAdapter(prisma),
   providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    }),
     CredentialsProvider({
       name: "credentials",
       credentials: {
@@ -52,7 +32,8 @@ export const authOptions: NextAuthOptions = {
               name: true,
               email: true,
               role: true,
-              password: true
+              password: true,
+              image: true
             }
           })
 
@@ -69,17 +50,13 @@ export const authOptions: NextAuthOptions = {
             return null
           }
 
-          // Map Prisma role to NextAuth role ("USER" or "ADMIN")
-          let mappedRole: 'USER' | 'ADMIN' = 'USER';
-          if (user.role === 'ADMIN') mappedRole = 'ADMIN';
-          // You can add more mapping logic if needed
-
-          // Return user without password
+          // Return user data for NextAuth
           return {
             id: user.id,
             email: user.email!,
             name: user.name,
-            role: mappedRole,
+            role: user.role,
+            image: user.image,
           }
         } catch (error) {
           console.error("Auth error:", error)
@@ -93,23 +70,45 @@ export const authOptions: NextAuthOptions = {
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
+      // Initial sign in
       if (user) {
+        token.id = user.id
         token.role = user.role
-        token.userId = user.id
+        token.email = user.email
       }
+
+      // Handle Google OAuth users - get role from database
+      if (account?.provider === "google" && token.email) {
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { email: token.email },
+            select: { id: true, role: true }
+          })
+          if (dbUser) {
+            token.id = dbUser.id
+            token.role = dbUser.role
+          }
+        } catch (error) {
+          console.error("Error fetching user role:", error)
+        }
+      }
+
       return token
     },
     async session({ session, token }) {
+      // Send properties to the client
       if (token && session.user) {
-        session.user.id = token.userId || token.sub!
-        session.user.role = token.role
+        session.user.id = token.id as string
+        session.user.role = token.role as string
+        session.user.email = token.email as string
       }
       return session
     }
   },
   pages: {
     signIn: "/auth/signin",
+    // signUp: "/auth/signup",
   },
   secret: process.env.NEXTAUTH_SECRET,
   debug: process.env.NODE_ENV === 'development',

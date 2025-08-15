@@ -1,4 +1,4 @@
-// lib/utils.ts - Merged and enhanced utilities
+// lib/utils.ts - Keep your existing structure with enhancements
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -6,8 +6,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// --- Duration Formatting ---
-// Keep your existing formatDuration for backward compatibility
+// --- Duration Formatting (Enhanced your existing function) ---
 export function formatDuration(seconds: number | null | undefined): string {
   if (!seconds || seconds === 0) {
     return "0:00"
@@ -24,29 +23,27 @@ export function formatDuration(seconds: number | null | undefined): string {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }
 
-// New: Detailed duration formatting
+// New: Detailed duration formatting for your UI
 export function formatDetailedDuration(seconds: number): string {
   if (!seconds || seconds < 0) return '0 minutes'
 
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
-  const remainingSeconds = seconds % 60
 
   const parts = []
-  if (hours > 0) parts.push(`${hours} hour${hours > 1 ? 's' : ''}`)
-  if (minutes > 0) parts.push(`${minutes} minute${minutes > 1 ? 's' : ''}`)
-  if (remainingSeconds > 0 && hours === 0) parts.push(`${remainingSeconds} second${remainingSeconds > 1 ? 's' : ''}`)
+  if (hours > 0) parts.push(`${hours}h`)
+  if (minutes > 0) parts.push(`${minutes}m`)
 
-  return parts.join(', ') || '0 minutes'
+  return parts.join(' ') || '0m'
 }
 
-// --- Progress Calculations ---
+// --- Progress Calculations (Enhanced your existing function) ---
 export function calculateProgress(completed: number, total: number): number {
   if (total === 0) return 0
   return Math.round((completed / total) * 100)
 }
 
-// New: Progress color utilities
+// Progress color utilities for your UI
 export function getProgressColor(progress: number): string {
   if (progress === 0) return 'text-gray-500'
   if (progress < 25) return 'text-red-500'
@@ -58,11 +55,11 @@ export function getProgressColor(progress: number): string {
 
 export function getProgressBgColor(progress: number): string {
   if (progress === 0) return 'bg-gray-200'
-  if (progress < 25) return 'bg-red-200'
-  if (progress < 50) return 'bg-orange-200'
-  if (progress < 75) return 'bg-yellow-200'
-  if (progress < 100) return 'bg-blue-200'
-  return 'bg-green-200'
+  if (progress < 25) return 'bg-red-100'
+  if (progress < 50) return 'bg-orange-100'
+  if (progress < 75) return 'bg-yellow-100'
+  if (progress < 100) return 'bg-blue-100'
+  return 'bg-green-100'
 }
 
 // --- Time Formatting ---
@@ -92,7 +89,6 @@ export function formatTimeAgo(dateString: string): string {
   return `${diffInYears}y ago`
 }
 
-// New: Date formatting with options
 export function formatDate(dateString: string, options?: Intl.DateTimeFormatOptions): string {
   const date = new Date(dateString)
   return date.toLocaleDateString('en-US', {
@@ -114,13 +110,11 @@ export function getInitials(name: string): string {
     .toUpperCase()
 }
 
-// New: Truncate text
 export function truncateText(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text
   return text.substring(0, maxLength).trim() + '...'
 }
 
-// New: Slugify text
 export function slugify(text: string): string {
   return text
     .toLowerCase()
@@ -139,7 +133,6 @@ export function validateName(name: string): boolean {
   return trimmed.length >= 2 && trimmed.length <= 100
 }
 
-// New: Password validation
 export function validatePassword(password: string): {
   isValid: boolean
   errors: string[]
@@ -162,43 +155,10 @@ export function validatePassword(password: string): {
     errors.push('Password must contain at least one number')
   }
 
-  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
-    errors.push('Password must contain at least one special character')
-  }
-
   return {
     isValid: errors.length === 0,
     errors
   }
-}
-
-// New: File size validation
-export function validateFileSize(file: File, maxSizeMB: number): boolean {
-  return file.size <= maxSizeMB * 1024 * 1024
-}
-
-// New: Image file validation
-export function validateImageFile(file: File): {
-  isValid: boolean
-  error?: string
-} {
-  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
-
-  if (!allowedTypes.includes(file.type)) {
-    return {
-      isValid: false,
-      error: 'Only JPEG, PNG, GIF, and WebP images are allowed'
-    }
-  }
-
-  if (!validateFileSize(file, 5)) {
-    return {
-      isValid: false,
-      error: 'Image size must be less than 5MB'
-    }
-  }
-
-  return { isValid: true }
 }
 
 // --- Number Formatting ---
@@ -212,7 +172,6 @@ export function formatNumber(num: number): string {
   return num.toString()
 }
 
-// New: Currency formatting
 export function formatCurrency(amount: number, currency = 'USD'): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -220,74 +179,11 @@ export function formatCurrency(amount: number, currency = 'USD'): string {
   }).format(amount)
 }
 
-// New: Percentage formatting
 export function formatPercentage(value: number, decimals = 0): string {
   return `${value.toFixed(decimals)}%`
 }
 
-// --- Learning Analytics ---
-// New: Completion rate (alias for calculateProgress)
-export function calculateCompletionRate(completed: number, total: number): number {
-  if (total === 0) return 0
-  return Math.round((completed / total) * 100)
-}
-
-// New: Learning streak calculation
-export function getLearningStreak(activities: Array<{ date: string }>): number {
-  if (activities.length === 0) return 0
-
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  let streak = 0
-  let currentDate = new Date(today)
-
-  const activityDates = activities
-    .map(activity => {
-      const date = new Date(activity.date)
-      date.setHours(0, 0, 0, 0)
-      return date.getTime()
-    })
-    .sort((a, b) => b - a) // Sort descending
-
-  const uniqueDates = [...new Set(activityDates)]
-
-  for (const dateTime of uniqueDates) {
-    const activityDate = new Date(dateTime)
-    const dayDiff = Math.floor((currentDate.getTime() - activityDate.getTime()) / (1000 * 60 * 60 * 24))
-
-    if (dayDiff === streak || (streak === 0 && dayDiff <= 1)) {
-      streak++
-      currentDate = new Date(activityDate)
-    } else {
-      break
-    }
-  }
-
-  return streak
-}
-
-// New: Achievement badge
-export function getAchievementBadge(completedCourses: number): {
-  name: string
-  color: string
-  icon: string
-} {
-  if (completedCourses >= 20) {
-    return { name: 'Master Learner', color: 'text-purple-600', icon: '👑' }
-  } else if (completedCourses >= 10) {
-    return { name: 'Course Master', color: 'text-yellow-600', icon: '🏆' }
-  } else if (completedCourses >= 5) {
-    return { name: 'Learning Champion', color: 'text-blue-600', icon: '🎯' }
-  } else if (completedCourses >= 1) {
-    return { name: 'Quick Learner', color: 'text-green-600', icon: '⚡' }
-  } else {
-    return { name: 'Getting Started', color: 'text-gray-600', icon: '🌱' }
-  }
-}
-
-// --- Video Utilities ---
-// Keep your existing video utilities
+// --- Video Progress Utilities (Keep your existing ones) ---
 export function getVideoProgressStatus(
   video: { tests?: any[] },
   progress?: { completed: boolean; testPassed: boolean }
@@ -394,6 +290,7 @@ export function getCourseStats(
   }
 }
 
+// --- File Utilities ---
 export function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 Bytes'
 
@@ -402,17 +299,6 @@ export function formatFileSize(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k))
 
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-export function getVideoQuality(width?: number, height?: number): string {
-  if (!width || !height) return 'Unknown'
-
-  if (height >= 2160) return '4K'
-  if (height >= 1440) return '1440p'
-  if (height >= 1080) return '1080p'
-  if (height >= 720) return '720p'
-  if (height >= 480) return '480p'
-  return '360p'
 }
 
 export function isValidVideoFormat(filename: string): boolean {
@@ -426,6 +312,59 @@ export function sanitizeFilename(filename: string): string {
     .replace(/[^a-z0-9.-]/g, '_')
     .replace(/_+/g, '_')
     .replace(/^_|_$/g, '')
+}
+
+// --- Learning Analytics ---
+export function calculateLearningStreak(activities: Array<{ date: string }>): number {
+  if (activities.length === 0) return 0
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  let streak = 0
+  let currentDate = new Date(today)
+
+  const activityDates = activities
+    .map(activity => {
+      const date = new Date(activity.date)
+      date.setHours(0, 0, 0, 0)
+      return date.getTime()
+    })
+    .sort((a, b) => b - a) // Sort descending
+
+  const uniqueDates = [...new Set(activityDates)]
+
+  for (const dateTime of uniqueDates) {
+    const activityDate = new Date(dateTime)
+    const dayDiff = Math.floor((currentDate.getTime() - activityDate.getTime()) / (1000 * 60 * 60 * 24))
+
+    if (dayDiff === streak || (streak === 0 && dayDiff <= 1)) {
+      streak++
+      currentDate = new Date(activityDate)
+    } else {
+      break
+    }
+  }
+
+  return streak
+}
+
+export function getAchievementBadge(completedCourses: number): {
+  name: string
+  color: string
+  icon: string
+} {
+  if (completedCourses >= 20) {
+    return { name: 'Master Learner', color: 'text-purple-600', icon: '👑' }
+  } else if (completedCourses >= 10) {
+    return { name: 'Course Master', color: 'text-yellow-600', icon: '🏆' }
+  } else if (completedCourses >= 5) {
+    return { name: 'Learning Champion', color: 'text-blue-600', icon: '🎯' }
+  } else if (completedCourses >= 1) {
+    return { name: 'Quick Learner', color: 'text-green-600', icon: '⚡' }
+  } else {
+    return { name: 'Getting Started', color: 'text-gray-600', icon: '🌱' }
+  }
 }
 
 // --- Error Handling ---
@@ -452,57 +391,13 @@ export function handleApiError(error: unknown): ApiError {
   return new ApiError('An unexpected error occurred')
 }
 
-// --- Local Storage ---
-// New: Local storage utilities
-export function getFromLocalStorage<T>(key: string, defaultValue: T): T {
-  try {
-    if (typeof window === 'undefined') return defaultValue
-    const item = localStorage.getItem(key)
-    return item ? JSON.parse(item) : defaultValue
-  } catch {
-    return defaultValue
-  }
-}
-
-export function setToLocalStorage<T>(key: string, value: T): boolean {
-  try {
-    if (typeof window === 'undefined') return false
-    localStorage.setItem(key, JSON.stringify(value))
-    return true
-  } catch {
-    return false
-  }
-}
-
-export function removeFromLocalStorage(key: string): boolean {
-  try {
-    if (typeof window === 'undefined') return false
-    localStorage.removeItem(key)
-    return true
-  } catch {
-    return false
-  }
-}
-
-// --- Type Definitions ---
+// --- Type Definitions for your project ---
 export interface UserStats {
   totalEnrollments: number
   completedCourses: number
   inProgressCourses: number
   totalWatchTime: number
   favoriteCount: number
-}
-
-export interface UserProfile {
-  id: string
-  name: string | null
-  email: string
-  image: string | null
-  createdAt: string
-  role: string
-  bio?: string | null
-  location?: string | null
-  website?: string | null
 }
 
 export interface Course {
@@ -531,15 +426,6 @@ export interface Enrollment {
   calculatedProgress?: number
 }
 
-export interface RecentActivity {
-  id: string
-  type: 'completed' | 'enrolled' | 'favorited' | 'progress'
-  title: string
-  subtitle: string
-  timestamp: string
-  progress?: number
-  courseId?: string
-}
 
 // --- Constants ---
 export const FILE_SIZE_LIMITS = {

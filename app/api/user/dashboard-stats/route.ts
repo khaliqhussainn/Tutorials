@@ -125,7 +125,7 @@ export async function GET() {
       thisWeekProgress,
       averageSessionTime: Math.round(averageSessionTime._avg.watchTime || 0),
       learningStreak,
-      joinedDate: user.createdAt || new Date().toISOString()
+      joinedDate: user.createdAt.toISOString()
     })
   } catch (error) {
     console.error('Error fetching dashboard stats:', error)

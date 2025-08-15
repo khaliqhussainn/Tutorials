@@ -21,6 +21,9 @@ export async function GET() {
         image: true,
         role: true,
         createdAt: true,
+        bio: true,
+        location: true,
+        website: true
       },
     })
 
@@ -47,7 +50,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { name } = body
+    const { name, bio, location, website } = body
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return NextResponse.json(
@@ -56,9 +59,15 @@ export async function PUT(request: NextRequest) {
       )
     }
 
+    const updateData: any = { name: name.trim() }
+    
+    if (bio !== undefined) updateData.bio = bio?.trim() || null
+    if (location !== undefined) updateData.location = location?.trim() || null
+    if (website !== undefined) updateData.website = website?.trim() || null
+
     const updatedUser = await prisma.user.update({
       where: { email: session.user.email },
-      data: { name: name.trim() },
+      data: updateData,
       select: {
         id: true,
         name: true,
@@ -66,6 +75,9 @@ export async function PUT(request: NextRequest) {
         image: true,
         role: true,
         createdAt: true,
+        bio: true,
+        location: true,
+        website: true
       },
     })
 

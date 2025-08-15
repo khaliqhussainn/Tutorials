@@ -8,12 +8,21 @@ export async function GET() {
   try {
     const session = await getServerSession(authOptions)
     
-    if (!session) {
+    if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true }
+    })
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    }
+
     const enrollments = await prisma.enrollment.findMany({
-      where: { userId: session.user.id },
+      where: { userId: user.id },
       orderBy: { updatedAt: 'desc' },
       include: {
         course: {
@@ -27,14 +36,13 @@ export async function GET() {
 
     // Calculate progress for each course
     const coursesWithProgress = await Promise.all(
-      enrollments.map(async (enrollment: { course: { videos: any[] } }) => {
+      enrollments.map(async (enrollment) => {
         const totalVideos = enrollment.course.videos.length
         const completedVideos = await prisma.videoProgress.count({
           where: {
-            userId: session.user.id,
-            videoId: { in: enrollment.course.videos.map((v: { id: any }) => v.id) },
-            completed: true,
-            testPassed: true
+            userId: user.id,
+            videoId: { in: enrollment.course.videos.map(v => v.id) },
+            completed: true
           }
         })
         
