@@ -332,7 +332,7 @@ export function calculateLearningStreak(activities: Array<{ date: string }>): nu
     })
     .sort((a, b) => b - a) // Sort descending
 
-  const uniqueDates = [...new Set(activityDates)]
+  const uniqueDates = Array.from(new Set(activityDates))
 
   for (const dateTime of uniqueDates) {
     const activityDate = new Date(dateTime)

@@ -1,93 +1,67 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Disable static optimization for pages that use session/dynamic content
+  experimental: {
+    serverComponentsExternalPackages: ['@prisma/client', 'bcryptjs'],
+    esmExternals: 'loose'
+  },
+  
+  // Image configuration
   images: {
     domains: [
-      'res.cloudinary.com',
+      'lh3.googleusercontent.com',
+      'avatars.githubusercontent.com',
       'images.unsplash.com',
       'via.placeholder.com'
     ],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**',
+      },
+    ],
   },
-  experimental: {
-    serverComponentsExternalPackages: ['bcryptjs', '@prisma/client'],
-  },
-  
-  // Configure for better upload performance and Vercel compatibility
-  webpack: (config, { isServer }) => {
-    if (isServer) {
-      config.externals = [
-        ...config.externals, 
-        'canvas', 
-        'jsdom',
-        // Add these for Vercel compatibility
-        {
-          'utf-8-validate': 'commonjs utf-8-validate',
-          'bufferutil': 'commonjs bufferutil',
-        }
-      ]
+
+  // Webpack configuration to handle chunking issues
+  webpack: (config, { dev, isServer }) => {
+    // Handle external packages
+    config.externals.push({
+      'utf-8-validate': 'commonjs utf-8-validate',
+      'bufferutil': 'commonjs bufferutil',
+    })
+
+    // Optimize chunks for production
+    if (!dev && !isServer) {
+      config.optimization = {
+        ...config.optimization,
+        splitChunks: {
+          chunks: 'all',
+          cacheGroups: {
+            vendor: {
+              test: /[\\/]node_modules[\\/]/,
+              name: 'vendors',
+              chunks: 'all',
+            },
+          },
+        },
+      }
     }
-   
-    config.resolve.fallback = {
-      ...config.resolve.fallback,
-      fs: false,
-      net: false,
-      tls: false,
-    }
-   
+
     return config
   },
+
+  // Force dynamic for pages that use session
+  output: undefined, // Remove standalone for now to fix build issues
   
-  // Handle large uploads with proper headers
-  async headers() {
-    return [
-      {
-        source: '/api/upload/:path*',
-        headers: [
-          {
-            key: 'Access-Control-Allow-Origin',
-            value: '*',
-          },
-          {
-            key: 'Access-Control-Allow-Methods',
-            value: 'POST, OPTIONS',
-          },
-          {
-            key: 'Access-Control-Allow-Headers',
-            value: 'Content-Type, Authorization',
-          },
-          {
-            key: 'Access-Control-Max-Age',
-            value: '86400',
-          },
-        ],
-      },
-    ]
-  },
-  
-  // Increase body size limits for video uploads
-  async rewrites() {
-    return []
-  },
-  
-  // Add body size configuration
-  serverRuntimeConfig: {
-    // Increase the body size limit to 200MB
-    maxFileSize: 200 * 1024 * 1024, // 200MB
-  },
-  
-  // Add these for Vercel build stability
-  poweredByHeader: false,
+  // Disable static generation for dynamic pages
   trailingSlash: false,
   
-  // Ensure proper TypeScript handling
-  typescript: {
-    ignoreBuildErrors: false,
-  },
+  // Build configuration
+  productionBrowserSourceMaps: false,
+  optimizeFonts: true,
   
-  // Handle edge cases in production
-  swcMinify: true,
-  
-  // Optimize for Vercel deployment
-  output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
+  // Disable static optimization for problematic routes
+  generateStaticParams: false,
 }
 
 module.exports = nextConfig
