@@ -1,11 +1,12 @@
-'use client';
-import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
-import Image from 'next/image';
-import Link from 'next/link';
-import { Button } from '@/components/ui/Button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+// app/course/[courseId]/page.tsx - PRODUCTION FIXED
+"use client";
+import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import Image from "next/image";
+import Link from "next/link";
+import { Button } from "@/components/ui/Button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import {
   Clock,
   Users,
@@ -23,9 +24,12 @@ import {
   Download,
   StickyNote,
   Info,
-  PlayCircle
-} from 'lucide-react';
-import { formatDuration, calculateProgress } from '@/lib/utils';
+  PlayCircle,
+  Loader2,
+  AlertCircle,
+  X,
+} from "lucide-react";
+import { formatDuration, calculateProgress } from "@/lib/utils";
 
 interface Test {
   id: string;
@@ -74,30 +78,54 @@ interface CoursePageProps {
 }
 
 export default function CoursePage({ params }: CoursePageProps) {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
   const [course, setCourse] = useState<Course | null>(null);
   const [isEnrolled, setIsEnrolled] = useState<boolean>(false);
   const [videoProgress, setVideoProgress] = useState<VideoProgress[]>([]);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(
+    new Set()
+  );
   const [loading, setLoading] = useState<boolean>(true);
   const [enrolling, setEnrolling] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'videos' | 'about' | 'notes' | 'certificates'>('videos');
+  const [activeTab, setActiveTab] = useState<
+    "videos" | "about" | "notes" | "certificates"
+  >("videos");
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [enrollmentChecked, setEnrollmentChecked] = useState<boolean>(false);
 
   useEffect(() => {
     fetchCourse();
-    if (session) {
+  }, [params.courseId]);
+
+  useEffect(() => {
+    if (status === "authenticated" && session?.user && course) {
       checkEnrollment();
       fetchProgress();
+    } else if (status === "authenticated" && course) {
+      // Set enrollment checked to true even if no session.user to prevent loading states
+      setEnrollmentChecked(true);
     }
-  }, [params.courseId, session]);
+  }, [status, session, course]);
 
   useEffect(() => {
     if (course?.sections) {
-      const sectionIds = new Set(course.sections.map(s => s.id));
+      const sectionIds = new Set(course.sections.map((s) => s.id));
       setExpandedSections(sectionIds);
     }
   }, [course]);
+
+  // Auto-dismiss messages
+  useEffect(() => {
+    if (error || successMessage) {
+      const timer = setTimeout(() => {
+        setError(null);
+        setSuccessMessage(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error, successMessage]);
 
   const fetchCourse = async () => {
     try {
@@ -105,24 +133,58 @@ export default function CoursePage({ params }: CoursePageProps) {
       if (response.ok) {
         const data: Course = await response.json();
         setCourse(data);
+      } else {
+        setError("Course not found or unavailable");
       }
     } catch (error) {
-      console.error('Error fetching course:', error);
+      console.error("Error fetching course:", error);
+      setError("Failed to load course. Please refresh the page.");
     } finally {
       setLoading(false);
     }
   };
 
   const checkEnrollment = async () => {
+    if (!session?.user?.id && !session?.user?.email) {
+      setEnrollmentChecked(true);
+      return;
+    }
+
     try {
-      const response = await fetch(`/api/enrollments/${params.courseId}`);
-      setIsEnrolled(response.ok);
+      console.log(
+        "Checking enrollment for user:",
+        session.user.id,
+        session.user.email
+      );
+
+      const response = await fetch(`/api/enrollments/${params.courseId}`, {
+        method: "GET",
+        headers: {
+          "Cache-Control": "no-cache",
+        },
+      });
+
+      console.log("Enrollment check response:", response.status);
+
+      if (response.ok) {
+        const enrollment = await response.json();
+        console.log("Enrollment found:", enrollment);
+        setIsEnrolled(true);
+      } else {
+        console.log("Not enrolled");
+        setIsEnrolled(false);
+      }
     } catch (error) {
-      console.error('Error checking enrollment:', error);
+      console.error("Error checking enrollment:", error);
+      setIsEnrolled(false);
+    } finally {
+      setEnrollmentChecked(true);
     }
   };
 
   const fetchProgress = async () => {
+    if (!session?.user) return;
+
     try {
       const response = await fetch(`/api/progress/${params.courseId}`);
       if (response.ok) {
@@ -130,47 +192,138 @@ export default function CoursePage({ params }: CoursePageProps) {
         setVideoProgress(data);
       }
     } catch (error) {
-      console.error('Error fetching progress:', error);
+      console.error("Error fetching progress:", error);
     }
   };
 
   const handleEnroll = async () => {
-    if (!session) {
-      router.push('/auth/signin');
+    console.log("=== FRONTEND ENROLLMENT START ===");
+    console.log("Session status:", status);
+    console.log("Session data:", session);
+
+    // Clear previous messages
+    setError(null);
+    setSuccessMessage(null);
+
+    // Check authentication state
+    if (status === "loading") {
+      console.log("Session still loading, waiting...");
+      setError("Please wait while we verify your authentication...");
       return;
     }
+
+    if (status === "unauthenticated" || !session?.user) {
+      console.log("Not authenticated, redirecting to signin");
+      router.push("/auth/signin");
+      return;
+    }
+
+    if (!session.user.email) {
+      console.log("No email in session");
+      setError("Invalid session. Please sign out and back in.");
+      return;
+    }
+
     setEnrolling(true);
+
     try {
-      const response = await fetch('/api/enrollments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ courseId: params.courseId })
+      console.log("Making enrollment request...");
+
+      const response = await fetch("/api/enrollments", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache",
+        },
+        body: JSON.stringify({ courseId: params.courseId }),
       });
+
+      console.log("Enrollment response status:", response.status);
+
+      const data = await response.json();
+      console.log("Enrollment response data:", data);
+
       if (response.ok) {
+        console.log("✅ Enrollment successful");
+
+        // Update local state immediately
         setIsEnrolled(true);
-        const firstVideo = course?.sections?.[0]?.videos?.[0] || course?.videos?.[0];
-        if (firstVideo) {
-          router.push(`/course/${params.courseId}/video/${firstVideo.id}`);
+
+        // Show success message
+        if (data.code === "ALREADY_ENROLLED") {
+          setSuccessMessage(
+            "You're already enrolled! Redirecting to course..."
+          );
+        } else {
+          setSuccessMessage(
+            "Successfully enrolled! Redirecting to your first lesson..."
+          );
+        }
+
+        // Redirect after showing message
+        const redirectPath = data.redirect || `/course/${params.courseId}`;
+        console.log("Redirecting to:", redirectPath);
+
+        setTimeout(() => {
+          router.push(redirectPath);
+        }, 1500);
+      } else {
+        console.error("❌ Enrollment failed:", data);
+
+        // Handle specific error codes
+        switch (data.code) {
+          case "AUTH_REQUIRED":
+          case "INVALID_SESSION":
+          case "USER_LOOKUP_FAILED":
+            setError("Authentication issue. Redirecting to sign in...");
+            setTimeout(() => router.push("/auth/signin"), 2000);
+            break;
+
+          case "COURSE_NOT_FOUND":
+            setError("This course could not be found.");
+            break;
+
+          case "COURSE_NOT_PUBLISHED":
+            setError("This course is not currently available.");
+            break;
+
+          case "DATABASE_ERROR":
+            setError("Temporary server issue. Please try again in a moment.");
+            break;
+
+          default:
+            setError(
+              data.details ||
+                data.error ||
+                "Failed to enroll. Please try again."
+            );
         }
       }
     } catch (error) {
-      console.error('Error enrolling:', error);
+      console.error("❌ Network error during enrollment:", error);
+      setError("Network error. Please check your connection and try again.");
     } finally {
       setEnrolling(false);
     }
   };
 
-  const getVideoStatus = (video: Video, sectionVideos: Video[], videoIndex: number, sectionIndex: number): string => {
-    const progress = videoProgress.find(p => p.videoId === video.id);
+  // Get video status logic (unchanged)
+  const getVideoStatus = (
+    video: Video,
+    sectionVideos: Video[],
+    videoIndex: number,
+    sectionIndex: number
+  ): string => {
+    const progress = videoProgress.find((p) => p.videoId === video.id);
 
     if (!video.tests || video.tests.length === 0) {
-      if (progress?.completed) return 'completed';
+      if (progress?.completed) return "completed";
     } else {
-      if (progress?.completed && progress?.testPassed) return 'completed';
+      if (progress?.completed && progress?.testPassed) return "completed";
     }
 
     if (sectionIndex === 0 && videoIndex === 0) {
-      return 'available';
+      return "available";
     }
 
     let prevVideo: Video | null = null;
@@ -185,30 +338,35 @@ export default function CoursePage({ params }: CoursePageProps) {
     }
 
     if (prevVideo) {
-      const prevProgress = videoProgress.find(p => p.videoId === prevVideo!.id);
-      const prevCompleted = prevProgress?.completed &&
-        ((!prevVideo.tests || prevVideo.tests.length === 0) || prevProgress?.testPassed);
+      const prevProgress = videoProgress.find(
+        (p) => p.videoId === prevVideo!.id
+      );
+      const prevCompleted =
+        prevProgress?.completed &&
+        (!prevVideo.tests ||
+          prevVideo.tests.length === 0 ||
+          prevProgress?.testPassed);
 
       if (prevCompleted) {
-        return 'available';
+        return "available";
       }
     }
 
-    return 'locked';
+    return "locked";
   };
 
   const getQuizStatus = (video: Video): string => {
-    if (!video.tests || video.tests.length === 0) return 'no-quiz';
+    if (!video.tests || video.tests.length === 0) return "no-quiz";
 
-    const progress = videoProgress.find(p => p.videoId === video.id);
+    const progress = videoProgress.find((p) => p.videoId === video.id);
 
-    if (!progress?.completed) return 'quiz-locked';
-    if (progress?.testPassed) return 'quiz-passed';
-    return 'quiz-available';
+    if (!progress?.completed) return "quiz-locked";
+    if (progress?.testPassed) return "quiz-passed";
+    return "quiz-available";
   };
 
   const toggleSection = (sectionId: string) => {
-    setExpandedSections(prev => {
+    setExpandedSections((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(sectionId)) {
         newSet.delete(sectionId);
@@ -220,22 +378,35 @@ export default function CoursePage({ params }: CoursePageProps) {
   };
 
   const getTotalVideos = (): number => {
-    const sectionVideos = course?.sections?.reduce((acc, section) => acc + section.videos.length, 0) || 0;
+    const sectionVideos =
+      course?.sections?.reduce(
+        (acc, section) => acc + section.videos.length,
+        0
+      ) || 0;
     const legacyVideos = course?.videos?.length || 0;
     return sectionVideos + legacyVideos;
   };
 
   const getTotalDuration = (): number => {
-    const sectionDuration = course?.sections?.reduce((acc, section) =>
-      acc + section.videos.reduce((videoAcc, video) => videoAcc + (video.duration || 0), 0), 0
-    ) || 0;
-    const legacyDuration = course?.videos?.reduce((acc, video) => acc + (video.duration || 0), 0) || 0;
+    const sectionDuration =
+      course?.sections?.reduce(
+        (acc, section) =>
+          acc +
+          section.videos.reduce(
+            (videoAcc, video) => videoAcc + (video.duration || 0),
+            0
+          ),
+        0
+      ) || 0;
+    const legacyDuration =
+      course?.videos?.reduce((acc, video) => acc + (video.duration || 0), 0) ||
+      0;
     return sectionDuration + legacyDuration;
   };
 
   const getCompletedVideos = (): number => {
-    return videoProgress.filter(p => {
-      const video = getAllVideos().find(v => v.id === p.videoId);
+    return videoProgress.filter((p) => {
+      const video = getAllVideos().find((v) => v.id === p.videoId);
       if (!video) return false;
 
       if (!video.tests || video.tests.length === 0) {
@@ -264,132 +435,161 @@ export default function CoursePage({ params }: CoursePageProps) {
     return calculateProgress(completed, total);
   };
 
+  // Render methods (keep existing render methods but add loading states)
   const renderVideosTab = () => (
     <div className="space-y-6">
-      {course?.sections?.map((section, sectionIndex) => (
-        <Card key={section.id} className="overflow-hidden">
-          <div
-            className="flex items-center justify-between p-6 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors border-b"
-            onClick={() => toggleSection(section.id)}
-          >
-            <div className="flex items-center">
-              <div className="flex items-center mr-4">
-                {expandedSections.has(section.id) ? (
-                  <ChevronDown className="w-5 h-5 text-gray-600" />
-                ) : (
-                  <ChevronRight className="w-5 h-5 text-gray-600" />
-                )}
+      {!enrollmentChecked ? (
+        <div className="text-center py-8">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+          <p>Checking your enrollment status...</p>
+        </div>
+      ) : (
+        course?.sections?.map((section, sectionIndex) => (
+          <Card key={section.id} className="overflow-hidden">
+            <div
+              className="flex items-center justify-between p-6 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors border-b"
+              onClick={() => toggleSection(section.id)}
+            >
+              <div className="flex items-center">
+                <div className="flex items-center mr-4">
+                  {expandedSections.has(section.id) ? (
+                    <ChevronDown className="w-5 h-5 text-gray-600" />
+                  ) : (
+                    <ChevronRight className="w-5 h-5 text-gray-600" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900 text-lg">
+                    {section.title}
+                  </h3>
+                  {section.description && (
+                    <p className="text-sm text-gray-600 mt-1">
+                      {section.description}
+                    </p>
+                  )}
+                </div>
               </div>
-              <div>
-                <h3 className="font-semibold text-gray-900 text-lg">
-                  {section.title}
-                </h3>
-                {section.description && (
-                  <p className="text-sm text-gray-600 mt-1">{section.description}</p>
-                )}
+
+              <div className="flex items-center space-x-6 text-sm text-gray-500">
+                <span className="flex items-center">
+                  <PlayCircle className="w-4 h-4 mr-1" />
+                  {section.videos.length} videos
+                </span>
+                <span className="flex items-center">
+                  <Clock className="w-4 h-4 mr-1" />
+                  {formatDuration(
+                    section.videos.reduce(
+                      (acc, v) => acc + (v.duration || 0),
+                      0
+                    )
+                  )}
+                </span>
               </div>
             </div>
 
-            <div className="flex items-center space-x-6 text-sm text-gray-500">
-              <span className="flex items-center">
-                <PlayCircle className="w-4 h-4 mr-1" />
-                {section.videos.length} videos
-              </span>
-              <span className="flex items-center">
-                <Clock className="w-4 h-4 mr-1" />
-                {formatDuration(
-                  section.videos.reduce((acc, v) => acc + (v.duration || 0), 0)
-                )}
-              </span>
-            </div>
-          </div>
+            {expandedSections.has(section.id) && (
+              <div className="p-0">
+                {section.videos.map((video, videoIndex) => {
+                  const status = getVideoStatus(
+                    video,
+                    section.videos,
+                    videoIndex,
+                    sectionIndex
+                  );
+                  const quizStatus = getQuizStatus(video);
+                  const progress = videoProgress.find(
+                    (p) => p.videoId === video.id
+                  );
 
-          {expandedSections.has(section.id) && (
-            <div className="p-0">
-              {section.videos.map((video, videoIndex) => {
-                const status = getVideoStatus(video, section.videos, videoIndex, sectionIndex);
-                const quizStatus = getQuizStatus(video);
-                const progress = videoProgress.find(p => p.videoId === video.id);
-
-                return (
-                  <div
-                    key={video.id}
-                    className={`flex items-center p-6 border-b border-gray-100 last:border-b-0 transition-colors ${
-                      status === 'completed' ? 'bg-green-50' :
-                      status === 'available' ? 'hover:bg-blue-50' :
-                      'bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-center mr-6">
-                      <div className="w-10 h-10 rounded-full bg-white border-2 border-gray-200 flex items-center justify-center mr-4 text-sm font-medium">
-                        {videoIndex + 1}
-                      </div>
-                      {status === 'completed' ? (
-                        <CheckCircle className="w-6 h-6 text-green-600" />
-                      ) : status === 'available' ? (
-                        <Play className="w-6 h-6 text-blue-600" />
-                      ) : (
-                        <Lock className="w-6 h-6 text-gray-400" />
-                      )}
-                    </div>
-
-                    <div className="flex-1">
-                      <h4 className="font-medium text-gray-900 mb-2 text-lg">
-                        {video.title}
-                      </h4>
-                      {video.description && (
-                        <p className="text-sm text-gray-600 mb-3">{video.description}</p>
-                      )}
-                      <div className="flex items-center text-sm text-gray-500 space-x-6">
-                        <div className="flex items-center">
-                          <Clock className="w-4 h-4 mr-1" />
-                          {formatDuration(video.duration || 0)}
+                  return (
+                    <div
+                      key={video.id}
+                      className={`flex items-center p-6 border-b border-gray-100 last:border-b-0 transition-colors ${
+                        status === "completed"
+                          ? "bg-green-50"
+                          : status === "available"
+                          ? "hover:bg-blue-50"
+                          : "bg-gray-50"
+                      }`}
+                    >
+                      <div className="flex items-center mr-6">
+                        <div className="w-10 h-10 rounded-full bg-white border-2 border-gray-200 flex items-center justify-center mr-4 text-sm font-medium">
+                          {videoIndex + 1}
                         </div>
-
-                        {quizStatus !== 'no-quiz' && (
-                          <div className={`flex items-center ${
-                            quizStatus === 'quiz-passed' ? 'text-green-600' :
-                            quizStatus === 'quiz-available' ? 'text-blue-600' :
-                            'text-gray-500'
-                          }`}>
-                            {quizStatus === 'quiz-passed' ? (
-                              <>
-                                <Target className="w-4 h-4 mr-1" />
-                                Quiz Passed ({progress?.testScore}%)
-                              </>
-                            ) : quizStatus === 'quiz-available' ? (
-                              <>
-                                <FileText className="w-4 h-4 mr-1" />
-                                Quiz Available
-                              </>
-                            ) : (
-                              <>
-                                <Lock className="w-4 h-4 mr-1" />
-                                Quiz Locked
-                              </>
-                            )}
-                          </div>
+                        {status === "completed" ? (
+                          <CheckCircle className="w-6 h-6 text-green-600" />
+                        ) : status === "available" ? (
+                          <Play className="w-6 h-6 text-blue-600" />
+                        ) : (
+                          <Lock className="w-6 h-6 text-gray-400" />
                         )}
                       </div>
-                    </div>
 
-                    {isEnrolled && status === 'available' && (
-                      <Link href={`/course/${course.id}/video/${video.id}`}>
-                        <Button size="lg" className="ml-4">
-                          {progress?.completed ? 'Review' : 'Watch'}
-                        </Button>
-                      </Link>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-      ))}
+                      <div className="flex-1">
+                        <h4 className="font-medium text-gray-900 mb-2 text-lg">
+                          {video.title}
+                        </h4>
+                        {video.description && (
+                          <p className="text-sm text-gray-600 mb-3">
+                            {video.description}
+                          </p>
+                        )}
+                        <div className="flex items-center text-sm text-gray-500 space-x-6">
+                          <div className="flex items-center">
+                            <Clock className="w-4 h-4 mr-1" />
+                            {formatDuration(video.duration || 0)}
+                          </div>
+
+                          {quizStatus !== "no-quiz" && (
+                            <div
+                              className={`flex items-center ${
+                                quizStatus === "quiz-passed"
+                                  ? "text-green-600"
+                                  : quizStatus === "quiz-available"
+                                  ? "text-blue-600"
+                                  : "text-gray-500"
+                              }`}
+                            >
+                              {quizStatus === "quiz-passed" ? (
+                                <>
+                                  <Target className="w-4 h-4 mr-1" />
+                                  Quiz Passed ({progress?.testScore}%)
+                                </>
+                              ) : quizStatus === "quiz-available" ? (
+                                <>
+                                  <FileText className="w-4 h-4 mr-1" />
+                                  Quiz Available
+                                </>
+                              ) : (
+                                <>
+                                  <Lock className="w-4 h-4 mr-1" />
+                                  Quiz Locked
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {isEnrolled && status === "available" && (
+                        <Link href={`/course/${course.id}/video/${video.id}`}>
+                          <Button size="lg" className="ml-4">
+                            {progress?.completed ? "Review" : "Watch"}
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        ))
+      )}
     </div>
   );
 
+  // Keep existing render methods for other tabs...
   const renderAboutTab = () => (
     <div className="space-y-8">
       <Card>
@@ -401,20 +601,6 @@ export default function CoursePage({ params }: CoursePageProps) {
         </CardHeader>
         <CardContent>
           <div className="grid md:grid-cols-2 gap-4">
-            <div className="space-y-3">
-              <div className="flex items-start">
-                <CheckCircle className="w-5 h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
-                <span>Master the fundamentals of {course?.category}</span>
-              </div>
-              <div className="flex items-start">
-                <CheckCircle className="w-5 h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
-                <span>Build real-world projects from scratch</span>
-              </div>
-              <div className="flex items-start">
-                <CheckCircle className="w-5 h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
-                <span>Understand industry best practices</span>
-              </div>
-            </div>
             <div className="space-y-3">
               <div className="flex items-start">
                 <CheckCircle className="w-5 h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
@@ -439,7 +625,9 @@ export default function CoursePage({ params }: CoursePageProps) {
         </CardHeader>
         <CardContent>
           <div className="prose max-w-none">
-            <p className="text-gray-700 leading-relaxed">{course?.description}</p>
+            <p className="text-gray-700 leading-relaxed">
+              {course?.description}
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -450,8 +638,18 @@ export default function CoursePage({ params }: CoursePageProps) {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2">
-            {[course?.category, 'Problem Solving', 'Project Development', 'Best Practices', 'Modern Tools', 'Industry Standards'].map((skill, index) => (
-              <span key={index} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+            {[
+              course?.category,
+              "Problem Solving",
+              "Project Development",
+              "Best Practices",
+              "Modern Tools",
+              "Industry Standards",
+            ].map((skill, index) => (
+              <span
+                key={index}
+                className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium"
+              >
                 {skill}
               </span>
             ))}
@@ -473,18 +671,20 @@ export default function CoursePage({ params }: CoursePageProps) {
         {isEnrolled ? (
           <div className="text-center py-12">
             <StickyNote className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Your Notes</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Your Notes
+            </h3>
             <p className="text-gray-600 mb-6">
               Take notes while watching videos to remember important concepts
             </p>
-            <Button>
-              Start Taking Notes
-            </Button>
+            <Button>Start Taking Notes</Button>
           </div>
         ) : (
           <div className="text-center py-12">
             <Lock className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Enroll to Access Notes</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Enroll to Access Notes
+            </h3>
             <p className="text-gray-600">
               Enroll in this course to start taking and managing your notes
             </p>
@@ -506,9 +706,12 @@ export default function CoursePage({ params }: CoursePageProps) {
         {isEnrolled ? (
           <div className="text-center py-12">
             <Award className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Course Certificate</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Course Certificate
+            </h3>
             <p className="text-gray-600 mb-6">
-              Complete all course videos and pass the quizzes to earn your certificate
+              Complete all course videos and pass the quizzes to earn your
+              certificate
             </p>
             {getProgressPercentage() === 100 ? (
               <Button className="bg-green-600 hover:bg-green-700">
@@ -524,7 +727,8 @@ export default function CoursePage({ params }: CoursePageProps) {
                   />
                 </div>
                 <p className="text-sm text-gray-600">
-                  {getProgressPercentage()}% complete - {getTotalVideos() - getCompletedVideos()} videos remaining
+                  {getProgressPercentage()}% complete -{" "}
+                  {getTotalVideos() - getCompletedVideos()} videos remaining
                 </p>
               </div>
             )}
@@ -532,9 +736,12 @@ export default function CoursePage({ params }: CoursePageProps) {
         ) : (
           <div className="text-center py-12">
             <Lock className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Enroll to Earn Certificate</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Enroll to Earn Certificate
+            </h3>
             <p className="text-gray-600">
-              Enroll in this course to work towards earning your completion certificate
+              Enroll in this course to work towards earning your completion
+              certificate
             </p>
           </div>
         )}
@@ -545,7 +752,10 @@ export default function CoursePage({ params }: CoursePageProps) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading course...</p>
+        </div>
       </div>
     );
   }
@@ -554,7 +764,13 @@ export default function CoursePage({ params }: CoursePageProps) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Course Not Found</h1>
+          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">
+            Course Not Found
+          </h1>
+          <p className="text-gray-600 mb-6">
+            The course you're looking for doesn't exist or has been removed.
+          </p>
           <Link href="/courses">
             <Button>Browse Courses</Button>
           </Link>
@@ -569,6 +785,49 @@ export default function CoursePage({ params }: CoursePageProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Error/Success Messages */}
+      {(error || successMessage) && (
+        <div className="fixed top-4 right-4 z-50 max-w-md">
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 shadow-lg mb-2">
+              <div className="flex items-start">
+                <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 mr-3 flex-shrink-0" />
+                <div>
+                  <h4 className="text-red-800 font-medium">Error</h4>
+                  <p className="text-red-700 text-sm mt-1">{error}</p>
+                </div>
+                <button
+                  onClick={() => setError(null)}
+                  className="ml-auto text-red-400 hover:text-red-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 shadow-lg">
+              <div className="flex items-start">
+                <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
+                <div>
+                  <h4 className="text-green-800 font-medium">Success</h4>
+                  <p className="text-green-700 text-sm mt-1">
+                    {successMessage}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSuccessMessage(null)}
+                  className="ml-auto text-green-400 hover:text-green-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Hero Section with Background */}
       <div className="relative overflow-hidden">
         {/* Background Image with Overlay */}
@@ -596,11 +855,15 @@ export default function CoursePage({ params }: CoursePageProps) {
               <span className="bg-blue-500 text-white px-4 py-2 rounded-full text-sm font-medium mr-4">
                 {course.category}
               </span>
-              <span className={`px-4 py-2 rounded-full text-sm font-medium ${
-                course.level === 'BEGINNER' ? 'bg-green-500 text-white' :
-                course.level === 'INTERMEDIATE' ? 'bg-yellow-500 text-white' :
-                'bg-red-500 text-white'
-              }`}>
+              <span
+                className={`px-4 py-2 rounded-full text-sm font-medium ${
+                  course.level === "BEGINNER"
+                    ? "bg-green-500 text-white"
+                    : course.level === "INTERMEDIATE"
+                    ? "bg-yellow-500 text-white"
+                    : "bg-red-500 text-white"
+                }`}
+              >
                 {course.level}
               </span>
             </div>
@@ -621,47 +884,75 @@ export default function CoursePage({ params }: CoursePageProps) {
                 <div className="flex items-center justify-center mb-2">
                   <Clock className="w-6 h-6 text-blue-200 mr-2" />
                 </div>
-                <div className="text-2xl font-bold text-white">{formatDuration(totalDuration)}</div>
+                <div className="text-2xl font-bold text-white">
+                  {formatDuration(totalDuration)}
+                </div>
                 <div className="text-sm text-blue-200">Duration</div>
               </div>
               <div className="text-center">
                 <div className="flex items-center justify-center mb-2">
                   <BookOpen className="w-6 h-6 text-blue-200 mr-2" />
                 </div>
-                <div className="text-2xl font-bold text-white">{totalVideos}</div>
+                <div className="text-2xl font-bold text-white">
+                  {totalVideos}
+                </div>
                 <div className="text-sm text-blue-200">Videos</div>
               </div>
               <div className="text-center">
                 <div className="flex items-center justify-center mb-2">
                   <Users className="w-6 h-6 text-blue-200 mr-2" />
                 </div>
-                <div className="text-2xl font-bold text-white">{course._count?.enrollments || 0}</div>
+                <div className="text-2xl font-bold text-white">
+                  {course._count?.enrollments || 0}
+                </div>
                 <div className="text-sm text-blue-200">Students</div>
               </div>
               <div className="text-center">
                 <div className="flex items-center justify-center mb-2">
                   <Star className="w-6 h-6 text-yellow-400 mr-2 fill-current" />
                 </div>
-                <div className="text-2xl font-bold text-white">{course.rating || 4.8}</div>
+                <div className="text-2xl font-bold text-white">
+                  {course.rating || 4.8}
+                </div>
                 <div className="text-sm text-blue-200">Rating</div>
               </div>
             </div>
 
             {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row gap-4">
-              {!isEnrolled ? (
+              {!enrollmentChecked ? (
+                <div className="flex items-center space-x-3">
+                  <Loader2 className="w-6 h-6 animate-spin text-white" />
+                  <span className="text-white">Checking enrollment...</span>
+                </div>
+              ) : !isEnrolled ? (
                 <Button
                   size="lg"
                   onClick={handleEnroll}
                   disabled={enrolling}
-                  className="bg-white text-blue-900 hover:bg-gray-100 text-lg px-8 py-4"
+                  className="bg-white text-blue-900 hover:bg-gray-100 text-lg px-8 py-4 disabled:opacity-50"
                 >
-                  {enrolling ? 'Enrolling...' : 'Enroll for Free'}
+                  {enrolling ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      Enrolling...
+                    </>
+                  ) : (
+                    "Enroll for Free"
+                  )}
                 </Button>
               ) : (
                 <>
-                  <Link href={`/course/${course.id}/video/${course.sections?.[0]?.videos?.[0]?.id || course.videos?.[0]?.id}`}>
-                    <Button size="lg" className="bg-white text-blue-900 hover:bg-gray-100 text-lg px-8 py-4">
+                  <Link
+                    href={`/course/${course.id}/video/${
+                      course.sections?.[0]?.videos?.[0]?.id ||
+                      course.videos?.[0]?.id
+                    }`}
+                  >
+                    <Button
+                      size="lg"
+                      className="bg-white text-blue-900 hover:bg-gray-100 text-lg px-8 py-4"
+                    >
                       <Play className="w-5 h-5 mr-2" />
                       Continue Learning
                     </Button>
@@ -691,10 +982,10 @@ export default function CoursePage({ params }: CoursePageProps) {
         <div className="border-b border-gray-200 mb-8">
           <nav className="-mb-px flex space-x-8">
             {[
-              { id: 'videos', label: 'Videos', icon: PlayCircle },
-              { id: 'about', label: 'About', icon: Info },
-              { id: 'notes', label: 'Notes', icon: StickyNote },
-              { id: 'certificates', label: 'Certificates', icon: Award }
+              { id: "videos", label: "Videos", icon: PlayCircle },
+              { id: "about", label: "About", icon: Info },
+              { id: "notes", label: "Notes", icon: StickyNote },
+              { id: "certificates", label: "Certificates", icon: Award },
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -703,8 +994,8 @@ export default function CoursePage({ params }: CoursePageProps) {
                   onClick={() => setActiveTab(tab.id as any)}
                   className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center ${
                     activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? "border-blue-500 text-blue-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                   }`}
                 >
                   <Icon className="w-4 h-4 mr-2" />
@@ -717,10 +1008,10 @@ export default function CoursePage({ params }: CoursePageProps) {
 
         {/* Tab Content */}
         <div className="min-h-96">
-          {activeTab === 'videos' && renderVideosTab()}
-          {activeTab === 'about' && renderAboutTab()}
-          {activeTab === 'notes' && renderNotesTab()}
-          {activeTab === 'certificates' && renderCertificatesTab()}
+          {activeTab === "videos" && renderVideosTab()}
+          {activeTab === "about" && renderAboutTab()}
+          {activeTab === "notes" && renderNotesTab()}
+          {activeTab === "certificates" && renderCertificatesTab()}
         </div>
       </div>
     </div>

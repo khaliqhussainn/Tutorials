@@ -1,13 +1,13 @@
-// app/api/enrollments/route.ts - COMPLETELY IMPROVED VERSION
+// app/api/enrollments/route.ts - PRODUCTION FIXED VERSION
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
-// Helper function to find user by multiple methods
+// Helper function to find user consistently
 async function findUserBySession(session: any) {
-  if (!session) {
-    throw new Error("No session provided")
+  if (!session?.user) {
+    throw new Error("No session user provided")
   }
 
   console.log("=== Finding User ===")
@@ -17,85 +17,66 @@ async function findUserBySession(session: any) {
     name: session.user?.name
   })
 
-  let user = null
-  let userId = null
-
   // Method 1: Try session user ID directly
-  if (session.user?.id) {
+  if (session.user.id) {
     console.log("Trying to find user by session ID:", session.user.id)
-    user = await prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: { id: true, email: true, name: true, role: true }
     })
     if (user) {
-      console.log("✅ Found user by session ID")
+      console.log("✅ Found user by session ID:", user.id)
       return user
     }
   }
 
-  // Method 2: Try by email (most reliable)
-  if (session.user?.email) {
+  // Method 2: Try by email (most reliable for OAuth)
+  if (session.user.email) {
     console.log("Trying to find user by email:", session.user.email)
-    user = await prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { email: session.user.email },
       select: { id: true, email: true, name: true, role: true }
     })
     if (user) {
-      console.log("✅ Found user by email")
+      console.log("✅ Found user by email:", user.id)
       return user
     }
   }
 
-  // Method 3: Create user if not found (for OAuth users)
-  if (session.user?.email && !user) {
-    console.log("User not found, creating new user...")
-    try {
-      user = await prisma.user.create({
-        data: {
-          email: session.user.email,
-          name: session.user.name || null,
-          role: 'USER',
-          // Don't set ID, let Prisma generate it
-        },
-        select: { id: true, email: true, name: true, role: true }
-      })
-      console.log("✅ Created new user:", user.id)
-      return user
-    } catch (createError: any) {
-      console.error("Failed to create user:", createError)
-      
-      // If creation failed due to duplicate, try finding again
-      if (createError.code === 'P2002') {
-        user = await prisma.user.findUnique({
-          where: { email: session.user.email },
-          select: { id: true, email: true, name: true, role: true }
-        })
-        if (user) {
-          console.log("✅ Found user after creation attempt")
-          return user
-        }
-      }
-      throw new Error(`Failed to create user: ${createError.message}`)
-    }
-  }
-
-  throw new Error("Could not find or create user")
+  throw new Error(`User not found. Session ID: ${session.user.id}, Email: ${session.user.email}`)
 }
 
 export async function POST(request: Request) {
   try {
     console.log("=== ENROLLMENT REQUEST START ===")
     
+    // Get session with explicit options
     const session = await getServerSession(authOptions)
-    console.log("Session exists:", !!session)
-    console.log("Session user data:", session?.user)
     
-    if (!session || !session.user?.email) {
-      console.log("❌ No valid session or email")
+    console.log("Raw session:", JSON.stringify({
+      exists: !!session,
+      user: session?.user ? {
+        id: session.user.id,
+        email: session.user.email,
+        name: session.user.name
+      } : null
+    }, null, 2))
+    
+    if (!session?.user) {
+      console.log("❌ No session found")
       return NextResponse.json({ 
         error: "Authentication required",
         details: "Please sign in to enroll in courses",
         code: "AUTH_REQUIRED"
+      }, { status: 401 })
+    }
+
+    if (!session.user.email) {
+      console.log("❌ No email in session")
+      return NextResponse.json({ 
+        error: "Invalid session",
+        details: "Session missing email. Please sign out and back in.",
+        code: "INVALID_SESSION"
       }, { status: 401 })
     }
 
@@ -104,6 +85,7 @@ export async function POST(request: Request) {
     try {
       const body = await request.json()
       courseId = body.courseId
+      console.log("Course ID:", courseId)
     } catch (error) {
       console.log("❌ Invalid request body")
       return NextResponse.json({ 
@@ -118,22 +100,34 @@ export async function POST(request: Request) {
       }, { status: 400 })
     }
 
-    console.log("Course ID:", courseId)
-
-    // Step 1: Find or create user
+    // Step 1: Find user with retry logic
     let user
-    try {
-      user = await findUserBySession(session)
-    } catch (error: any) {
-      console.error("❌ User lookup/creation failed:", error.message)
-      return NextResponse.json({
-        error: "User authentication failed",
-        details: "Please try signing out and back in",
-        code: "USER_NOT_FOUND"
-      }, { status: 401 })
+    let retryCount = 0
+    const maxRetries = 3
+
+    while (retryCount < maxRetries) {
+      try {
+        user = await findUserBySession(session)
+        break
+      } catch (error: any) {
+        retryCount++
+        console.error(`❌ User lookup attempt ${retryCount} failed:`, error.message)
+        
+        if (retryCount >= maxRetries) {
+          console.error("❌ All user lookup attempts failed")
+          return NextResponse.json({
+            error: "User authentication failed",
+            details: "Unable to verify your account. Please sign out and back in.",
+            code: "USER_LOOKUP_FAILED"
+          }, { status: 401 })
+        }
+        
+        // Wait a bit before retry
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
     }
 
-    console.log("✅ User found/created:", user.id)
+    console.log("✅ User verified:", user.id)
 
     // Step 2: Verify course exists and is published
     const course = await prisma.course.findUnique({
@@ -203,52 +197,65 @@ export async function POST(request: Request) {
       }, { status: 200 })
     }
 
-    // Step 4: Create enrollment
+    // Step 4: Create enrollment with transaction for data consistency
     console.log("Creating new enrollment...")
-    const enrollment = await prisma.enrollment.create({
-      data: {
-        userId: user.id,
-        courseId: courseId
-      },
-      include: {
-        course: {
-          select: {
-            id: true,
-            title: true,
-            sections: {
-              select: {
-                videos: {
-                  select: { id: true },
-                  orderBy: { order: 'asc' },
-                  take: 1
-                }
+    
+    const result = await prisma.$transaction(async (tx) => {
+      // Double-check user exists in transaction
+      const txUser = await tx.user.findUnique({
+        where: { id: user.id },
+        select: { id: true }
+      })
+      
+      if (!txUser) {
+        throw new Error("User not found in transaction")
+      }
+      
+      // Create enrollment
+      const enrollment = await tx.enrollment.create({
+        data: {
+          userId: user.id,
+          courseId: courseId
+        },
+        include: {
+          course: {
+            select: {
+              id: true,
+              title: true,
+              sections: {
+                select: {
+                  videos: {
+                    select: { id: true },
+                    orderBy: { order: 'asc' },
+                    take: 1
+                  }
+                },
+                orderBy: { order: 'asc' },
+                take: 1
               },
-              orderBy: { order: 'asc' },
-              take: 1
-            },
-            videos: {
-              select: { id: true },
-              orderBy: { order: 'asc' },
-              take: 1
-            },
-            _count: {
-              select: { enrollments: true }
+              videos: {
+                select: { id: true },
+                orderBy: { order: 'asc' },
+                take: 1
+              }
             }
           }
         }
-      }
+      })
+      
+      return enrollment
     })
 
     // Get the first video for redirect
-    const firstVideo = enrollment.course.sections?.[0]?.videos?.[0] || 
-                     enrollment.course.videos?.[0]
+    const firstVideo = result.course.sections?.[0]?.videos?.[0] || 
+                     result.course.videos?.[0]
 
     console.log("✅ Enrollment created successfully")
     console.log("=== ENROLLMENT REQUEST SUCCESS ===")
 
     return NextResponse.json({
       message: "Successfully enrolled in course",
-      enrollment,
+      enrollment: result,
       redirect: firstVideo ? `/course/${courseId}/video/${firstVideo.id}` : `/course/${courseId}`,
       code: "ENROLLMENT_SUCCESS"
     }, { status: 201 })
@@ -256,6 +263,7 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error("=== ENROLLMENT ERROR ===")
     console.error("Error details:", error)
+    console.error("Stack trace:", error.stack)
     
     // Handle specific Prisma errors
     if (error.code === 'P2003') {
@@ -272,6 +280,15 @@ export async function POST(request: Request) {
         details: "You are already enrolled in this course",
         code: "DUPLICATE_ENROLLMENT"
       }, { status: 400 })
+    }
+
+    // Handle database connection errors
+    if (error.message?.includes('database') || error.code?.startsWith('P')) {
+      return NextResponse.json({ 
+        error: "Database connection error",
+        details: "Please try again in a moment",
+        code: "DATABASE_ERROR"
+      }, { status: 503 })
     }
     
     return NextResponse.json({ 
