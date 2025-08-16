@@ -48,10 +48,6 @@ import {
 } from "lucide-react";
 import { formatDuration, calculateProgress } from "@/lib/utils";
 
-// Force dynamic rendering
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
 interface Course {
   id: string;
   title: string;

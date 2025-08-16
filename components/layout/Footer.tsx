@@ -1,10 +1,10 @@
-// components/Footer.tsx - Modern footer component for learning platform
-import Link from 'next/link'
-import { 
-  Facebook, 
-  Twitter, 
-  Instagram, 
-  Linkedin, 
+// components/Footer.tsx - Mobile-optimized footer component for learning platform
+import Link from "next/link";
+import {
+  Facebook,
+  Twitter,
+  Instagram,
+  Linkedin,
   Youtube,
   Mail,
   Phone,
@@ -14,61 +14,61 @@ import {
   Award,
   TrendingUp,
   Heart,
-  ArrowRight
-} from 'lucide-react'
+  ArrowRight,
+} from "lucide-react";
 
 const Footer = () => {
-  const currentYear = new Date().getFullYear()
+  const currentYear = new Date().getFullYear();
 
   const footerLinks = {
     courses: [
-      { name: 'Programming', href: '/courses?category=Programming' },
-      { name: 'Design', href: '/courses?category=Design' },
-      { name: 'Business', href: '/courses?category=Business' },
-      { name: 'Marketing', href: '/courses?category=Marketing' },
-      { name: 'Data Science', href: '/courses?category=Data Science' },
-      { name: 'View All Courses', href: '/courses' }
+      { name: "Programming", href: "/courses?category=Programming" },
+      { name: "Design", href: "/courses?category=Design" },
+      { name: "Business", href: "/courses?category=Business" },
+      { name: "Marketing", href: "/courses?category=Marketing" },
+      { name: "Data Science", href: "/courses?category=Data Science" },
+      { name: "View All Courses", href: "/courses" },
     ],
     company: [
-      { name: 'About Us', href: '/about' },
-      { name: 'Our Team', href: '/team' },
-      { name: 'Careers', href: '/careers' },
-      { name: 'Press', href: '/press' },
-      { name: 'Blog', href: '/blog' },
-      { name: 'Contact', href: '/contact' }
+      { name: "About Us", href: "/about" },
+      { name: "Our Team", href: "/team" },
+      { name: "Careers", href: "/careers" },
+      { name: "Press", href: "/press" },
+      { name: "Blog", href: "/blog" },
+      { name: "Contact", href: "/contact" },
     ],
     support: [
-      { name: 'Help Center', href: '/help' },
-      { name: 'Student Support', href: '/support' },
-      { name: 'Instructor Support', href: '/instructor-support' },
-      { name: 'Community', href: '/community' },
-      { name: 'System Status', href: '/status' },
-      { name: 'Accessibility', href: '/accessibility' }
+      { name: "Help Center", href: "/help" },
+      { name: "Student Support", href: "/support" },
+      { name: "Instructor Support", href: "/instructor-support" },
+      { name: "Community", href: "/community" },
+      { name: "System Status", href: "/status" },
+      { name: "Accessibility", href: "/accessibility" },
     ],
     legal: [
-      { name: 'Privacy Policy', href: '/privacy' },
-      { name: 'Terms of Service', href: '/terms' },
-      { name: 'Cookie Policy', href: '/cookies' },
-      { name: 'DMCA', href: '/dmca' },
-      { name: 'Refund Policy', href: '/refunds' },
-      { name: 'Sitemap', href: '/sitemap' }
-    ]
-  }
+      { name: "Privacy Policy", href: "/privacy" },
+      { name: "Terms of Service", href: "/terms" },
+      { name: "Cookie Policy", href: "/cookies" },
+      { name: "DMCA", href: "/dmca" },
+      { name: "Refund Policy", href: "/refunds" },
+      { name: "Sitemap", href: "/sitemap" },
+    ],
+  };
 
   const socialLinks = [
-    { name: 'Facebook', href: 'https://facebook.com', icon: Facebook },
-    { name: 'Twitter', href: 'https://twitter.com', icon: Twitter },
-    { name: 'Instagram', href: 'https://instagram.com', icon: Instagram },
-    { name: 'LinkedIn', href: 'https://linkedin.com', icon: Linkedin },
-    { name: 'YouTube', href: 'https://youtube.com', icon: Youtube }
-  ]
+    { name: "Facebook", href: "https://facebook.com", icon: Facebook },
+    { name: "Twitter", href: "https://twitter.com", icon: Twitter },
+    { name: "Instagram", href: "https://instagram.com", icon: Instagram },
+    { name: "LinkedIn", href: "https://linkedin.com", icon: Linkedin },
+    { name: "YouTube", href: "https://youtube.com", icon: Youtube },
+  ];
 
   const stats = [
-    { label: 'Active Students', value: '50K+', icon: Users },
-    { label: 'Expert Courses', value: '200+', icon: BookOpen },
-    { label: 'Success Rate', value: '95%', icon: Award },
-    { label: 'Course Rating', value: '4.8★', icon: TrendingUp }
-  ]
+    { label: "Active Students", value: "50K+", icon: Users },
+    { label: "Expert Courses", value: "200+", icon: BookOpen },
+    { label: "Success Rate", value: "95%", icon: Award },
+    { label: "Course Rating", value: "4.8★", icon: TrendingUp },
+  ];
 
   return (
     <footer className="bg-white border-t border-gray-200">
@@ -81,7 +81,8 @@ const Footer = () => {
                 Stay Updated with New Courses
               </h3>
               <p className="text-blue-100 text-lg mb-6 lg:mb-0">
-                Get notified about new courses, special offers, and learning tips delivered to your inbox.
+                Get notified about new courses, special offers, and learning
+                tips delivered to your inbox.
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-4">
@@ -110,7 +111,9 @@ const Footer = () => {
                 <div className="inline-flex items-center justify-center w-12 h-12 bg-primary-100 rounded-xl mb-4">
                   <stat.icon className="w-6 h-6 text-primary-600" />
                 </div>
-                <div className="text-3xl font-bold text-gray-900 mb-2">{stat.value}</div>
+                <div className="text-3xl font-bold text-gray-900 mb-2">
+                  {stat.value}
+                </div>
                 <div className="text-gray-600">{stat.label}</div>
               </div>
             ))}
@@ -121,8 +124,8 @@ const Footer = () => {
       {/* Main Footer Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="grid lg:grid-cols-6 gap-8">
-          {/* Brand Section */}
-          <div className="lg:col-span-2">
+          {/* Brand Section - Full width on mobile, 2 columns on desktop */}
+          <div className="col-span-full lg:col-span-2">
             <div className="flex items-center mb-6">
               <div className="w-10 h-10 bg-gradient-to-r from-primary-600 to-blue-600 rounded-xl flex items-center justify-center mr-3">
                 <BookOpen className="w-6 h-6 text-white" />
@@ -130,11 +133,11 @@ const Footer = () => {
               <span className="text-2xl font-bold text-gray-900">LearnHub</span>
             </div>
             <p className="text-gray-600 mb-6 leading-relaxed">
-              Empowering millions of learners worldwide with expert-led courses, 
-              interactive projects, and personalized learning paths. Start your 
+              Empowering millions of learners worldwide with expert-led courses,
+              interactive projects, and personalized learning paths. Start your
               journey to success today.
             </p>
-            
+
             {/* Contact Info */}
             <div className="space-y-3 mb-6">
               <div className="flex items-center text-gray-600">
@@ -166,76 +169,87 @@ const Footer = () => {
             </div>
           </div>
 
-          {/* Courses */}
-          <div>
-            <h4 className="text-lg font-bold text-gray-900 mb-6">Courses</h4>
-            <ul className="space-y-4">
-              {footerLinks.courses.map((link) => (
-                <li key={link.name}>
-                  <Link
-                    href={link.href}
-                    className="text-gray-600 hover:text-primary-600 transition-colors flex items-center group"
-                  >
-                    {link.name}
-                    <ArrowRight className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {/* Links Grid - 2 columns on mobile, individual columns on desktop */}
+          <div className="col-span-full lg:col-span-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-8">
+              {/* Courses */}
+              <div>
+                <h4 className="text-lg font-bold text-gray-900 mb-6">
+                  Courses
+                </h4>
+                <ul className="space-y-4">
+                  {footerLinks.courses.map((link) => (
+                    <li key={link.name}>
+                      <Link
+                        href={link.href}
+                        className="text-gray-600 hover:text-primary-600 transition-colors flex items-center group text-sm lg:text-base"
+                      >
+                        {link.name}
+                        <ArrowRight className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
 
-          {/* Company */}
-          <div>
-            <h4 className="text-lg font-bold text-gray-900 mb-6">Company</h4>
-            <ul className="space-y-4">
-              {footerLinks.company.map((link) => (
-                <li key={link.name}>
-                  <Link
-                    href={link.href}
-                    className="text-gray-600 hover:text-primary-600 transition-colors flex items-center group"
-                  >
-                    {link.name}
-                    <ArrowRight className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+              {/* Company */}
+              <div>
+                <h4 className="text-lg font-bold text-gray-900 mb-6">
+                  Company
+                </h4>
+                <ul className="space-y-4">
+                  {footerLinks.company.map((link) => (
+                    <li key={link.name}>
+                      <Link
+                        href={link.href}
+                        className="text-gray-600 hover:text-primary-600 transition-colors flex items-center group text-sm lg:text-base"
+                      >
+                        {link.name}
+                        <ArrowRight className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
 
-          {/* Support */}
-          <div>
-            <h4 className="text-lg font-bold text-gray-900 mb-6">Support</h4>
-            <ul className="space-y-4">
-              {footerLinks.support.map((link) => (
-                <li key={link.name}>
-                  <Link
-                    href={link.href}
-                    className="text-gray-600 hover:text-primary-600 transition-colors flex items-center group"
-                  >
-                    {link.name}
-                    <ArrowRight className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+              {/* Support */}
+              <div>
+                <h4 className="text-lg font-bold text-gray-900 mb-6">
+                  Support
+                </h4>
+                <ul className="space-y-4">
+                  {footerLinks.support.map((link) => (
+                    <li key={link.name}>
+                      <Link
+                        href={link.href}
+                        className="text-gray-600 hover:text-primary-600 transition-colors flex items-center group text-sm lg:text-base"
+                      >
+                        {link.name}
+                        <ArrowRight className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
 
-          {/* Legal */}
-          <div>
-            <h4 className="text-lg font-bold text-gray-900 mb-6">Legal</h4>
-            <ul className="space-y-4">
-              {footerLinks.legal.map((link) => (
-                <li key={link.name}>
-                  <Link
-                    href={link.href}
-                    className="text-gray-600 hover:text-primary-600 transition-colors flex items-center group"
-                  >
-                    {link.name}
-                    <ArrowRight className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
+              {/* Legal */}
+              <div>
+                <h4 className="text-lg font-bold text-gray-900 mb-6">Legal</h4>
+                <ul className="space-y-4">
+                  {footerLinks.legal.map((link) => (
+                    <li key={link.name}>
+                      <Link
+                        href={link.href}
+                        className="text-gray-600 hover:text-primary-600 transition-colors flex items-center group text-sm lg:text-base"
+                      >
+                        {link.name}
+                        <ArrowRight className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -246,8 +260,6 @@ const Footer = () => {
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="flex items-center text-gray-600 mb-4 md:mb-0">
               <span>© {currentYear} LearnHub. All rights reserved.</span>
-              <Heart className="w-4 h-4 text-red-500 mx-2" />
-              <span>Made with passion for learning</span>
             </div>
             <div className="flex items-center space-x-6">
               <Link
@@ -273,7 +285,7 @@ const Footer = () => {
         </div>
       </div>
     </footer>
-  )
-}
+  );
+};
 
-export default Footer
+export default Footer;
