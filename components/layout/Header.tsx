@@ -208,6 +208,7 @@ export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isExploreOpen, setIsExploreOpen] = useState(false);
+  const [isMobileExploreExpanded, setIsMobileExploreExpanded] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [searchSuggestions, setSearchSuggestions] = useState<
@@ -313,8 +314,8 @@ export default function Header() {
     setIsExploreOpen(false);
   };
 
-  // Show search bar on all pages except auth pages and admin pages
-  const hideSearchOnPages = ['/auth/signin', '/auth/signup', '/admin'];
+  // Show search bar on all pages except auth pages (ONLY CHANGE: removed '/admin')
+  const hideSearchOnPages = ['/auth/signin', '/auth/signup'];
   const showSearchBar = !hideSearchOnPages.some(page => pathname.startsWith(page));
 
   return (
@@ -744,34 +745,113 @@ export default function Header() {
           </div>
         )}
 
-        {/* Mobile Navigation */}
+        {/* Mobile Navigation - ONLY CHANGE: Made scrollable */}
         {isMenuOpen && (
-          <div className="md:hidden py-4 border-t border-gray-200">
+          <div className="md:hidden py-4 border-t border-gray-200 max-h-[70vh] overflow-y-auto">
             <nav className="flex flex-col space-y-3">
               <div className="mb-4">
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">
+                <button
+                  onClick={() => setIsMobileExploreExpanded(!isMobileExploreExpanded)}
+                  className="flex items-center justify-between w-full text-sm font-semibold text-gray-900 mb-3"
+                >
                   Explore Categories
-                </h3>
-                <div className="grid grid-cols-1 gap-2 ml-4">
-                  {exploreData.categories.slice(0, 6).map((category) => (
-                    <button
-                      key={category.name}
-                      onClick={() => {
-                        handleCategoryClick(category.name);
-                        setIsMenuOpen(false);
-                      }}
-                      className="flex items-center text-gray-600 hover:text-[#001e62] transition-colors py-2 text-left"
-                    >
-                      <category.icon className="w-4 h-4 mr-3" />
-                      {category.name}
-                    </button>
-                  ))}
+                  <ChevronDown
+                    className={`w-4 h-4 transition-transform ${
+                      isMobileExploreExpanded ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+                <div className="ml-4">
+                  {/* Show limited categories when collapsed */}
+                  {!isMobileExploreExpanded && (
+                    <div className="grid grid-cols-1 gap-2">
+                      {exploreData.categories.slice(0, 6).map((category) => (
+                        <button
+                          key={category.name}
+                          onClick={() => {
+                            handleCategoryClick(category.name);
+                            setIsMenuOpen(false);
+                          }}
+                          className="flex items-center text-gray-600 hover:text-[#001e62] transition-colors py-2 text-left"
+                        >
+                          <category.icon className="w-4 h-4 mr-3" />
+                          {category.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* Show all categories when expanded */}
+                  {isMobileExploreExpanded && (
+                    <div className="max-h-60 overflow-y-auto">
+                      <div className="mb-4">
+                        <h4 className="text-xs font-medium text-gray-700 mb-2 uppercase tracking-wide">
+                          All Categories
+                        </h4>
+                        <div className="grid grid-cols-1 gap-2">
+                          {exploreData.categories.map((category) => (
+                            <button
+                              key={category.name}
+                              onClick={() => {
+                                handleCategoryClick(category.name);
+                                setIsMenuOpen(false);
+                              }}
+                              className="flex items-center text-gray-600 hover:text-[#001e62] transition-colors py-2 text-left"
+                            >
+                              <category.icon className="w-4 h-4 mr-3" />
+                              {category.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      <div className="mb-4">
+                        <h4 className="text-xs font-medium text-gray-700 mb-2 uppercase tracking-wide">
+                          Trending Skills
+                        </h4>
+                        <div className="grid grid-cols-2 gap-2">
+                          {exploreData.trendingSkills.map((skill) => (
+                            <button
+                              key={skill.name}
+                              onClick={() => {
+                                handleSkillClick(skill.name);
+                                setIsMenuOpen(false);
+                              }}
+                              className="text-sm text-gray-600 hover:text-[#001e62] transition-colors py-1.5 text-left"
+                            >
+                              {skill.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      <div className="mb-2">
+                        <h4 className="text-xs font-medium text-gray-700 mb-2 uppercase tracking-wide">
+                          Career Paths
+                        </h4>
+                        <div className="grid grid-cols-1 gap-2">
+                          {exploreData.roles.map((role) => (
+                            <Link
+                              key={role.name}
+                              href={role.href}
+                              onClick={() => setIsMenuOpen(false)}
+                              className="flex items-center text-gray-600 hover:text-[#001e62] transition-colors py-1.5 text-left"
+                            >
+                              <role.icon className="w-4 h-4 mr-3" />
+                              <span className="text-sm">{role.name}</span>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
                   <Link
                     href="/courses"
-                    className="text-[#001e62] hover:text-[#001e62]/80 font-medium py-2"
+                    className="text-[#001e62] hover:text-[#001e62]/80 font-medium py-2 block"
                     onClick={() => setIsMenuOpen(false)}
                   >
-                    View all categories →
+                    View all courses →
                   </Link>
                 </div>
               </div>

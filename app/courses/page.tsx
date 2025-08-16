@@ -45,6 +45,7 @@ import {
   X,
   ChevronDown,
   ChevronUp,
+  AlertCircle,
 } from "lucide-react";
 import { formatDuration, calculateProgress } from "@/lib/utils";
 
@@ -130,6 +131,9 @@ export default function CoursesPage() {
   >("newest");
   const [showFilters, setShowFilters] = useState(false);
   const [favoriteLoading, setFavoriteLoading] = useState<string | null>(null);
+  const [enrollingCourseId, setEnrollingCourseId] = useState<string | null>(null); // NEW: Track enrollment loading per course
+  const [error, setError] = useState<string | null>(null); // NEW: General error state
+  const [successMessage, setSuccessMessage] = useState<string | null>(null); // NEW: Success message state
 
   useEffect(() => {
     const searchParam = searchParams?.get("search");
@@ -150,6 +154,17 @@ export default function CoursesPage() {
     organizeCoursesByCategory();
   }, [courses, searchTerm, selectedCategory, selectedLevel, sortBy]);
 
+  // NEW: Auto-dismiss messages after 5 seconds
+  useEffect(() => {
+    if (error || successMessage) {
+      const timer = setTimeout(() => {
+        setError(null);
+        setSuccessMessage(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error, successMessage]);
+
   const fetchCourses = async () => {
     try {
       const response = await fetch("/api/courses");
@@ -162,11 +177,14 @@ export default function CoursesPage() {
           .filter((course: Course) => course.isFeatured)
           .slice(0, 8);
         setFeaturedCourses(featured);
+      } else {
+        setError("Failed to load courses. Please refresh the page.");
       }
     } catch (error) {
       console.error("Error fetching courses:", error);
       setCourses([]);
       setFeaturedCourses([]);
+      setError("Network error while loading courses. Please check your connection.");
     } finally {
       setLoading(false);
     }
@@ -301,55 +319,132 @@ export default function CoursesPage() {
           setFavoriteCourses((prev) =>
             prev.filter((fav) => fav.courseId !== courseId)
           );
+          setSuccessMessage("Course removed from favorites");
         } else {
           const course = courses.find((c) => c.id === courseId);
           if (course) {
             setFavoriteCourses((prev) => [...prev, { courseId, course }]);
+            setSuccessMessage("Course added to favorites");
           }
         }
       } else {
         const errorData = await response.json();
         console.error("Error toggling favorite:", errorData);
+        setError("Failed to update favorites. Please try again.");
       }
     } catch (error) {
       console.error("Error toggling favorite:", error);
+      setError("Network error. Please check your connection.");
     } finally {
       setFavoriteLoading(null);
     }
   };
 
+  // ENHANCED: Complete enrollment function with better error handling
   const enrollInCourse = async (courseId: string, event?: React.MouseEvent) => {
     if (event) {
       event.preventDefault();
       event.stopPropagation();
     }
 
-    if (status !== 'authenticated') {
+    console.log("=== FRONTEND ENROLLMENT START ===");
+    console.log("Session status:", status);
+    console.log("Session data:", session);
+    console.log("Course ID:", courseId);
+
+    // Clear previous messages
+    setError(null);
+    setSuccessMessage(null);
+
+    // Check authentication
+    if (status !== 'authenticated' || !session) {
+      console.log("Not authenticated, redirecting to signin");
       router.push("/auth/signin");
       return;
     }
 
+    // Set loading state for this specific course
+    setEnrollingCourseId(courseId);
+
     try {
+      console.log("Making enrollment request...");
+      
       const response = await fetch("/api/enrollments", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json"
+        },
         body: JSON.stringify({ courseId }),
       });
 
+      console.log("Response status:", response.status);
+      
+      const data = await response.json();
+      console.log("Response data:", data);
+
       if (response.ok) {
-        setEnrolledCourses((prev) => [
-          ...prev,
-          { courseId, enrolledAt: new Date().toISOString(), progress: 0 },
-        ]);
-        router.push(`/course/${courseId}`);
+        // Handle successful enrollment or existing enrollment
+        console.log("✅ Enrollment successful");
+        
+        // Update local state
+        setEnrolledCourses((prev) => {
+          const filtered = prev.filter(e => e.courseId !== courseId);
+          return [...filtered, { 
+            courseId, 
+            enrolledAt: new Date().toISOString(), 
+            progress: 0 
+          }];
+        });
+
+        // Show success message based on response code
+        if (data.code === "ALREADY_ENROLLED") {
+          console.log("Already enrolled, continuing to course...");
+          setSuccessMessage("You're already enrolled! Redirecting to course...");
+        } else if (data.code === "ENROLLMENT_SUCCESS") {
+          console.log("New enrollment created!");
+          setSuccessMessage("Successfully enrolled in course! Starting your journey...");
+        }
+
+        // Redirect to course or specific video after a brief delay to show message
+        const redirectPath = data.redirect || `/course/${courseId}`;
+        console.log("Redirecting to:", redirectPath);
+        
+        setTimeout(() => {
+          router.push(redirectPath);
+        }, 1500);
+        
       } else {
-        const error = await response.json();
-        if (error.error === "Already enrolled") {
-          router.push(`/course/${courseId}`);
+        // Handle errors
+        console.error("❌ Enrollment failed:", data);
+        
+        switch (data.code) {
+          case "AUTH_REQUIRED":
+            console.log("Authentication required, redirecting...");
+            setError("Please sign in to enroll in courses");
+            setTimeout(() => router.push("/auth/signin"), 2000);
+            break;
+            
+          case "COURSE_NOT_FOUND":
+            setError("This course could not be found. Please try refreshing the page.");
+            break;
+            
+          case "COURSE_NOT_PUBLISHED":
+            setError("This course is not currently available for enrollment.");
+            break;
+            
+          case "USER_NOT_FOUND":
+            setError("There was an issue with your account. Please try signing out and back in.");
+            break;
+            
+          default:
+            setError(data.details || data.error || "Failed to enroll in course. Please try again.");
         }
       }
     } catch (error) {
-      console.error("Error enrolling in course:", error);
+      console.error("❌ Network error during enrollment:", error);
+      setError("Network error. Please check your connection and try again.");
+    } finally {
+      setEnrollingCourseId(null);
     }
   };
 
@@ -408,6 +503,7 @@ export default function CoursesPage() {
   const isFavorited = (courseId: string) =>
     favoriteCourses.some((fav) => fav.courseId === courseId);
 
+  // ENHANCED: CourseCard with loading states and better UX
   const CourseCard = ({
     course,
     featured = false,
@@ -422,13 +518,16 @@ export default function CoursesPage() {
     const totalDuration = getTotalDuration(course);
     const totalVideos = getTotalVideos(course);
     const isLoadingFavorite = favoriteLoading === course.id;
+    const isLoadingEnrollment = enrollingCourseId === course.id; // NEW: Course-specific loading
 
     return (
       <Link href={`/course/${course.id}`}>
         <Card
           className={`group overflow-hidden hover:shadow-xl transition-all duration-500 border-0 bg-white hover:-translate-y-1 ${
             featured ? "ring-2 ring-[#001e62]/20" : ""
-          } ${size === "large" ? "lg:col-span-2" : ""}`}
+          } ${size === "large" ? "lg:col-span-2" : ""} ${
+            isLoadingEnrollment ? "opacity-75" : ""
+          }`}
         >
           <div className="relative">
             {course.thumbnail ? (
@@ -503,9 +602,14 @@ export default function CoursesPage() {
               )}
               <button
                 onClick={(e) => enrollInCourse(course.id, e)}
-                className="p-2 bg-[#001e62] text-white rounded-full hover:bg-[#001e62]/90 transition-colors shadow-lg"
+                disabled={isLoadingEnrollment}
+                className="p-2 bg-[#001e62] text-white rounded-full hover:bg-[#001e62]/90 transition-colors shadow-lg disabled:opacity-50"
               >
-                <Play className="w-4 h-4 fill-current" />
+                {isLoadingEnrollment ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4 fill-current" />
+                )}
               </button>
             </div>
 
@@ -516,6 +620,18 @@ export default function CoursesPage() {
                   <CheckCircle className="w-3 h-3 mr-1" />
                   Enrolled
                 </span>
+              </div>
+            )}
+
+            {/* NEW: Loading overlay */}
+            {isLoadingEnrollment && (
+              <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                <div className="bg-white rounded-lg p-3 shadow-lg">
+                  <div className="flex items-center space-x-2">
+                    <Loader2 className="w-5 h-5 animate-spin text-[#001e62]" />
+                    <span className="text-sm font-medium text-gray-700">Enrolling...</span>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -567,13 +683,19 @@ export default function CoursesPage() {
               <Button
                 size="sm"
                 onClick={(e) => enrollInCourse(course.id, e)}
+                disabled={isLoadingEnrollment}
                 className={`${
                   enrolled
                     ? "bg-green-600 hover:bg-green-700"
                     : "bg-[#001e62] hover:bg-[#001e62]/90"
-                } text-white border-0`}
+                } text-white border-0 disabled:opacity-50`}
               >
-                {enrolled ? (
+                {isLoadingEnrollment ? (
+                  <>
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    Enrolling...
+                  </>
+                ) : enrolled ? (
                   <>
                     <Play className="w-3 h-3 mr-1" />
                     Continue
@@ -687,6 +809,47 @@ export default function CoursesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* NEW: Message notifications */}
+      {(error || successMessage) && (
+        <div className="fixed top-4 right-4 z-50 max-w-md">
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 shadow-lg mb-2">
+              <div className="flex items-start">
+                <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 mr-3 flex-shrink-0" />
+                <div>
+                  <h4 className="text-red-800 font-medium">Error</h4>
+                  <p className="text-red-700 text-sm mt-1">{error}</p>
+                </div>
+                <button
+                  onClick={() => setError(null)}
+                  className="ml-auto text-red-400 hover:text-red-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {successMessage && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 shadow-lg">
+              <div className="flex items-start">
+                <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
+                <div>
+                  <h4 className="text-green-800 font-medium">Success</h4>
+                  <p className="text-green-700 text-sm mt-1">{successMessage}</p>
+                </div>
+                <button
+                  onClick={() => setSuccessMessage(null)}
+                  className="ml-auto text-green-400 hover:text-green-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Hero Section */}
       <div className="relative bg-[#001e62] text-white overflow-hidden">
         {/* Content */}
@@ -833,6 +996,9 @@ export default function CoursesPage() {
                               style={{ width: `${userProgress.progress}%` }}
                             />
                           </div>
+                          <div className="flex justify-between text-xs text-gray-500 mt-1">
+                            <span>{userProgress.progress}% complete</span>
+                          </div>
                         </div>
 
                         <Link href={`/course/${userProgress.courseId}`}>
@@ -880,21 +1046,30 @@ export default function CoursesPage() {
           </>
         )}
 
-        {/* Filters Section */}
+        {/* Search Bar Section - NEW */}
         <section className="mb-8">
           <Card className="border-0 shadow-lg bg-white">
             <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-gray-900">
-                  Find Your Perfect Course
-                </h3>
+              <div className="flex flex-col lg:flex-row gap-4">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <Input
+                      type="text"
+                      placeholder="Search courses by title, description, or category..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10 h-12 text-lg border-[#001e62]/20 focus:border-[#001e62] focus:ring-[#001e62]"
+                    />
+                  </div>
+                </div>
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="lg"
                   onClick={() => setShowFilters(!showFilters)}
-                  className="flex items-center gap-2 border-[#001e62] text-[#001e62] hover:bg-[#001e62]/5"
+                  className="flex items-center gap-2 border-[#001e62] text-[#001e62] hover:bg-[#001e62]/5 h-12"
                 >
-                  <Filter className="w-4 h-4" />
+                  <Filter className="w-5 h-5" />
                   Filters
                   {showFilters ? (
                     <ChevronUp className="w-4 h-4" />
@@ -904,10 +1079,11 @@ export default function CoursesPage() {
                 </Button>
               </div>
 
+              {/* Expanded Filters */}
               <div
                 className={`${
                   showFilters ? "block" : "hidden"
-                } space-y-6 transition-all duration-300`}
+                } mt-6 space-y-6 transition-all duration-300 border-t border-gray-200 pt-6`}
               >
                 {/* Category Filter */}
                 <div>
@@ -1144,26 +1320,41 @@ export default function CoursesPage() {
                           <Button
                             size="lg"
                             onClick={(e) => enrollInCourse(featuredCourses[0].id, e)}
-                            className="bg-gradient-to-r from-[#001e62] to-blue-600 hover:from-[#001e62]/90 hover:to-blue-700 text-white font-bold px-8"
+                            disabled={enrollingCourseId === featuredCourses[0].id}
+                            className="bg-gradient-to-r from-[#001e62] to-blue-600 hover:from-[#001e62]/90 hover:to-blue-700 text-white font-bold px-8 disabled:opacity-50"
                           >
-                            <Zap className="w-5 h-5 mr-2" />
-                            {isEnrolled(featuredCourses[0].id)
-                              ? "Continue Learning"
-                              : "Start Learning Now"}
+                            {enrollingCourseId === featuredCourses[0].id ? (
+                              <>
+                                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                                Enrolling...
+                              </>
+                            ) : (
+                              <>
+                                <Zap className="w-5 h-5 mr-2" />
+                                {isEnrolled(featuredCourses[0].id)
+                                  ? "Continue Learning"
+                                  : "Start Learning Now"}
+                              </>
+                            )}
                           </Button>
                           <Button
                             variant="outline"
                             size="lg"
                             onClick={(e) => toggleFavorite(featuredCourses[0].id, e)}
-                            className="border-[#001e62] text-[#001e62] hover:bg-[#001e62]/5"
+                            disabled={favoriteLoading === featuredCourses[0].id}
+                            className="border-[#001e62] text-[#001e62] hover:bg-[#001e62]/5 disabled:opacity-50"
                           >
-                            <Heart
-                              className={`w-5 h-5 mr-2 ${
-                                isFavorited(featuredCourses[0].id)
-                                  ? "fill-red-500 text-red-500"
-                                  : "text-[#001e62]"
-                              }`}
-                            />
+                            {favoriteLoading === featuredCourses[0].id ? (
+                              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                            ) : (
+                              <Heart
+                                className={`w-5 h-5 mr-2 ${
+                                  isFavorited(featuredCourses[0].id)
+                                    ? "fill-red-500 text-red-500"
+                                    : "text-[#001e62]"
+                                }`}
+                              />
+                            )}
                             Save for Later
                           </Button>
                         </div>
