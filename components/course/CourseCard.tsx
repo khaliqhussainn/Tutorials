@@ -1,52 +1,61 @@
-// components/course/CourseCard.tsx
+// components/course/CourseCard.tsx - FIXED VERSION
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Card, CardContent, CardHeader } from '@/components/ui/Card'
+import { Card, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { Clock, Users, Star, Heart, PlayCircle, Award } from 'lucide-react'
+import {
+  Clock,
+  Users,
+  Star,
+  Heart,
+  Play,
+  BookOpen,
+  Loader2,
+  PlayCircle
+} from 'lucide-react'
 import { formatDuration } from '@/lib/utils'
-import { useState } from 'react'
 
-interface CourseCardProps {
-  course: {
-    id: string
-    title: string
-    description: string
-    thumbnail?: string
-    category: string
-    level: string
-    videos: { duration?: number }[]
-    _count: { enrollments: number }
-  }
-  isFavorite?: boolean
-  onToggleFavorite?: (courseId: string) => void
-  showProgress?: boolean
-  progress?: number
+interface Course {
+  id: string
+  title: string
+  description: string
+  thumbnail?: string
+  category: string
+  level: string
+  videos: { duration?: number }[]
+  _count: { enrollments: number }
 }
 
-export default function CourseCard({ 
-  course, 
-  isFavorite, 
-  onToggleFavorite, 
-  showProgress = false, 
-  progress = 0 
+interface CourseCardProps {
+  course: Course
+  isFavorite?: boolean
+  onToggleFavorite?: (courseId: string) => void
+  favoriteLoading?: boolean
+  showProgress?: boolean
+  progress?: number
+  variant?: 'default' | 'compact' | 'featured'
+}
+
+export default function CourseCard({
+  course,
+  isFavorite = false,
+  onToggleFavorite,
+  favoriteLoading = false,
+  showProgress = false,
+  progress = 0,
+  variant = 'default'
 }: CourseCardProps) {
-  const [isLoading, setIsLoading] = useState(false)
   const [imageError, setImageError] = useState(false)
-  
-  const totalDuration = course.videos.reduce((acc, video) => acc + (video.duration || 0), 0)
-  
-  const handleFavoriteToggle = async () => {
-    if (!onToggleFavorite) return
-    
-    setIsLoading(true)
-    try {
-      await onToggleFavorite(course.id)
-    } finally {
-      setIsLoading(false)
-    }
+
+  const getTotalDuration = () => {
+    return course.videos?.reduce((acc, video) => acc + (video.duration || 0), 0) || 0
+  }
+
+  const getTotalVideos = () => {
+    return course.videos?.length || 0
   }
 
   const getLevelColor = (level: string) => {
@@ -62,163 +71,156 @@ export default function CourseCard({
     }
   }
 
-  const getLevelIcon = (level: string) => {
-    switch (level) {
-      case 'BEGINNER':
-        return '🌱'
-      case 'INTERMEDIATE':
-        return '🚀'
-      case 'ADVANCED':
-        return '🏆'
-      default:
-        return '📚'
+  const handleFavoriteClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (onToggleFavorite && !favoriteLoading) {
+      onToggleFavorite(course.id)
     }
   }
 
+  const totalDuration = getTotalDuration()
+  const totalVideos = getTotalVideos()
+
   return (
-    <Card className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 bg-white border-0 shadow-md overflow-hidden">
-      <CardHeader className="p-0 relative">
-        <div className="relative aspect-video overflow-hidden">
+    <Link href={`/course/${course.id}`}>
+      <Card className={`group overflow-hidden hover:shadow-xl transition-all duration-500 border-0 bg-white hover:-translate-y-1 ${
+        variant === 'featured' ? 'ring-2 ring-blue-600/20' : ''
+      } ${variant === 'compact' ? 'h-full' : ''}`}>
+        {/* Course Thumbnail */}
+        <div className="relative">
           {course.thumbnail && !imageError ? (
-            <Image
-              src={course.thumbnail}
-              alt={course.title}
-              fill
-              className="object-cover group-hover:scale-110 transition-transform duration-500"
-              onError={() => setImageError(true)}
-            />
+            <div className={`relative aspect-video overflow-hidden`}>
+              <Image
+                src={course.thumbnail}
+                alt={course.title}
+                fill
+                className="object-cover group-hover:scale-105 transition-transform duration-500"
+                onError={() => setImageError(true)}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            </div>
           ) : (
-            <div className="w-full h-full bg-gradient-to-br from-primary-100 via-primary-50 to-secondary-100 flex items-center justify-center relative overflow-hidden">
-              {/* Background Pattern */}
-              <div className="absolute inset-0 opacity-10">
-                <div className="absolute top-4 left-4 w-8 h-8 border-2 border-primary-300 rounded-full"></div>
-                <div className="absolute top-8 right-8 w-6 h-6 border-2 border-secondary-300 rounded-full"></div>
-                <div className="absolute bottom-6 left-8 w-4 h-4 bg-primary-300 rounded-full"></div>
-                <div className="absolute bottom-8 right-6 w-12 h-12 border-2 border-secondary-300 rounded-full"></div>
-              </div>
-              
-              <div className="text-center z-10">
-                <div className="w-16 h-16 bg-primary-200 rounded-full flex items-center justify-center mb-3 mx-auto">
-                  <PlayCircle className="w-8 h-8 text-primary-600" />
-                </div>
-                <span className="text-primary-700 text-sm font-medium">
-                  {course.category}
-                </span>
-              </div>
+            <div className="aspect-video bg-gradient-to-br from-blue-600/10 via-blue-600/5 to-blue-100 flex items-center justify-center relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 to-blue-500/10" />
+              <PlayCircle className="w-12 h-12 text-blue-600 relative z-10" />
             </div>
           )}
-          
-          {/* Overlay Gradient */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-          
-          {/* Favorite Button */}
-          {onToggleFavorite && (
-            <button
-              onClick={handleFavoriteToggle}
-              disabled={isLoading}
-              className="absolute top-3 right-3 p-2 bg-white/90 backdrop-blur-sm rounded-full hover:bg-white hover:scale-110 transition-all duration-200 shadow-lg"
-            >
-              <Heart
-                className={`w-4 h-4 transition-colors ${
-                  isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-600 hover:text-red-500'
-                }`}
-              />
-            </button>
-          )}
-          
+
           {/* Level Badge */}
-          <div className="absolute bottom-3 left-3">
-            <span className={`px-3 py-1 rounded-full text-xs font-semibold border backdrop-blur-sm ${getLevelColor(course.level)}`}>
-              {getLevelIcon(course.level)} {course.level}
+          <div className="absolute top-3 left-3">
+            <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getLevelColor(course.level)}`}>
+              {course.level}
             </span>
           </div>
 
-          {/* Progress Bar (if applicable) */}
-          {showProgress && progress > 0 && (
-            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/20">
-              <div 
-                className="h-full bg-primary-500 transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              ></div>
+          {/* Favorite Button */}
+          {onToggleFavorite && (
+            <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+              <button
+                onClick={handleFavoriteClick}
+                disabled={favoriteLoading}
+                className="p-2 bg-white/90 backdrop-blur-sm rounded-full hover:bg-white transition-colors shadow-lg disabled:opacity-50"
+                aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+              >
+                {favoriteLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-gray-600" />
+                ) : (
+                  <Heart
+                    className={`w-4 h-4 transition-colors ${
+                      isFavorite
+                        ? 'fill-red-500 text-red-500'
+                        : 'text-gray-600 hover:text-red-500'
+                    }`}
+                  />
+                )}
+              </button>
             </div>
           )}
-        </div>
-      </CardHeader>
-      
-      <CardContent className="p-6">
-        {/* Category and Rating */}
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm text-primary-600 font-medium bg-primary-50 px-2 py-1 rounded">
-            {course.category}
-          </span>
-          <div className="flex items-center text-sm text-gray-500">
-            <Star className="w-4 h-4 mr-1 fill-yellow-400 text-yellow-400" />
-            <span className="font-medium">4.8</span>
-          </div>
-        </div>
-        
-        {/* Title */}
-        <h3 className="text-lg font-bold text-gray-900 mb-3 line-clamp-2 group-hover:text-primary-600 transition-colors">
-          {course.title}
-        </h3>
-        
-        {/* Description */}
-        <p className="text-gray-600 text-sm mb-4 line-clamp-2 leading-relaxed">
-          {course.description}
-        </p>
-        
-        {/* Stats */}
-        <div className="flex items-center justify-between text-sm text-gray-500 mb-6">
-          <div className="flex items-center">
-            <Clock className="w-4 h-4 mr-1.5" />
-            <span>{formatDuration(totalDuration)}</span>
-          </div>
-          <div className="flex items-center">
-            <Users className="w-4 h-4 mr-1.5" />
-            <span>{course._count.enrollments.toLocaleString()} students</span>
-          </div>
-          <div className="flex items-center">
-            <PlayCircle className="w-4 h-4 mr-1.5" />
-            <span>{course.videos.length} lessons</span>
+
+          {/* Play Button Overlay */}
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <div className="p-3 bg-white/20 backdrop-blur-sm rounded-full">
+              <Play className="w-8 h-8 text-white fill-current" />
+            </div>
           </div>
         </div>
 
-        {/* Progress Section (if applicable) */}
-        {showProgress && (
-          <div className="mb-4">
-            <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
-              <span className="flex items-center">
-                <Award className="w-4 h-4 mr-1" />
-                Progress
-              </span>
-              <span className="font-semibold">{Math.round(progress)}%</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
-                className="bg-gradient-to-r from-primary-500 to-primary-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              ></div>
+        {/* Course Content */}
+        <CardContent className="p-4">
+          {/* Category and Enrollment Count */}
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-blue-600">
+              {course.category}
+            </span>
+            <div className="flex items-center text-xs text-gray-500">
+              <Users className="w-3 h-3 mr-1" />
+              {course._count?.enrollments || 0}
             </div>
           </div>
-        )}
-        
-        {/* Action Button */}
-        <Link href={`/course/${course.id}`}>
-          <Button className="w-full group-hover:bg-primary-700 transition-colors duration-200 font-semibold">
-            {showProgress && progress > 0 ? (
-              <>
-                <PlayCircle className="w-4 h-4 mr-2" />
-                Continue Learning
-              </>
-            ) : (
-              <>
-                <PlayCircle className="w-4 h-4 mr-2" />
-                Start Course
-              </>
-            )}
-          </Button>
-        </Link>
-      </CardContent>
-    </Card>
+
+          {/* Title */}
+          <h3 className={`font-bold text-gray-900 mb-2 line-clamp-2 leading-tight ${
+            variant === 'compact' ? 'text-base' : 'text-lg'
+          }`}>
+            {course.title}
+          </h3>
+
+          {/* Description */}
+          <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+            {course.description}
+          </p>
+
+          {/* Progress Bar (if applicable) */}
+          {showProgress && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                <span>Progress</span>
+                <span>{Math.round(progress)}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-green-600 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(progress, 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Course Stats */}
+          <div className="grid grid-cols-3 gap-2 text-xs text-gray-500 mb-4">
+            <div className="flex items-center">
+              <Clock className="w-3 h-3 mr-1" />
+              <span className="truncate">
+                {formatDuration(totalDuration)}
+              </span>
+            </div>
+            <div className="flex items-center">
+              <BookOpen className="w-3 h-3 mr-1" />
+              <span className="truncate">{totalVideos} lessons</span>
+            </div>
+            <div className="flex items-center">
+              <Star className="w-3 h-3 mr-1 fill-yellow-400 text-yellow-400" />
+              <span>4.8</span>
+            </div>
+          </div>
+
+          {/* Action Button */}
+          <div className="flex items-center justify-between">
+            <div className="text-sm">
+              {/* You can add price or other info here */}
+            </div>
+            <Button
+              size="sm"
+              className="bg-blue-600 hover:bg-blue-700 text-white border-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Play className="w-3 h-3 mr-1" />
+              {showProgress ? 'Continue' : 'Start'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   )
 }

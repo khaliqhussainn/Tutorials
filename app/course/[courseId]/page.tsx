@@ -1,6 +1,6 @@
-// app/course/[courseId]/page.tsx - PRODUCTION FIXED
+// app/course/[courseId]/page.tsx - PRODUCTION OPTIMIZED
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -83,32 +83,141 @@ export default function CoursePage({ params }: CoursePageProps) {
   const [course, setCourse] = useState<Course | null>(null);
   const [isEnrolled, setIsEnrolled] = useState<boolean>(false);
   const [videoProgress, setVideoProgress] = useState<VideoProgress[]>([]);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set()
-  );
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState<boolean>(true);
   const [enrolling, setEnrolling] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<
-    "videos" | "about" | "notes" | "certificates"
-  >("videos");
+  const [activeTab, setActiveTab] = useState<"videos" | "about" | "notes" | "certificates">("videos");
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [enrollmentChecked, setEnrollmentChecked] = useState<boolean>(false);
+  const [authCheckComplete, setAuthCheckComplete] = useState<boolean>(false);
 
-  useEffect(() => {
-    fetchCourse();
+  // Fetch course data
+  const fetchCourse = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/courses/${params.courseId}`, {
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      });
+      
+      if (response.ok) {
+        const data: Course = await response.json();
+        setCourse(data);
+      } else {
+        setError("Course not found or unavailable");
+      }
+    } catch (error) {
+      console.error("Error fetching course:", error);
+      setError("Failed to load course. Please refresh the page.");
+    } finally {
+      setLoading(false);
+    }
   }, [params.courseId]);
 
-  useEffect(() => {
-    if (status === "authenticated" && session?.user && course) {
-      checkEnrollment();
-      fetchProgress();
-    } else if (status === "authenticated" && course) {
-      // Set enrollment checked to true even if no session.user to prevent loading states
+  // Check enrollment status
+  const checkEnrollment = useCallback(async () => {
+    if (!session?.user?.email && !session?.user?.id) {
+      console.log("👤 No session user, skipping enrollment check");
+      setEnrollmentChecked(true);
+      return;
+    }
+
+    try {
+      console.log("🔍 Checking enrollment...", {
+        userId: session.user.id,
+        userEmail: session.user.email
+      });
+
+      const response = await fetch(`/api/enrollments/${params.courseId}`, {
+        method: "GET",
+        headers: {
+          "Cache-Control": "no-cache",
+        },
+      });
+
+      console.log("📊 Enrollment check response:", response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("✅ Enrollment status:", data);
+        setIsEnrolled(data.enrolled);
+      } else if (response.status === 401) {
+        console.log("🔐 Unauthorized - user needs to sign in");
+        setIsEnrolled(false);
+      } else {
+        console.log("❌ Enrollment check failed:", response.status);
+        setIsEnrolled(false);
+      }
+    } catch (error) {
+      console.error("💥 Error checking enrollment:", error);
+      setIsEnrolled(false);
+    } finally {
       setEnrollmentChecked(true);
     }
-  }, [status, session, course]);
+  }, [session?.user, params.courseId]);
 
+  // Fetch progress data
+  const fetchProgress = useCallback(async () => {
+    if (!session?.user || !isEnrolled) return;
+
+    try {
+      const response = await fetch(`/api/progress/${params.courseId}`, {
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      });
+      
+      if (response.ok) {
+        const data: VideoProgress[] = await response.json();
+        setVideoProgress(data);
+      }
+    } catch (error) {
+      console.error("Error fetching progress:", error);
+    }
+  }, [session?.user, params.courseId, isEnrolled]);
+
+  // Initial course fetch
+  useEffect(() => {
+    fetchCourse();
+  }, [fetchCourse]);
+
+  // Handle authentication and enrollment checks
+  useEffect(() => {
+    console.log("🔄 Session status changed:", {
+      status,
+      hasSession: !!session,
+      hasUser: !!session?.user,
+      userEmail: session?.user?.email,
+      userId: session?.user?.id
+    });
+
+    if (status === "loading") {
+      setAuthCheckComplete(false);
+      setEnrollmentChecked(false);
+      return;
+    }
+
+    setAuthCheckComplete(true);
+
+    if (status === "authenticated" && session?.user && course) {
+      checkEnrollment();
+    } else if (status === "unauthenticated" || !session?.user) {
+      console.log("👤 User not authenticated");
+      setIsEnrolled(false);
+      setEnrollmentChecked(true);
+    }
+  }, [status, session, course, checkEnrollment]);
+
+  // Fetch progress when enrollment is confirmed
+  useEffect(() => {
+    if (isEnrolled && course) {
+      fetchProgress();
+    }
+  }, [isEnrolled, course, fetchProgress]);
+
+  // Expand all sections by default
   useEffect(() => {
     if (course?.sections) {
       const sectionIds = new Set(course.sections.map((s) => s.id));
@@ -122,80 +231,12 @@ export default function CoursePage({ params }: CoursePageProps) {
       const timer = setTimeout(() => {
         setError(null);
         setSuccessMessage(null);
-      }, 5000);
+      }, 6000);
       return () => clearTimeout(timer);
     }
   }, [error, successMessage]);
 
-  const fetchCourse = async () => {
-    try {
-      const response = await fetch(`/api/courses/${params.courseId}`);
-      if (response.ok) {
-        const data: Course = await response.json();
-        setCourse(data);
-      } else {
-        setError("Course not found or unavailable");
-      }
-    } catch (error) {
-      console.error("Error fetching course:", error);
-      setError("Failed to load course. Please refresh the page.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const checkEnrollment = async () => {
-    if (!session?.user?.id && !session?.user?.email) {
-      setEnrollmentChecked(true);
-      return;
-    }
-
-    try {
-      console.log(
-        "Checking enrollment for user:",
-        session.user.id,
-        session.user.email
-      );
-
-      const response = await fetch(`/api/enrollments/${params.courseId}`, {
-        method: "GET",
-        headers: {
-          "Cache-Control": "no-cache",
-        },
-      });
-
-      console.log("Enrollment check response:", response.status);
-
-      if (response.ok) {
-        const enrollment = await response.json();
-        console.log("Enrollment found:", enrollment);
-        setIsEnrolled(true);
-      } else {
-        console.log("Not enrolled");
-        setIsEnrolled(false);
-      }
-    } catch (error) {
-      console.error("Error checking enrollment:", error);
-      setIsEnrolled(false);
-    } finally {
-      setEnrollmentChecked(true);
-    }
-  };
-
-  const fetchProgress = async () => {
-    if (!session?.user) return;
-
-    try {
-      const response = await fetch(`/api/progress/${params.courseId}`);
-      if (response.ok) {
-        const data: VideoProgress[] = await response.json();
-        setVideoProgress(data);
-      }
-    } catch (error) {
-      console.error("Error fetching progress:", error);
-    }
-  };
-
+  // Enhanced enrollment handler
   const handleEnroll = async () => {
     console.log("=== FRONTEND ENROLLMENT START ===");
     console.log("Session status:", status);
@@ -205,21 +246,22 @@ export default function CoursePage({ params }: CoursePageProps) {
     setError(null);
     setSuccessMessage(null);
 
-    // Check authentication state
-    if (status === "loading") {
-      console.log("Session still loading, waiting...");
+    // Wait for auth check to complete
+    if (!authCheckComplete || status === "loading") {
+      console.log("⏳ Auth check not complete, waiting...");
       setError("Please wait while we verify your authentication...");
       return;
     }
 
+    // Check authentication state
     if (status === "unauthenticated" || !session?.user) {
-      console.log("Not authenticated, redirecting to signin");
-      router.push("/auth/signin");
+      console.log("❌ Not authenticated, redirecting to signin");
+      router.push(`/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname)}`);
       return;
     }
 
     if (!session.user.email) {
-      console.log("No email in session");
+      console.log("❌ No email in session");
       setError("Invalid session. Please sign out and back in.");
       return;
     }
@@ -227,7 +269,7 @@ export default function CoursePage({ params }: CoursePageProps) {
     setEnrolling(true);
 
     try {
-      console.log("Making enrollment request...");
+      console.log("📤 Making enrollment request...");
 
       const response = await fetch("/api/enrollments", {
         method: "POST",
@@ -238,10 +280,10 @@ export default function CoursePage({ params }: CoursePageProps) {
         body: JSON.stringify({ courseId: params.courseId }),
       });
 
-      console.log("Enrollment response status:", response.status);
+      console.log("📥 Enrollment response status:", response.status);
 
       const data = await response.json();
-      console.log("Enrollment response data:", data);
+      console.log("📊 Enrollment response data:", data);
 
       if (response.ok) {
         console.log("✅ Enrollment successful");
@@ -249,24 +291,32 @@ export default function CoursePage({ params }: CoursePageProps) {
         // Update local state immediately
         setIsEnrolled(true);
 
-        // Show success message
+        // Show success message based on response
         if (data.code === "ALREADY_ENROLLED") {
-          setSuccessMessage(
-            "You're already enrolled! Redirecting to course..."
-          );
+          setSuccessMessage("You're already enrolled! Taking you to your course...");
         } else {
-          setSuccessMessage(
-            "Successfully enrolled! Redirecting to your first lesson..."
-          );
+          setSuccessMessage("Successfully enrolled! Redirecting to your first lesson...");
         }
 
-        // Redirect after showing message
+        // Force re-check enrollment status
+        setTimeout(() => {
+          checkEnrollment();
+        }, 500);
+
+        // Navigate to the course or first video
         const redirectPath = data.redirect || `/course/${params.courseId}`;
-        console.log("Redirecting to:", redirectPath);
+        console.log("🔄 Navigating to:", redirectPath);
 
         setTimeout(() => {
-          router.push(redirectPath);
-        }, 1500);
+          if (data.redirect && data.redirect.includes('/video/')) {
+            // Direct to first video
+            router.push(data.redirect);
+          } else {
+            // Stay on course page but refresh enrollment status
+            window.location.reload();
+          }
+        }, 2000);
+
       } else {
         console.error("❌ Enrollment failed:", data);
 
@@ -275,8 +325,10 @@ export default function CoursePage({ params }: CoursePageProps) {
           case "AUTH_REQUIRED":
           case "INVALID_SESSION":
           case "USER_LOOKUP_FAILED":
-            setError("Authentication issue. Redirecting to sign in...");
-            setTimeout(() => router.push("/auth/signin"), 2000);
+            setError("Authentication issue. Please sign in again.");
+            setTimeout(() => {
+              router.push(`/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname)}`);
+            }, 2000);
             break;
 
           case "COURSE_NOT_FOUND":
@@ -284,7 +336,7 @@ export default function CoursePage({ params }: CoursePageProps) {
             break;
 
           case "COURSE_NOT_PUBLISHED":
-            setError("This course is not currently available.");
+            setError("This course is not currently available for enrollment.");
             break;
 
           case "DATABASE_ERROR":
@@ -292,22 +344,18 @@ export default function CoursePage({ params }: CoursePageProps) {
             break;
 
           default:
-            setError(
-              data.details ||
-                data.error ||
-                "Failed to enroll. Please try again."
-            );
+            setError(data.details || data.error || "Failed to enroll. Please try again.");
         }
       }
     } catch (error) {
-      console.error("❌ Network error during enrollment:", error);
+      console.error("💥 Network error during enrollment:", error);
       setError("Network error. Please check your connection and try again.");
     } finally {
       setEnrolling(false);
     }
   };
 
-  // Get video status logic (unchanged)
+  // Get video status logic
   const getVideoStatus = (
     video: Video,
     sectionVideos: Video[],
@@ -338,14 +386,10 @@ export default function CoursePage({ params }: CoursePageProps) {
     }
 
     if (prevVideo) {
-      const prevProgress = videoProgress.find(
-        (p) => p.videoId === prevVideo!.id
-      );
+      const prevProgress = videoProgress.find((p) => p.videoId === prevVideo!.id);
       const prevCompleted =
         prevProgress?.completed &&
-        (!prevVideo.tests ||
-          prevVideo.tests.length === 0 ||
-          prevProgress?.testPassed);
+        (!prevVideo.tests || prevVideo.tests.length === 0 || prevProgress?.testPassed);
 
       if (prevCompleted) {
         return "available";
@@ -357,9 +401,7 @@ export default function CoursePage({ params }: CoursePageProps) {
 
   const getQuizStatus = (video: Video): string => {
     if (!video.tests || video.tests.length === 0) return "no-quiz";
-
     const progress = videoProgress.find((p) => p.videoId === video.id);
-
     if (!progress?.completed) return "quiz-locked";
     if (progress?.testPassed) return "quiz-passed";
     return "quiz-available";
@@ -378,29 +420,17 @@ export default function CoursePage({ params }: CoursePageProps) {
   };
 
   const getTotalVideos = (): number => {
-    const sectionVideos =
-      course?.sections?.reduce(
-        (acc, section) => acc + section.videos.length,
-        0
-      ) || 0;
+    const sectionVideos = course?.sections?.reduce((acc, section) => acc + section.videos.length, 0) || 0;
     const legacyVideos = course?.videos?.length || 0;
     return sectionVideos + legacyVideos;
   };
 
   const getTotalDuration = (): number => {
-    const sectionDuration =
-      course?.sections?.reduce(
-        (acc, section) =>
-          acc +
-          section.videos.reduce(
-            (videoAcc, video) => videoAcc + (video.duration || 0),
-            0
-          ),
-        0
-      ) || 0;
-    const legacyDuration =
-      course?.videos?.reduce((acc, video) => acc + (video.duration || 0), 0) ||
-      0;
+    const sectionDuration = course?.sections?.reduce(
+      (acc, section) => acc + section.videos.reduce((videoAcc, video) => videoAcc + (video.duration || 0), 0),
+      0
+    ) || 0;
+    const legacyDuration = course?.videos?.reduce((acc, video) => acc + (video.duration || 0), 0) || 0;
     return sectionDuration + legacyDuration;
   };
 
@@ -408,7 +438,6 @@ export default function CoursePage({ params }: CoursePageProps) {
     return videoProgress.filter((p) => {
       const video = getAllVideos().find((v) => v.id === p.videoId);
       if (!video) return false;
-
       if (!video.tests || video.tests.length === 0) {
         return p.completed;
       }
@@ -435,7 +464,7 @@ export default function CoursePage({ params }: CoursePageProps) {
     return calculateProgress(completed, total);
   };
 
-  // Render methods (keep existing render methods but add loading states)
+  // Render videos tab
   const renderVideosTab = () => (
     <div className="space-y-6">
       {!enrollmentChecked ? (
@@ -459,13 +488,9 @@ export default function CoursePage({ params }: CoursePageProps) {
                   )}
                 </div>
                 <div>
-                  <h3 className="font-semibold text-gray-900 text-lg">
-                    {section.title}
-                  </h3>
+                  <h3 className="font-semibold text-gray-900 text-lg">{section.title}</h3>
                   {section.description && (
-                    <p className="text-sm text-gray-600 mt-1">
-                      {section.description}
-                    </p>
+                    <p className="text-sm text-gray-600 mt-1">{section.description}</p>
                   )}
                 </div>
               </div>
@@ -477,12 +502,7 @@ export default function CoursePage({ params }: CoursePageProps) {
                 </span>
                 <span className="flex items-center">
                   <Clock className="w-4 h-4 mr-1" />
-                  {formatDuration(
-                    section.videos.reduce(
-                      (acc, v) => acc + (v.duration || 0),
-                      0
-                    )
-                  )}
+                  {formatDuration(section.videos.reduce((acc, v) => acc + (v.duration || 0), 0))}
                 </span>
               </div>
             </div>
@@ -490,16 +510,9 @@ export default function CoursePage({ params }: CoursePageProps) {
             {expandedSections.has(section.id) && (
               <div className="p-0">
                 {section.videos.map((video, videoIndex) => {
-                  const status = getVideoStatus(
-                    video,
-                    section.videos,
-                    videoIndex,
-                    sectionIndex
-                  );
+                  const status = getVideoStatus(video, section.videos, videoIndex, sectionIndex);
                   const quizStatus = getQuizStatus(video);
-                  const progress = videoProgress.find(
-                    (p) => p.videoId === video.id
-                  );
+                  const progress = videoProgress.find((p) => p.videoId === video.id);
 
                   return (
                     <div
@@ -526,13 +539,9 @@ export default function CoursePage({ params }: CoursePageProps) {
                       </div>
 
                       <div className="flex-1">
-                        <h4 className="font-medium text-gray-900 mb-2 text-lg">
-                          {video.title}
-                        </h4>
+                        <h4 className="font-medium text-gray-900 mb-2 text-lg">{video.title}</h4>
                         {video.description && (
-                          <p className="text-sm text-gray-600 mb-3">
-                            {video.description}
-                          </p>
+                          <p className="text-sm text-gray-600 mb-3">{video.description}</p>
                         )}
                         <div className="flex items-center text-sm text-gray-500 space-x-6">
                           <div className="flex items-center">
@@ -589,7 +598,7 @@ export default function CoursePage({ params }: CoursePageProps) {
     </div>
   );
 
-  // Keep existing render methods for other tabs...
+  // Render other tabs (about, notes, certificates)
   const renderAboutTab = () => (
     <div className="space-y-8">
       <Card>
@@ -625,9 +634,7 @@ export default function CoursePage({ params }: CoursePageProps) {
         </CardHeader>
         <CardContent>
           <div className="prose max-w-none">
-            <p className="text-gray-700 leading-relaxed">
-              {course?.description}
-            </p>
+            <p className="text-gray-700 leading-relaxed">{course?.description}</p>
           </div>
         </CardContent>
       </Card>
@@ -671,9 +678,7 @@ export default function CoursePage({ params }: CoursePageProps) {
         {isEnrolled ? (
           <div className="text-center py-12">
             <StickyNote className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Your Notes
-            </h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Your Notes</h3>
             <p className="text-gray-600 mb-6">
               Take notes while watching videos to remember important concepts
             </p>
@@ -682,12 +687,8 @@ export default function CoursePage({ params }: CoursePageProps) {
         ) : (
           <div className="text-center py-12">
             <Lock className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Enroll to Access Notes
-            </h3>
-            <p className="text-gray-600">
-              Enroll in this course to start taking and managing your notes
-            </p>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Enroll to Access Notes</h3>
+            <p className="text-gray-600">Enroll in this course to start taking and managing your notes</p>
           </div>
         )}
       </CardContent>
@@ -706,12 +707,9 @@ export default function CoursePage({ params }: CoursePageProps) {
         {isEnrolled ? (
           <div className="text-center py-12">
             <Award className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Course Certificate
-            </h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Course Certificate</h3>
             <p className="text-gray-600 mb-6">
-              Complete all course videos and pass the quizzes to earn your
-              certificate
+              Complete all course videos and pass the quizzes to earn your certificate
             </p>
             {getProgressPercentage() === 100 ? (
               <Button className="bg-green-600 hover:bg-green-700">
@@ -727,8 +725,7 @@ export default function CoursePage({ params }: CoursePageProps) {
                   />
                 </div>
                 <p className="text-sm text-gray-600">
-                  {getProgressPercentage()}% complete -{" "}
-                  {getTotalVideos() - getCompletedVideos()} videos remaining
+                  {getProgressPercentage()}% complete - {getTotalVideos() - getCompletedVideos()} videos remaining
                 </p>
               </div>
             )}
@@ -736,12 +733,9 @@ export default function CoursePage({ params }: CoursePageProps) {
         ) : (
           <div className="text-center py-12">
             <Lock className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Enroll to Earn Certificate
-            </h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Enroll to Earn Certificate</h3>
             <p className="text-gray-600">
-              Enroll in this course to work towards earning your completion
-              certificate
+              Enroll in this course to work towards earning your completion certificate
             </p>
           </div>
         )}
@@ -749,6 +743,7 @@ export default function CoursePage({ params }: CoursePageProps) {
     </Card>
   );
 
+  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -760,14 +755,13 @@ export default function CoursePage({ params }: CoursePageProps) {
     );
   }
 
+  // Error state
   if (!course) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">
-            Course Not Found
-          </h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Course Not Found</h1>
           <p className="text-gray-600 mb-6">
             The course you're looking for doesn't exist or has been removed.
           </p>
@@ -796,10 +790,7 @@ export default function CoursePage({ params }: CoursePageProps) {
                   <h4 className="text-red-800 font-medium">Error</h4>
                   <p className="text-red-700 text-sm mt-1">{error}</p>
                 </div>
-                <button
-                  onClick={() => setError(null)}
-                  className="ml-auto text-red-400 hover:text-red-600"
-                >
+                <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-600">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -812,14 +803,9 @@ export default function CoursePage({ params }: CoursePageProps) {
                 <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
                 <div>
                   <h4 className="text-green-800 font-medium">Success</h4>
-                  <p className="text-green-700 text-sm mt-1">
-                    {successMessage}
-                  </p>
+                  <p className="text-green-700 text-sm mt-1">{successMessage}</p>
                 </div>
-                <button
-                  onClick={() => setSuccessMessage(null)}
-                  className="ml-auto text-green-400 hover:text-green-600"
-                >
+                <button onClick={() => setSuccessMessage(null)} className="ml-auto text-green-400 hover:text-green-600">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -828,18 +814,13 @@ export default function CoursePage({ params }: CoursePageProps) {
         </div>
       )}
 
-      {/* Hero Section with Background */}
+      {/* Hero Section */}
       <div className="relative overflow-hidden">
         {/* Background Image with Overlay */}
         <div className="absolute inset-0">
           {course.thumbnail ? (
             <div className="relative w-full h-full">
-              <Image
-                src={course.thumbnail}
-                alt={course.title}
-                fill
-                className="object-cover opacity-20"
-              />
+              <Image src={course.thumbnail} alt={course.title} fill className="object-cover opacity-20" />
             </div>
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800 opacity-90" />
@@ -874,9 +855,7 @@ export default function CoursePage({ params }: CoursePageProps) {
             </h1>
 
             {/* Description */}
-            <p className="text-xl text-blue-100 mb-8 leading-relaxed">
-              {course.description}
-            </p>
+            <p className="text-xl text-blue-100 mb-8 leading-relaxed">{course.description}</p>
 
             {/* Stats Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
@@ -884,46 +863,40 @@ export default function CoursePage({ params }: CoursePageProps) {
                 <div className="flex items-center justify-center mb-2">
                   <Clock className="w-6 h-6 text-blue-200 mr-2" />
                 </div>
-                <div className="text-2xl font-bold text-white">
-                  {formatDuration(totalDuration)}
-                </div>
+                <div className="text-2xl font-bold text-white">{formatDuration(totalDuration)}</div>
                 <div className="text-sm text-blue-200">Duration</div>
               </div>
               <div className="text-center">
                 <div className="flex items-center justify-center mb-2">
                   <BookOpen className="w-6 h-6 text-blue-200 mr-2" />
                 </div>
-                <div className="text-2xl font-bold text-white">
-                  {totalVideos}
-                </div>
+                <div className="text-2xl font-bold text-white">{totalVideos}</div>
                 <div className="text-sm text-blue-200">Videos</div>
               </div>
               <div className="text-center">
                 <div className="flex items-center justify-center mb-2">
                   <Users className="w-6 h-6 text-blue-200 mr-2" />
                 </div>
-                <div className="text-2xl font-bold text-white">
-                  {course._count?.enrollments || 0}
-                </div>
+                <div className="text-2xl font-bold text-white">{course._count?.enrollments || 0}</div>
                 <div className="text-sm text-blue-200">Students</div>
               </div>
               <div className="text-center">
                 <div className="flex items-center justify-center mb-2">
                   <Star className="w-6 h-6 text-yellow-400 mr-2 fill-current" />
                 </div>
-                <div className="text-2xl font-bold text-white">
-                  {course.rating || 4.8}
-                </div>
+                <div className="text-2xl font-bold text-white">{course.rating || 4.8}</div>
                 <div className="text-sm text-blue-200">Rating</div>
               </div>
             </div>
 
             {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row gap-4">
-              {!enrollmentChecked ? (
+              {!authCheckComplete || !enrollmentChecked ? (
                 <div className="flex items-center space-x-3">
                   <Loader2 className="w-6 h-6 animate-spin text-white" />
-                  <span className="text-white">Checking enrollment...</span>
+                  <span className="text-white">
+                    {!authCheckComplete ? "Checking authentication..." : "Checking enrollment..."}
+                  </span>
                 </div>
               ) : !isEnrolled ? (
                 <Button
@@ -945,14 +918,10 @@ export default function CoursePage({ params }: CoursePageProps) {
                 <>
                   <Link
                     href={`/course/${course.id}/video/${
-                      course.sections?.[0]?.videos?.[0]?.id ||
-                      course.videos?.[0]?.id
+                      course.sections?.[0]?.videos?.[0]?.id || course.videos?.[0]?.id
                     }`}
                   >
-                    <Button
-                      size="lg"
-                      className="bg-white text-blue-900 hover:bg-gray-100 text-lg px-8 py-4"
-                    >
+                    <Button size="lg" className="bg-white text-blue-900 hover:bg-gray-100 text-lg px-8 py-4">
                       <Play className="w-5 h-5 mr-2" />
                       Continue Learning
                     </Button>

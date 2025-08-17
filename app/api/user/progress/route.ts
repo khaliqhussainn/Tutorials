@@ -1,38 +1,82 @@
-
 // app/api/user/progress/route.ts
-import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
+import { NextResponse } from "next/server"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
+import { prisma } from "@/lib/prisma"
 
-// Force dynamic rendering
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
+// Helper function to find user consistently
+async function findUserBySession(session: any) {
+  if (!session?.user) {
+    throw new Error("No session user provided")
+  }
+
+  let userId = session.user.id
+  let user = null
+
+  // Method 1: Try by session ID
+  if (userId) {
+    user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true }
+    })
+    if (user) return user
+  }
+
+  // Method 2: Try by email
+  if (session.user.email) {
+    user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true }
+    })
+    if (user) return user
+  }
+
+  throw new Error("User not found")
+}
 
 export async function GET() {
   try {
     const session = await getServerSession(authOptions)
     
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      select: { id: true }
-    })
+    const user = await findUserBySession(session)
 
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
-    const enrollments = await prisma.enrollment.findMany({
-      where: { userId: user.id },
+    // Get user's progress for courses where they have some progress but haven't completed
+    const enrollmentsWithProgress = await prisma.enrollment.findMany({
+      where: { 
+        userId: user.id,
+        progress: {
+          gt: 0,
+          lt: 100
+        }
+      },
       include: {
         course: {
-          include: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            thumbnail: true,
+            category: true,
+            level: true,
             videos: {
-              select: { id: true, title: true, duration: true }
+              select: { duration: true },
+              orderBy: { order: 'asc' }
+            },
+            sections: {
+              select: {
+                videos: {
+                  select: { duration: true },
+                  orderBy: { order: 'asc' }
+                }
+              },
+              orderBy: { order: 'asc' }
+            },
+            _count: {
+              select: { enrollments: true }
             }
           }
         }
@@ -40,50 +84,49 @@ export async function GET() {
       orderBy: { updatedAt: 'desc' }
     })
 
-    // Calculate progress for each enrollment
-    const progressData = await Promise.all(
-      enrollments.map(async (enrollment) => {
-        const totalVideos = enrollment.course.videos.length
-        
-        if (totalVideos === 0) {
-          return {
-            courseId: enrollment.courseId,
-            progress: 0,
-            lastWatched: enrollment.updatedAt.toISOString(),
-            course: enrollment.course
-          }
-        }
+    // Transform the data to match the expected interface
+    const userProgress = enrollmentsWithProgress.map(enrollment => ({
+      courseId: enrollment.courseId,
+      progress: enrollment.progress,
+      lastWatched: enrollment.updatedAt.toISOString(),
+      course: {
+        ...enrollment.course,
+        videos: [
+          ...enrollment.course.videos,
+          ...enrollment.course.sections.flatMap(section => section.videos)
+        ]
+      }
+    }))
 
-        const completedVideos = await prisma.videoProgress.count({
-          where: {
-            userId: user.id,
-            videoId: { in: enrollment.course.videos.map(v => v.id) },
-            completed: true
-          }
-        })
+    // Remove sections from the response to avoid confusion
+    const finalProgress = userProgress.map(item => ({
+      courseId: item.courseId,
+      progress: item.progress,
+      lastWatched: item.lastWatched,
+      course: {
+        id: item.course.id,
+        title: item.course.title,
+        description: item.course.description,
+        thumbnail: item.course.thumbnail,
+        category: item.course.category,
+        level: item.course.level,
+        videos: item.course.videos,
+        _count: item.course._count
+      }
+    }))
 
-        const progress = Math.round((completedVideos / totalVideos) * 100)
+    return NextResponse.json(finalProgress)
 
-        return {
-          courseId: enrollment.courseId,
-          progress,
-          lastWatched: enrollment.updatedAt.toISOString(),
-          course: enrollment.course
-        }
-      })
-    )
-
-    // Filter out completed courses for progress view
-    const inProgressCourses = progressData.filter(item => 
-      item.progress > 0 && item.progress < 100
-    )
-
-    return NextResponse.json(inProgressCourses)
-  } catch (error) {
-    console.error('Error fetching user progress:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch user progress' },
-      { status: 500 }
-    )
+  } catch (error: any) {
+    console.error("Error fetching user progress:", error)
+    
+    if (error.message === "User not found") {
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    }
+    
+    return NextResponse.json({ 
+      error: "Failed to fetch progress",
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    }, { status: 500 })
   }
 }

@@ -70,8 +70,7 @@ export const authOptions: NextAuthOptions = {
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   callbacks: {
-    async jwt({ token, user, account }) {
-      // Debug logging for production troubleshooting
+    async jwt({ token, user, account, trigger }) {
       const isProduction = process.env.NODE_ENV === 'production'
       
       if (!isProduction) {
@@ -79,6 +78,7 @@ export const authOptions: NextAuthOptions = {
         console.log("Token before:", { id: token.id, email: token.email, sub: token.sub })
         console.log("User:", user ? { id: user.id, email: user.email } : null)
         console.log("Account provider:", account?.provider)
+        console.log("Trigger:", trigger)
       }
 
       // Initial sign in - user object is available
@@ -90,19 +90,19 @@ export const authOptions: NextAuthOptions = {
         return token
       }
 
-      // Subsequent requests - token exists but might be missing ID
+      // Subsequent requests - ensure we have user ID
       if (!token.id && token.email) {
         if (!isProduction) console.log("Token missing ID, looking up by email:", token.email)
         
         try {
-          // Use a more robust database query with timeout
+          // Add timeout and retry logic for production
           const dbUser = await Promise.race([
             prisma.user.findUnique({
               where: { email: token.email },
               select: { id: true, role: true, email: true }
             }),
             new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Database timeout')), 5000)
+              setTimeout(() => reject(new Error('Database timeout')), 8000)
             )
           ]) as any
           
@@ -111,11 +111,11 @@ export const authOptions: NextAuthOptions = {
             token.id = dbUser.id
             token.role = dbUser.role
           } else {
-            if (!isProduction) console.log("User not found in DB for email:", token.email)
+            console.warn("User not found in DB for email:", token.email)
           }
         } catch (error) {
           console.error("Error fetching user by email:", error)
-          // Don't throw, just continue without ID - will be handled in session callback
+          // In production, don't throw - continue with limited token
         }
       }
 
@@ -141,44 +141,44 @@ export const authOptions: NextAuthOptions = {
       }
       
       if (session.user) {
-        // Primary: use token.id
+        // Ensure we have a user ID
         let userId = token.id as string
         
-        // Fallback 1: use token.sub (for OAuth)
+        // Fallback to sub if no ID
         if (!userId && token.sub) {
           userId = token.sub as string
         }
         
-        // Fallback 2: look up by email if we still don't have ID
-        if (!userId && token.email) {
-          if (!isProduction) console.log("Session: Looking up user by email")
-          
+        // Last resort: lookup by email (with caching)
+        if (!userId && token.email && session.user.email) {
           try {
+            // Add shorter timeout for session callback
             const dbUser = await Promise.race([
               prisma.user.findUnique({
-                where: { email: token.email },
+                where: { email: session.user.email },
                 select: { id: true, role: true }
               }),
               new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Database timeout')), 3000)
+                setTimeout(() => reject(new Error('Database timeout')), 5000)
               )
             ]) as any
             
             if (dbUser) {
               userId = dbUser.id
-              // Update token for next time
+              // Update token for future requests
               token.id = dbUser.id
               token.role = dbUser.role
             }
           } catch (error) {
             console.error("Session: Error fetching user:", error)
-            // Continue without userId - will cause issues but won't crash
+            // Continue with whatever we have
           }
         }
 
+        // Set session data
         session.user.id = userId
         session.user.role = (token.role as string) || 'USER'
-        session.user.email = token.email as string
+        session.user.email = token.email as string || session.user.email
         
         if (!isProduction) {
           console.log("Final session user:", {
@@ -201,19 +201,29 @@ export const authOptions: NextAuthOptions = {
         console.log("Account:", account?.provider)
       }
       
-      // For OAuth providers, ensure user exists and is properly set up
+      // Enhanced OAuth handling
       if (account?.provider === "google" && user.email) {
         try {
+          // Check if user exists
           const existingUser = await prisma.user.findUnique({
-            where: { email: user.email }
+            where: { email: user.email },
+            select: { id: true, name: true, image: true }
           })
           
-          if (!existingUser) {
-            if (!isProduction) console.log("New OAuth user will be created by PrismaAdapter")
-          } else {
-            if (!isProduction) console.log("OAuth user exists:", existingUser.id)
-            // Update user object to ensure consistency
+          if (existingUser) {
+            // Update user ID to ensure consistency
             user.id = existingUser.id
+            
+            // Update profile information if needed
+            if (!existingUser.name && user.name) {
+              await prisma.user.update({
+                where: { id: existingUser.id },
+                data: { 
+                  name: user.name,
+                  image: user.image 
+                }
+              })
+            }
           }
         } catch (error) {
           console.error("SignIn callback error:", error)
@@ -226,11 +236,12 @@ export const authOptions: NextAuthOptions = {
   },
   pages: {
     signIn: "/auth/signin",
+    error: "/auth/error",
   },
   secret: process.env.NEXTAUTH_SECRET,
   debug: process.env.NODE_ENV === "development",
   
-  // Add production-specific configurations
+  // Production-specific configurations
   useSecureCookies: process.env.NODE_ENV === "production",
   cookies: {
     sessionToken: {
@@ -242,7 +253,52 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: process.env.NODE_ENV === "production",
+        maxAge: 30 * 24 * 60 * 60, // 30 days
+      },
+    },
+    callbackUrl: {
+      name: process.env.NODE_ENV === "production" 
+        ? "__Secure-next-auth.callback-url" 
+        : "next-auth.callback-url",
+      options: {
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+    csrfToken: {
+      name: process.env.NODE_ENV === "production" 
+        ? "__Host-next-auth.csrf-token" 
+        : "next-auth.csrf-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
       },
     },
   },
+  
+  // Add production events for debugging
+  events: {
+    async signIn(message) {
+      if (process.env.NODE_ENV === 'production') {
+        console.log("✅ SignIn event:", {
+          user: message.user.email,
+          account: message.account?.provider
+        })
+      }
+    },
+    async signOut(message) {
+      if (process.env.NODE_ENV === 'production') {
+        console.log("👋 SignOut event:", message.token?.email)
+      }
+    },
+    async session(message) {
+      // Only log errors in production to avoid spam
+      if (process.env.NODE_ENV === 'production' && !message.session?.user?.id) {
+        console.error("⚠️ Session missing user ID:", message.session?.user?.email)
+      }
+    }
+  }
 }

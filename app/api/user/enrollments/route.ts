@@ -1,70 +1,75 @@
-
 // app/api/user/enrollments/route.ts
-import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
+import { NextResponse } from "next/server"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
+import { prisma } from "@/lib/prisma"
 
-// Force dynamic rendering
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
+// Helper function to find user consistently
+async function findUserBySession(session: any) {
+  if (!session?.user) {
+    throw new Error("No session user provided")
+  }
+
+  let userId = session.user.id
+  let user = null
+
+  // Method 1: Try by session ID
+  if (userId) {
+    user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true }
+    })
+    if (user) return user
+  }
+
+  // Method 2: Try by email
+  if (session.user.email) {
+    user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true }
+    })
+    if (user) return user
+  }
+
+  throw new Error("User not found")
+}
 
 export async function GET() {
   try {
     const session = await getServerSession(authOptions)
     
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      select: { id: true }
-    })
+    const user = await findUserBySession(session)
 
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
+    // Get user's enrollments
     const enrollments = await prisma.enrollment.findMany({
       where: { userId: user.id },
-      include: {
-        course: {
-          include: {
-            videos: { select: { id: true, duration: true } },
-            _count: { select: { enrollments: true } }
-          }
-        }
+      select: {
+        id: true,
+        courseId: true,
+        progress: true,
+        enrolledAt: true,
+        updatedAt: true,
+        completedAt: true
       },
-      orderBy: { updatedAt: 'desc' }
+      orderBy: { enrolledAt: 'desc' }
     })
 
-    // Calculate actual progress for each enrollment
-    const enrollmentsWithProgress = await Promise.all(
-      enrollments.map(async (enrollment) => {
-        const totalVideos = enrollment.course.videos.length
-        
-        if (totalVideos === 0) {
-          return { ...enrollment, calculatedProgress: 0 }
-        }
+    return NextResponse.json(enrollments)
 
-        const completedVideos = await prisma.videoProgress.count({
-          where: {
-            userId: user.id,
-            videoId: { in: enrollment.course.videos.map(v => v.id) },
-            completed: true
-          }
-        })
-
-        const calculatedProgress = Math.round((completedVideos / totalVideos) * 100)
-
-        return { ...enrollment, calculatedProgress }
-      })
-    )
-
-    return NextResponse.json(enrollmentsWithProgress)
-  } catch (error) {
-    console.error('Error fetching enrollments:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  } catch (error: any) {
+    console.error("Error fetching user enrollments:", error)
+    
+    if (error.message === "User not found") {
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    }
+    
+    return NextResponse.json({ 
+      error: "Failed to fetch enrollments",
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    }, { status: 500 })
   }
 }
