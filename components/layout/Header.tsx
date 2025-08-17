@@ -34,6 +34,10 @@ import {
   PenTool,
   Calculator,
   ChevronRight,
+  PlayCircle,
+  CheckCircle,
+  Clock,
+  Loader2,
 } from "lucide-react";
 
 const exploreData = {
@@ -201,6 +205,19 @@ const exploreData = {
   ],
 };
 
+interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'success' | 'info' | 'warning' | 'error';
+  read: boolean;
+  createdAt: string;
+  action?: {
+    label: string;
+    url: string;
+  };
+}
+
 export default function Header() {
   const { data: session } = useSession();
   const router = useRouter();
@@ -208,6 +225,7 @@ export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isExploreOpen, setIsExploreOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isMobileExploreExpanded, setIsMobileExploreExpanded] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -220,9 +238,14 @@ export default function Header() {
     }>
   >([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  
   const profileRef = useRef<HTMLDivElement>(null);
   const exploreRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
 
   const searchableItems = [
     ...exploreData.categories.map((cat) => ({
@@ -259,10 +282,62 @@ export default function Header() {
       ) {
         setShowSuggestions(false);
       }
+      if (
+        notificationsRef.current &&
+        !notificationsRef.current.contains(event.target as Node)
+      ) {
+        setIsNotificationsOpen(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Fetch notifications when user is authenticated
+  useEffect(() => {
+    if (session) {
+      fetchNotifications();
+    }
+  }, [session]);
+
+  const fetchNotifications = async () => {
+    if (!session) return;
+    
+    setLoadingNotifications(true);
+    try {
+      const response = await fetch('/api/user/notifications');
+      if (response.ok) {
+        const data = await response.json();
+        setNotifications(data);
+        setUnreadCount(data.filter((n: Notification) => !n.read).length);
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  };
+
+  const markNotificationsAsRead = async (notificationIds: string[]) => {
+    try {
+      const response = await fetch('/api/user/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notificationIds, markAsRead: true })
+      });
+      
+      if (response.ok) {
+        setNotifications(prev => 
+          prev.map(n => 
+            notificationIds.includes(n.id) ? { ...n, read: true } : n
+          )
+        );
+        setUnreadCount(prev => Math.max(0, prev - notificationIds.length));
+      }
+    } catch (error) {
+      console.error('Error marking notifications as read:', error);
+    }
+  };
 
   const handleSearchChange = (value: string) => {
     setSearchTerm(value);
@@ -294,27 +369,64 @@ export default function Header() {
     category: string;
     type: "category" | "skill";
   }) => {
-    if (suggestion.type === "category") {
-      router.push(`/courses?category=${encodeURIComponent(suggestion.name)}`);
-    } else {
-      router.push(suggestion.href);
-    }
+    router.push(suggestion.href);
     setSearchTerm("");
     setShowSuggestions(false);
     setIsSearchFocused(false);
   };
 
   const handleCategoryClick = (category: string) => {
-    router.push(`/courses?category=${encodeURIComponent(category)}`);
+    const categoryItem = exploreData.categories.find(cat => cat.name === category);
+    if (categoryItem) {
+      router.push(categoryItem.href);
+    }
     setIsExploreOpen(false);
   };
 
   const handleSkillClick = (skill: string) => {
-    router.push(`/courses?search=${encodeURIComponent(skill)}`);
+    const skillItem = exploreData.trendingSkills.find(s => s.name === skill);
+    if (skillItem) {
+      router.push(skillItem.href);
+    }
     setIsExploreOpen(false);
   };
 
-  // Show search bar on all pages except auth pages (ONLY CHANGE: removed '/admin')
+  const handleNotificationClick = (notification: Notification) => {
+    if (!notification.read) {
+      markNotificationsAsRead([notification.id]);
+    }
+    
+    if (notification.action?.url) {
+      router.push(notification.action.url);
+      setIsNotificationsOpen(false);
+    }
+  };
+
+  const getNotificationIcon = (type: string) => {
+    switch (type) {
+      case 'success':
+        return <CheckCircle className="w-4 h-4 text-green-500" />;
+      case 'warning':
+        return <Clock className="w-4 h-4 text-yellow-500" />;
+      case 'error':
+        return <X className="w-4 h-4 text-red-500" />;
+      default:
+        return <Bell className="w-4 h-4 text-blue-500" />;
+    }
+  };
+
+  const getTimeAgo = (dateString: string) => {
+    const now = new Date();
+    const date = new Date(dateString);
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    return `${Math.floor(diffInSeconds / 86400)}d ago`;
+  };
+
+  // Show search bar on all pages except auth pages
   const hideSearchOnPages = ['/auth/signin', '/auth/signup'];
   const showSearchBar = !hideSearchOnPages.some(page => pathname.startsWith(page));
 
@@ -346,7 +458,7 @@ export default function Header() {
                   }`}
                 />
               </button>
-              {/* Explore Mega Menu - Adjusted for 60% height */}
+              {/* Explore Mega Menu */}
               {isExploreOpen && (
                 <div className="fixed left-0 right-0 mt-2 bg-white shadow-xl border-t border-gray-200 z-50 h-[60vh] overflow-y-auto">
                   <div className="max-w-7xl mx-auto p-4">
@@ -393,7 +505,7 @@ export default function Header() {
                           ))}
                         </div>
                         <Link
-                          href="/skills"
+                          href="/courses"
                           className="text-[#001e62] hover:text-[#001e62]/80 font-medium pt-3 block text-sm"
                           onClick={() => setIsExploreOpen(false)}
                         >
@@ -407,7 +519,7 @@ export default function Header() {
             </div>
           </div>
 
-          {/* Search Bar - Desktop - Now shows on all pages except specified ones */}
+          {/* Search Bar - Desktop */}
           {showSearchBar && (
             <div className="hidden md:flex flex-1 max-w-2xl mx-8">
               <div ref={searchRef} className="w-full relative">
@@ -446,19 +558,9 @@ export default function Header() {
                         Suggestions
                       </div>
                       {searchSuggestions.map((suggestion, index) => (
-                        <a
+                        <button
                           key={`${suggestion.type}-${suggestion.name}-${index}`}
-                          href={
-                            suggestion.type === "category"
-                              ? `/courses?category=${encodeURIComponent(
-                                  suggestion.name
-                                )}`
-                              : suggestion.href
-                          }
-                          onClick={(e) => {
-                            e.preventDefault();
-                            handleSuggestionClick(suggestion);
-                          }}
+                          onClick={() => handleSuggestionClick(suggestion)}
                           className="flex items-center justify-between px-3 py-1.5 hover:bg-gray-50 transition-colors text-left w-full"
                         >
                           <div className="flex items-center flex-1 min-w-0">
@@ -485,7 +587,7 @@ export default function Header() {
                             </div>
                           </div>
                           <ChevronRight className="w-2.5 h-2.5 text-gray-300 flex-shrink-0 ml-1" />
-                        </a>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -533,10 +635,122 @@ export default function Header() {
                     Favorites
                   </Button>
                 </Link>
-                <button className="relative p-2 text-gray-600 hover:text-[#001e62] transition-colors">
-                  <Bell className="w-5 h-5" />
-                  <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full text-xs"></span>
-                </button>
+                
+                {/* Notifications Dropdown */}
+                <div className="relative" ref={notificationsRef}>
+                  <button
+                    onClick={() => {
+                      setIsNotificationsOpen(!isNotificationsOpen);
+                      if (!isNotificationsOpen && unreadCount > 0) {
+                        fetchNotifications();
+                      }
+                    }}
+                    className="relative p-2 text-gray-600 hover:text-[#001e62] transition-colors"
+                  >
+                    <Bell className="w-5 h-5" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs text-white flex items-center justify-center font-medium">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
+                  </button>
+                  
+                  {/* Notifications Dropdown */}
+                  {isNotificationsOpen && (
+                    <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-96 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-semibold text-gray-900">
+                            Notifications
+                          </h3>
+                          {unreadCount > 0 && (
+                            <button
+                              onClick={() => {
+                                const unreadIds = notifications
+                                  .filter(n => !n.read)
+                                  .map(n => n.id);
+                                markNotificationsAsRead(unreadIds);
+                              }}
+                              className="text-xs text-[#001e62] hover:text-[#001e62]/80 font-medium"
+                            >
+                              Mark all as read
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="max-h-80 overflow-y-auto">
+                        {loadingNotifications ? (
+                          <div className="flex items-center justify-center py-8">
+                            <Loader2 className="w-6 h-6 animate-spin text-[#001e62]" />
+                          </div>
+                        ) : notifications.length > 0 ? (
+                          notifications.map((notification) => (
+                            <div
+                              key={notification.id}
+                              onClick={() => handleNotificationClick(notification)}
+                              className={`px-4 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
+                                !notification.read ? 'bg-blue-50' : ''
+                              }`}
+                            >
+                              <div className="flex items-start space-x-3">
+                                <div className="flex-shrink-0 mt-1">
+                                  {getNotificationIcon(notification.type)}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between">
+                                    <p className={`text-sm font-medium text-gray-900 truncate ${
+                                      !notification.read ? 'font-semibold' : ''
+                                    }`}>
+                                      {notification.title}
+                                    </p>
+                                    {!notification.read && (
+                                      <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 ml-2"></div>
+                                    )}
+                                  </div>
+                                  <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                                    {notification.message}
+                                  </p>
+                                  <div className="flex items-center justify-between mt-2">
+                                    <span className="text-xs text-gray-400">
+                                      {getTimeAgo(notification.createdAt)}
+                                    </span>
+                                    {notification.action && (
+                                      <span className="text-xs text-[#001e62] font-medium">
+                                        {notification.action.label} →
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-center py-8">
+                            <Bell className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                            <p className="text-gray-500 text-sm">No notifications yet</p>
+                            <p className="text-gray-400 text-xs mt-1">
+                              We'll notify you about course updates and achievements
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {notifications.length > 0 && (
+                        <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
+                          <Link
+                            href="/notifications"
+                            className="text-sm text-[#001e62] hover:text-[#001e62]/80 font-medium"
+                            onClick={() => setIsNotificationsOpen(false)}
+                          >
+                            View all notifications →
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                
                 <div className="relative" ref={profileRef}>
                   <button
                     onClick={() => setIsProfileOpen(!isProfileOpen)}
@@ -646,10 +860,25 @@ export default function Header() {
           {/* Mobile menu button */}
           <div className="md:hidden flex items-center space-x-2">
             {session && (
-              <button className="relative p-2 text-gray-600 hover:text-[#001e62] transition-colors">
-                <Bell className="w-5 h-5" />
-                <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
-              </button>
+              <>
+                {/* Mobile Notifications */}
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setIsNotificationsOpen(!isNotificationsOpen);
+                      if (!isNotificationsOpen && unreadCount > 0) {
+                        fetchNotifications();
+                      }
+                    }}
+                    className="relative p-2 text-gray-600 hover:text-[#001e62] transition-colors"
+                  >
+                    <Bell className="w-5 h-5" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full text-xs"></span>
+                    )}
+                  </button>
+                </div>
+              </>
             )}
             <Button
               variant="ghost"
@@ -665,7 +894,7 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Mobile Search Bar - Now shows on all pages except specified ones */}
+        {/* Mobile Search Bar */}
         {showSearchBar && (
           <div className="md:hidden py-3 border-t border-gray-100">
             <div ref={searchRef} className="relative">
@@ -697,19 +926,9 @@ export default function Header() {
                       Suggestions
                     </div>
                     {searchSuggestions.map((suggestion, index) => (
-                      <a
+                      <button
                         key={`mobile-${suggestion.type}-${suggestion.name}-${index}`}
-                        href={
-                          suggestion.type === "category"
-                            ? `/courses?category=${encodeURIComponent(
-                                suggestion.name
-                              )}`
-                            : suggestion.href
-                        }
-                        onClick={(e) => {
-                          e.preventDefault();
-                          handleSuggestionClick(suggestion);
-                        }}
+                        onClick={() => handleSuggestionClick(suggestion)}
                         className="flex items-center justify-between px-3 py-1.5 hover:bg-gray-50 transition-colors text-left w-full"
                       >
                         <div className="flex items-center flex-1 min-w-0">
@@ -736,7 +955,7 @@ export default function Header() {
                           </div>
                         </div>
                         <ChevronRight className="w-2.5 h-2.5 text-gray-300 flex-shrink-0 ml-1" />
-                      </a>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -745,7 +964,7 @@ export default function Header() {
           </div>
         )}
 
-        {/* Mobile Navigation - ONLY CHANGE: Made scrollable */}
+        {/* Mobile Navigation */}
         {isMenuOpen && (
           <div className="md:hidden py-4 border-t border-gray-200 max-h-[70vh] overflow-y-auto">
             <nav className="flex flex-col space-y-3">
@@ -979,6 +1198,79 @@ export default function Header() {
                 </div>
               )}
             </nav>
+          </div>
+        )}
+
+        {/* Mobile Notifications Dropdown */}
+        {isNotificationsOpen && (
+          <div className="md:hidden fixed inset-x-0 top-16 bg-white shadow-xl border-t border-gray-200 z-50 max-h-96 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Notifications
+                </h3>
+                <button
+                  onClick={() => setIsNotificationsOpen(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="max-h-80 overflow-y-auto">
+              {loadingNotifications ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-[#001e62]" />
+                </div>
+              ) : notifications.length > 0 ? (
+                notifications.map((notification) => (
+                  <div
+                    key={notification.id}
+                    onClick={() => handleNotificationClick(notification)}
+                    className={`px-4 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
+                      !notification.read ? 'bg-blue-50' : ''
+                    }`}
+                  >
+                    <div className="flex items-start space-x-3">
+                      <div className="flex-shrink-0 mt-1">
+                        {getNotificationIcon(notification.type)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <p className={`text-sm font-medium text-gray-900 truncate ${
+                            !notification.read ? 'font-semibold' : ''
+                          }`}>
+                            {notification.title}
+                          </p>
+                          {!notification.read && (
+                            <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 ml-2"></div>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                          {notification.message}
+                        </p>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-xs text-gray-400">
+                            {getTimeAgo(notification.createdAt)}
+                          </span>
+                          {notification.action && (
+                            <span className="text-xs text-[#001e62] font-medium">
+                              {notification.action.label} →
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8">
+                  <Bell className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500 text-sm">No notifications yet</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

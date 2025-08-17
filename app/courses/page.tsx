@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -46,6 +45,13 @@ import {
   ChevronDown,
   ChevronUp,
   AlertCircle,
+  Brain,
+  Microscope,
+  Calculator,
+  PenTool,
+  MessageCircle,
+  Monitor,
+  Settings,
 } from "lucide-react";
 import { formatDuration, calculateProgress } from "@/lib/utils";
 
@@ -106,12 +112,183 @@ const categories = [
 
 const levels = ["All", "BEGINNER", "INTERMEDIATE", "ADVANCED"];
 
+const searchableCategories = [
+  {
+    name: "Business",
+    searchTerms: [
+      "business",
+      "management",
+      "entrepreneurship",
+      "finance",
+      "accounting",
+      "excel",
+      "project management",
+      "power bi",
+    ],
+  },
+  {
+    name: "Data Science",
+    searchTerms: [
+      "data",
+      "analytics",
+      "statistics",
+      "python",
+      "r",
+      "machine learning",
+      "ai",
+      "sql",
+      "data analysis",
+      "data visualization",
+    ],
+  },
+  {
+    name: "Programming",
+    searchTerms: [
+      "programming",
+      "coding",
+      "development",
+      "software",
+      "javascript",
+      "react",
+      "node",
+      "html",
+      "css",
+      "web development",
+      "mobile development",
+      "artificial intelligence",
+    ],
+  },
+  {
+    name: "Design",
+    searchTerms: [
+      "design",
+      "ui",
+      "ux",
+      "graphics",
+      "photoshop",
+      "figma",
+      "adobe",
+      "arts",
+      "humanities",
+    ],
+  },
+  {
+    name: "Marketing",
+    searchTerms: [
+      "marketing",
+      "digital marketing",
+      "social media",
+      "seo",
+      "advertising",
+    ],
+  },
+  {
+    name: "Other",
+    searchTerms: [
+      "language",
+      "personal development",
+      "science",
+      "engineering",
+      "physics",
+      "chemistry",
+      "life sciences",
+      "social sciences",
+    ],
+  },
+];
+
+const skillMappings = [
+  { skill: "Python", category: "Programming", searchUrl: "/courses?search=Python" },
+  { skill: "JavaScript", category: "Programming", searchUrl: "/courses?search=JavaScript" },
+  { skill: "React", category: "Programming", searchUrl: "/courses?search=React" },
+  { skill: "Node.js", category: "Programming", searchUrl: "/courses?search=Node.js" },
+  { skill: "HTML", category: "Programming", searchUrl: "/courses?search=HTML" },
+  { skill: "CSS", category: "Programming", searchUrl: "/courses?search=CSS" },
+  {
+    skill: "Web Development",
+    category: "Programming",
+    searchUrl: "/courses?search=Web Development",
+  },
+  {
+    skill: "Mobile Development",
+    category: "Programming",
+    searchUrl: "/courses?search=Mobile Development",
+  },
+  {
+    skill: "Machine Learning",
+    category: "Data Science",
+    searchUrl: "/courses?search=Machine Learning",
+  },
+  {
+    skill: "Data Analysis",
+    category: "Data Science",
+    searchUrl: "/courses?search=Data Analysis",
+  },
+  {
+    skill: "Data Visualization",
+    category: "Data Science",
+    searchUrl: "/courses?search=Data Visualization",
+  },
+  { skill: "SQL", category: "Data Science", searchUrl: "/courses?search=SQL" },
+  { skill: "Excel", category: "Business", searchUrl: "/courses?search=Excel" },
+  {
+    skill: "Project Management",
+    category: "Business",
+    searchUrl: "/courses?search=Project Management",
+  },
+  {
+    skill: "Business Analysis",
+    category: "Business",
+    searchUrl: "/courses?search=Business Analysis",
+  },
+  { skill: "Power BI", category: "Business", searchUrl: "/courses?search=Power BI" },
+  { skill: "Marketing", category: "Marketing", searchUrl: "/courses?search=Marketing" },
+  { skill: "AI", category: "Programming", searchUrl: "/courses?search=AI" },
+  {
+    skill: "Artificial Intelligence",
+    category: "Programming",
+    searchUrl: "/courses?search=AI",
+  },
+];
+
+const categoryMappings = {
+  "Information Technology": "Programming",
+  "Computer Science": "Programming",
+  "Life Sciences": "Other",
+  "Physical Science and Engineering": "Other",
+  "Personal Development": "Other",
+  "Social Sciences": "Other",
+  "Language Learning": "Other",
+  "Arts and Humanities": "Design",
+};
+
+function getCategoryFromSearchTerm(searchTerm: string): string {
+  const lowercaseSearch = searchTerm.toLowerCase();
+
+  for (const category of searchableCategories) {
+    if (category.searchTerms.some((term) => lowercaseSearch.includes(term))) {
+      return category.name;
+    }
+  }
+
+  return "All";
+}
+
+function getSkillMapping(skillName: string) {
+  return skillMappings.find(
+    (mapping) => mapping.skill.toLowerCase() === skillName.toLowerCase()
+  );
+}
+
+function mapCategoryToDisplay(dbCategory: string): string {
+  return categoryMappings[dbCategory] || dbCategory;
+}
+
 export default function CoursesPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-
   const [courses, setCourses] = useState<Course[]>([]);
   const [filteredCourses, setFilteredCourses] = useState<Course[]>([]);
   const [featuredCourses, setFeaturedCourses] = useState<Course[]>([]);
@@ -121,30 +298,39 @@ export default function CoursesPage() {
   const [coursesByCategory, setCoursesByCategory] = useState<{
     [key: string]: Course[];
   }>({});
-
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedLevel, setSelectedLevel] = useState("All");
-  const [sortBy, setSortBy] = useState<
-    "newest" | "popular" | "trending" | "rating"
-  >("newest");
+  const [sortBy, setSortBy] = useState<"newest" | "popular" | "trending" | "rating">("newest");
   const [showFilters, setShowFilters] = useState(false);
   const [favoriteLoading, setFavoriteLoading] = useState<string | null>(null);
-  const [enrollingCourseId, setEnrollingCourseId] = useState<string | null>(null); // NEW: Track enrollment loading per course
-  const [error, setError] = useState<string | null>(null); // NEW: General error state
-  const [successMessage, setSuccessMessage] = useState<string | null>(null); // NEW: Success message state
+  const [enrollingCourseId, setEnrollingCourseId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const searchParam = searchParams?.get("search");
     const categoryParam = searchParams?.get("category");
+    if (searchParam) {
+      setSearchTerm(searchParam);
+      if (!categoryParam) {
+        const detectedCategory = getCategoryFromSearchTerm(searchParam);
+        if (detectedCategory !== "All") {
+          setSelectedCategory(detectedCategory);
+        }
+      }
+    }
 
-    if (searchParam) setSearchTerm(searchParam);
-    if (categoryParam) setSelectedCategory(categoryParam);
-
+    if (categoryParam) {
+      const mappedCategory =
+        categories.find(
+          (cat) => cat.name.toLowerCase() === categoryParam.toLowerCase()
+        )?.name || categoryParam;
+      setSelectedCategory(mappedCategory);
+    }
     fetchCourses();
-
-    if (status === 'authenticated') {
+    if (status === "authenticated") {
       fetchUserData();
     }
   }, [status, searchParams]);
@@ -154,7 +340,6 @@ export default function CoursesPage() {
     organizeCoursesByCategory();
   }, [courses, searchTerm, selectedCategory, selectedLevel, sortBy]);
 
-  // NEW: Auto-dismiss messages after 5 seconds
   useEffect(() => {
     if (error || successMessage) {
       const timer = setTimeout(() => {
@@ -171,8 +356,6 @@ export default function CoursesPage() {
       if (response.ok) {
         const data = await response.json();
         setCourses(data || []);
-
-        // Get featured courses
         const featured = (data || [])
           .filter((course: Course) => course.isFeatured)
           .slice(0, 8);
@@ -191,30 +374,22 @@ export default function CoursesPage() {
   };
 
   const fetchUserData = async () => {
-    if (status !== 'authenticated') return;
-
+    if (status !== "authenticated") return;
     try {
-      // Fetch enrollments
       const enrollmentsResponse = await fetch("/api/user/enrollments");
       if (enrollmentsResponse.ok) {
         const enrollmentsData = await enrollmentsResponse.json();
         setEnrolledCourses(enrollmentsData || []);
       }
-
-      // Fetch progress for continue learning
       const progressResponse = await fetch("/api/user/progress");
       if (progressResponse.ok) {
         const progressData = await progressResponse.json();
         setContinueCourses(
           (progressData || [])
-            .filter(
-              (item: UserProgress) => item.progress > 0 && item.progress < 100
-            )
+            .filter((item: UserProgress) => item.progress > 0 && item.progress < 100)
             .slice(0, 4)
         );
       }
-
-      // Fetch favorites
       const favoritesResponse = await fetch("/api/user/favorites");
       if (favoritesResponse.ok) {
         const favoritesData = await favoritesResponse.json();
@@ -230,26 +405,29 @@ export default function CoursesPage() {
 
   const filterCourses = () => {
     let filtered = [...courses];
-
     if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
       filtered = filtered.filter(
         (course) =>
-          course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          course.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          course.category.toLowerCase().includes(searchTerm.toLowerCase())
+          course.title.toLowerCase().includes(searchLower) ||
+          course.description.toLowerCase().includes(searchLower) ||
+          course.category.toLowerCase().includes(searchLower) ||
+          skillMappings.some(
+            (mapping) =>
+              mapping.skill.toLowerCase().includes(searchLower) &&
+              mapCategoryToDisplay(course.category) === mapping.category
+          )
       );
     }
-
     if (selectedCategory !== "All") {
-      filtered = filtered.filter(
-        (course) => course.category === selectedCategory
-      );
+      filtered = filtered.filter((course) => {
+        const mappedCategory = mapCategoryToDisplay(course.category);
+        return mappedCategory === selectedCategory;
+      });
     }
-
     if (selectedLevel !== "All") {
       filtered = filtered.filter((course) => course.level === selectedLevel);
     }
-
     filtered = [...filtered].sort((a, b) => {
       switch (sortBy) {
         case "popular":
@@ -260,32 +438,28 @@ export default function CoursesPage() {
           return (b.rating || 0) - (a.rating || 0);
         case "newest":
         default:
-          return (
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       }
     });
-
     setFilteredCourses(filtered);
   };
 
   const organizeCoursesByCategory = () => {
     const organized: { [key: string]: Course[] } = {};
-
     categories.forEach((category) => {
       if (category.name === "All") return;
+      let categoryCourses = courses.filter((course) => course.isPublished);
 
-      const categoryCourses = courses.filter(
-        (course) => course.category === category.name && course.isPublished
-      );
-
+      categoryCourses = categoryCourses.filter((course) => {
+        const mappedCategory = mapCategoryToDisplay(course.category);
+        return mappedCategory === category.name;
+      });
       if (categoryCourses.length > 0) {
         organized[category.name] = categoryCourses.sort(
           (a, b) => (b._count?.enrollments || 0) - (a._count?.enrollments || 0)
         );
       }
     });
-
     setCoursesByCategory(organized);
   };
 
@@ -294,31 +468,22 @@ export default function CoursesPage() {
       event.preventDefault();
       event.stopPropagation();
     }
-
-    if (status !== 'authenticated') {
+    if (status !== "authenticated") {
       router.push("/auth/signin");
       return;
     }
-
     setFavoriteLoading(courseId);
-
     try {
-      const isFavorited = favoriteCourses.some(
-        (fav) => fav.courseId === courseId
-      );
+      const isFavorited = favoriteCourses.some((fav) => fav.courseId === courseId);
       const method = isFavorited ? "DELETE" : "POST";
-
       const response = await fetch("/api/user/favorites", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ courseId }),
       });
-
       if (response.ok) {
         if (isFavorited) {
-          setFavoriteCourses((prev) =>
-            prev.filter((fav) => fav.courseId !== courseId)
-          );
+          setFavoriteCourses((prev) => prev.filter((fav) => fav.courseId !== courseId));
           setSuccessMessage("Course removed from favorites");
         } else {
           const course = courses.find((c) => c.id === courseId);
@@ -340,108 +505,74 @@ export default function CoursesPage() {
     }
   };
 
-  // ENHANCED: Complete enrollment function with better error handling
   const enrollInCourse = async (courseId: string, event?: React.MouseEvent) => {
     if (event) {
       event.preventDefault();
       event.stopPropagation();
     }
-
-    console.log("=== FRONTEND ENROLLMENT START ===");
-    console.log("Session status:", status);
-    console.log("Session data:", session);
-    console.log("Course ID:", courseId);
-
-    // Clear previous messages
     setError(null);
     setSuccessMessage(null);
-
-    // Check authentication
-    if (status !== 'authenticated' || !session) {
-      console.log("Not authenticated, redirecting to signin");
+    if (status !== "authenticated" || !session) {
       router.push("/auth/signin");
       return;
     }
-
-    // Set loading state for this specific course
     setEnrollingCourseId(courseId);
-
     try {
-      console.log("Making enrollment request...");
-      
       const response = await fetch("/api/enrollments", {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json"
+        headers: {
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({ courseId }),
       });
-
-      console.log("Response status:", response.status);
-      
       const data = await response.json();
-      console.log("Response data:", data);
-
       if (response.ok) {
-        // Handle successful enrollment or existing enrollment
-        console.log("✅ Enrollment successful");
-        
-        // Update local state
         setEnrolledCourses((prev) => {
-          const filtered = prev.filter(e => e.courseId !== courseId);
-          return [...filtered, { 
-            courseId, 
-            enrolledAt: new Date().toISOString(), 
-            progress: 0 
-          }];
+          const filtered = prev.filter((e) => e.courseId !== courseId);
+          return [
+            ...filtered,
+            {
+              courseId,
+              enrolledAt: new Date().toISOString(),
+              progress: 0,
+            },
+          ];
         });
-
-        // Show success message based on response code
         if (data.code === "ALREADY_ENROLLED") {
-          console.log("Already enrolled, continuing to course...");
           setSuccessMessage("You're already enrolled! Redirecting to course...");
         } else if (data.code === "ENROLLMENT_SUCCESS") {
-          console.log("New enrollment created!");
           setSuccessMessage("Successfully enrolled in course! Starting your journey...");
         }
-
-        // Redirect to course or specific video after a brief delay to show message
         const redirectPath = data.redirect || `/course/${courseId}`;
-        console.log("Redirecting to:", redirectPath);
-        
+
         setTimeout(() => {
           router.push(redirectPath);
         }, 1500);
-        
       } else {
-        // Handle errors
-        console.error("❌ Enrollment failed:", data);
-        
         switch (data.code) {
           case "AUTH_REQUIRED":
-            console.log("Authentication required, redirecting...");
             setError("Please sign in to enroll in courses");
             setTimeout(() => router.push("/auth/signin"), 2000);
             break;
-            
+
           case "COURSE_NOT_FOUND":
             setError("This course could not be found. Please try refreshing the page.");
             break;
-            
+
           case "COURSE_NOT_PUBLISHED":
             setError("This course is not currently available for enrollment.");
             break;
-            
+
           case "USER_NOT_FOUND":
             setError("There was an issue with your account. Please try signing out and back in.");
             break;
-            
+
           default:
             setError(data.details || data.error || "Failed to enroll in course. Please try again.");
         }
       }
     } catch (error) {
-      console.error("❌ Network error during enrollment:", error);
+      console.error("Network error during enrollment:", error);
       setError("Network error. Please check your connection and try again.");
     } finally {
       setEnrollingCourseId(null);
@@ -453,9 +584,16 @@ export default function CoursesPage() {
     setSelectedCategory("All");
     setSelectedLevel("All");
     setSortBy("newest");
-
-    // Update URL to clear search params
     router.push("/courses", { scroll: false });
+  };
+
+  const handleSkillSearch = (skillName: string) => {
+    const skillMapping = getSkillMapping(skillName);
+    if (skillMapping) {
+      router.push(skillMapping.searchUrl);
+    } else {
+      router.push(`/courses?search=${encodeURIComponent(skillName)}`);
+    }
   };
 
   const getTotalDuration = (course: Course) => {
@@ -463,24 +601,16 @@ export default function CoursesPage() {
       course.sections?.reduce(
         (acc, section) =>
           acc +
-          section.videos.reduce(
-            (videoAcc, video) => videoAcc + (video.duration || 0),
-            0
-          ),
+          section.videos.reduce((videoAcc, video) => videoAcc + (video.duration || 0), 0),
         0
       ) || 0;
-    const legacyDuration =
-      course.videos?.reduce((acc, video) => acc + (video.duration || 0), 0) ||
-      0;
+    const legacyDuration = course.videos?.reduce((acc, video) => acc + (video.duration || 0), 0) || 0;
     return sectionDuration + legacyDuration;
   };
 
   const getTotalVideos = (course: Course) => {
     const sectionVideos =
-      course.sections?.reduce(
-        (acc, section) => acc + section.videos.length,
-        0
-      ) || 0;
+      course.sections?.reduce((acc, section) => acc + section.videos.length, 0) || 0;
     const legacyVideos = course.videos?.length || 0;
     return sectionVideos + legacyVideos;
   };
@@ -503,7 +633,6 @@ export default function CoursesPage() {
   const isFavorited = (courseId: string) =>
     favoriteCourses.some((fav) => fav.courseId === courseId);
 
-  // ENHANCED: CourseCard with loading states and better UX
   const CourseCard = ({
     course,
     featured = false,
@@ -518,8 +647,7 @@ export default function CoursesPage() {
     const totalDuration = getTotalDuration(course);
     const totalVideos = getTotalVideos(course);
     const isLoadingFavorite = favoriteLoading === course.id;
-    const isLoadingEnrollment = enrollingCourseId === course.id; // NEW: Course-specific loading
-
+    const isLoadingEnrollment = enrollingCourseId === course.id;
     return (
       <Link href={`/course/${course.id}`}>
         <Card
@@ -558,8 +686,6 @@ export default function CoursesPage() {
                 />
               </div>
             )}
-
-            {/* Overlay badges */}
             <div className="absolute top-3 left-3 flex flex-col gap-2">
               <span
                 className={`px-2 py-1 rounded-full text-xs font-medium border ${getLevelColor(
@@ -569,7 +695,6 @@ export default function CoursesPage() {
                 {course.level}
               </span>
             </div>
-
             {featured && (
               <div className="absolute top-3 right-3">
                 <div className="bg-gradient-to-r from-[#001e62] to-blue-600 text-white px-3 py-1 rounded-full text-xs font-bold flex items-center shadow-lg">
@@ -578,14 +703,14 @@ export default function CoursesPage() {
                 </div>
               </div>
             )}
-
-            {/* Favorite & Play buttons */}
             <div className="absolute bottom-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-              {status === 'authenticated' && (
+              {status === "authenticated" && (
                 <button
+                  type="button"
                   onClick={(e) => toggleFavorite(course.id, e)}
                   disabled={isLoadingFavorite}
                   className="p-2 bg-white/90 backdrop-blur-sm rounded-full hover:bg-white transition-colors shadow-lg disabled:opacity-50"
+                  aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
                 >
                   {isLoadingFavorite ? (
                     <Loader2 className="w-4 h-4 animate-spin text-gray-600" />
@@ -601,9 +726,11 @@ export default function CoursesPage() {
                 </button>
               )}
               <button
+                type="button"
                 onClick={(e) => enrollInCourse(course.id, e)}
                 disabled={isLoadingEnrollment}
                 className="p-2 bg-[#001e62] text-white rounded-full hover:bg-[#001e62]/90 transition-colors shadow-lg disabled:opacity-50"
+                aria-label={enrolled ? "Continue course" : "Enroll in course"}
               >
                 {isLoadingEnrollment ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -612,8 +739,6 @@ export default function CoursesPage() {
                 )}
               </button>
             </div>
-
-            {/* Enrollment status */}
             {enrolled && (
               <div className="absolute bottom-3 left-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                 <span className="bg-green-500 text-white px-2 py-1 rounded-full text-xs font-medium flex items-center shadow-lg">
@@ -622,8 +747,6 @@ export default function CoursesPage() {
                 </span>
               </div>
             )}
-
-            {/* NEW: Loading overlay */}
             {isLoadingEnrollment && (
               <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
                 <div className="bg-white rounded-lg p-3 shadow-lg">
@@ -635,18 +758,16 @@ export default function CoursesPage() {
               </div>
             )}
           </div>
-
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-[#001e62]">
-                {course.category}
+                {mapCategoryToDisplay(course.category)}
               </span>
               <div className="flex items-center text-xs text-gray-500">
                 <Users className="w-3 h-3 mr-1" />
                 {course._count?.enrollments || 0}
               </div>
             </div>
-
             <h3
               className={`font-bold text-gray-900 mb-2 line-clamp-2 leading-tight ${
                 size === "large" ? "text-xl" : "text-lg"
@@ -654,17 +775,11 @@ export default function CoursesPage() {
             >
               {course.title}
             </h3>
-
-            <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-              {course.description}
-            </p>
-
+            <p className="text-gray-600 text-sm mb-4 line-clamp-2">{course.description}</p>
             <div className="grid grid-cols-3 gap-2 text-xs text-gray-500 mb-4">
               <div className="flex items-center">
                 <Clock className="w-3 h-3 mr-1" />
-                <span className="truncate">
-                  {formatDuration(totalDuration)}
-                </span>
+                <span className="truncate">{formatDuration(totalDuration)}</span>
               </div>
               <div className="flex items-center">
                 <BookOpen className="w-3 h-3 mr-1" />
@@ -675,11 +790,8 @@ export default function CoursesPage() {
                 <span>{course.rating || 4.8}</span>
               </div>
             </div>
-
             <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                {/* Removed price display */}
-              </div>
+              <div className="flex items-center"></div>
               <Button
                 size="sm"
                 onClick={(e) => enrollInCourse(course.id, e)}
@@ -717,14 +829,13 @@ export default function CoursesPage() {
   const CategorySlider = ({
     title,
     courses,
-    icon: Icon,
+    Icon,
   }: {
     title: string;
     courses: Course[];
-    icon: any;
+    Icon: React.ComponentType<{ className?: string }>;
   }) => {
     const scrollRef = useRef<HTMLDivElement>(null);
-
     const scroll = (direction: "left" | "right") => {
       if (scrollRef.current) {
         const isMobile = window.innerWidth < 768;
@@ -735,20 +846,16 @@ export default function CoursesPage() {
         });
       }
     };
-
     if (!courses.length) return null;
-
     return (
       <section className="mb-12">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center">
             <div className="p-2 bg-[#001e62]/10 rounded-lg mr-3">
-              <Icon className="w-6 h-6 text-[#001e62]" />
+              {Icon && <Icon className="w-6 h-6 text-[#001e62]" />}
             </div>
             <div>
-              <h2 className="text-xl md:text-2xl font-bold text-gray-900">
-                {title}
-              </h2>
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900">{title}</h2>
               <p className="text-gray-600 text-sm md:text-base">
                 {courses.length} courses available
               </p>
@@ -756,20 +863,23 @@ export default function CoursesPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={() => scroll("left")}
               className="p-2 rounded-full bg-gray-100 hover:bg-[#001e62]/10 transition-colors"
+              aria-label="Scroll left"
             >
               <ChevronLeft className="w-4 h-4 md:w-5 md:h-5 text-[#001e62]" />
             </button>
             <button
+              type="button"
               onClick={() => scroll("right")}
               className="p-2 rounded-full bg-gray-100 hover:bg-[#001e62]/10 transition-colors"
+              aria-label="Scroll right"
             >
               <ChevronRight className="w-4 h-4 md:w-5 md:h-5 text-[#001e62]" />
             </button>
           </div>
         </div>
-
         <div className="relative">
           <div
             ref={scrollRef}
@@ -803,13 +913,10 @@ export default function CoursesPage() {
     );
   }
 
-  // Check if we have active filters
-  const hasActiveFilters =
-    searchTerm || selectedCategory !== "All" || selectedLevel !== "All";
+  const hasActiveFilters = searchTerm || selectedCategory !== "All" || selectedLevel !== "All";
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* NEW: Message notifications */}
       {(error || successMessage) && (
         <div className="fixed top-4 right-4 z-50 max-w-md">
           {error && (
@@ -821,15 +928,16 @@ export default function CoursesPage() {
                   <p className="text-red-700 text-sm mt-1">{error}</p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setError(null)}
                   className="ml-auto text-red-400 hover:text-red-600"
+                  aria-label="Close error message"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
           )}
-          
           {successMessage && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4 shadow-lg">
               <div className="flex items-start">
@@ -839,8 +947,10 @@ export default function CoursesPage() {
                   <p className="text-green-700 text-sm mt-1">{successMessage}</p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setSuccessMessage(null)}
                   className="ml-auto text-green-400 hover:text-green-600"
+                  aria-label="Close success message"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -849,10 +959,7 @@ export default function CoursesPage() {
           )}
         </div>
       )}
-
-      {/* Hero Section */}
       <div className="relative bg-[#001e62] text-white overflow-hidden">
-        {/* Content */}
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
           <div className="text-center">
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
@@ -865,10 +972,7 @@ export default function CoursesPage() {
                     </>
                   ) : selectedCategory !== "All" ? (
                     <>
-                      <span className="text-blue-300">
-                        {selectedCategory}
-                      </span>{" "}
-                      Courses
+                      <span className="text-blue-300">{selectedCategory}</span> Courses
                     </>
                   ) : (
                     <>
@@ -885,25 +989,21 @@ export default function CoursesPage() {
                 </>
               )}
             </h1>
-
             <p className="text-xl md:text-2xl text-blue-100 mb-8 max-w-3xl mx-auto leading-relaxed">
               {hasActiveFilters ? (
                 <>
                   Found {filteredCourses.length} course
-                  {filteredCourses.length !== 1 ? "s" : ""} matching your
-                  criteria. Start learning with expert-led content designed to
-                  advance your skills.
+                  {filteredCourses.length !== 1 ? "s" : ""} matching your criteria. Start learning
+                  with expert-led content designed to advance your skills.
                 </>
               ) : (
                 <>
-                  Browse our comprehensive library of expert-led courses. From
-                  beginner-friendly tutorials to advanced masterclasses, find
-                  the perfect course to accelerate your learning journey.
+                  Browse our comprehensive library of expert-led courses. From beginner-friendly
+                  tutorials to advanced masterclasses, find the perfect course to accelerate your
+                  learning journey.
                 </>
               )}
             </p>
-
-            {/* Active Filters Display */}
             {hasActiveFilters && (
               <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
                 <span className="text-blue-200 text-sm">Active filters:</span>
@@ -935,12 +1035,9 @@ export default function CoursesPage() {
           </div>
         </div>
       </div>
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* User Dashboard Sections - DYNAMIC */}
-        {status === 'authenticated' && (
+        {status === "authenticated" && (
           <>
-            {/* Continue Learning Section */}
             {continueCourses.length > 0 && (
               <section className="mb-12">
                 <div className="flex items-center justify-between mb-8">
@@ -949,22 +1046,20 @@ export default function CoursesPage() {
                       <PlayCircle className="w-7 h-7 text-green-600" />
                     </div>
                     <div>
-                      <h2 className="text-3xl font-bold text-gray-900">
-                        Continue Learning
-                      </h2>
-                      <p className="text-gray-600">
-                        Pick up where you left off
-                      </p>
+                      <h2 className="text-3xl font-bold text-gray-900">Continue Learning</h2>
+                      <p className="text-gray-600">Pick up where you left off</p>
                     </div>
                   </div>
                   <Link href="/dashboard">
-                    <Button variant="outline" className="hidden md:flex border-[#001e62] text-[#001e62] hover:bg-[#001e62]/5">
+                    <Button
+                      variant="outline"
+                      className="hidden md:flex border-[#001e62] text-[#001e62] hover:bg-[#001e62]/5"
+                    >
                       View Dashboard
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
                   </Link>
                 </div>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   {continueCourses.map((userProgress) => (
                     <Card
@@ -975,20 +1070,17 @@ export default function CoursesPage() {
                         <div className="flex items-start justify-between mb-4">
                           <div className="flex-1">
                             <span className="text-sm font-medium text-[#001e62] mb-1 block">
-                              {userProgress.course.category}
+                              {mapCategoryToDisplay(userProgress.course.category)}
                             </span>
                             <h3 className="font-bold text-gray-900 mb-2 line-clamp-2 leading-tight">
                               {userProgress.course.title}
                             </h3>
                             <div className="flex items-center text-xs text-gray-500 mb-4">
                               <Clock className="w-3 h-3 mr-1" />
-                              {formatDuration(
-                                getTotalDuration(userProgress.course)
-                              )}
+                              {formatDuration(getTotalDuration(userProgress.course))}
                             </div>
                           </div>
                         </div>
-
                         <div className="mb-6">
                           <div className="w-full bg-gray-200 rounded-full h-2">
                             <div
@@ -1000,7 +1092,6 @@ export default function CoursesPage() {
                             <span>{userProgress.progress}% complete</span>
                           </div>
                         </div>
-
                         <Link href={`/course/${userProgress.courseId}`}>
                           <Button className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700">
                             <Play className="w-4 h-4 mr-2" />
@@ -1013,8 +1104,6 @@ export default function CoursesPage() {
                 </div>
               </section>
             )}
-
-            {/* My Favorites Section */}
             {favoriteCourses.length > 0 && (
               <section className="mb-12">
                 <div className="flex items-center justify-between mb-8">
@@ -1023,30 +1112,20 @@ export default function CoursesPage() {
                       <Heart className="w-7 h-7 text-red-500 fill-current" />
                     </div>
                     <div>
-                      <h2 className="text-2xl md:text-3xl font-bold text-gray-900">
-                        My Favorites
-                      </h2>
-                      <p className="text-gray-600">
-                        Courses you've saved for later
-                      </p>
+                      <h2 className="text-2xl md:text-3xl font-bold text-gray-900">My Favorites</h2>
+                      <p className="text-gray-600">Courses you've saved for later</p>
                     </div>
                   </div>
                 </div>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   {favoriteCourses.slice(0, 4).map((favorite) => (
-                    <CourseCard
-                      key={favorite.courseId}
-                      course={favorite.course}
-                    />
+                    <CourseCard key={favorite.courseId} course={favorite.course} />
                   ))}
                 </div>
               </section>
             )}
           </>
         )}
-
-        {/* Search Bar Section - NEW */}
         <section className="mb-8">
           <Card className="border-0 shadow-lg bg-white">
             <CardContent className="p-6">
@@ -1071,34 +1150,21 @@ export default function CoursesPage() {
                 >
                   <Filter className="w-5 h-5" />
                   Filters
-                  {showFilters ? (
-                    <ChevronUp className="w-4 h-4" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4" />
-                  )}
+                  {showFilters ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </Button>
               </div>
-
-              {/* Expanded Filters */}
               <div
                 className={`${
                   showFilters ? "block" : "hidden"
                 } mt-6 space-y-6 transition-all duration-300 border-t border-gray-200 pt-6`}
               >
-                {/* Category Filter */}
                 <div>
-                  <h4 className="text-lg font-semibold text-gray-900 mb-4">
-                    Categories
-                  </h4>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4">Categories</h4>
                   <div className="flex flex-wrap gap-3">
                     {categories.map((category) => (
                       <Button
                         key={category.name}
-                        variant={
-                          selectedCategory === category.name
-                            ? "primary"
-                            : "outline"
-                        }
+                        variant={selectedCategory === category.name ? "primary" : "outline"}
                         size="sm"
                         onClick={() => setSelectedCategory(category.name)}
                         className={`transition-all ${
@@ -1113,20 +1179,14 @@ export default function CoursesPage() {
                     ))}
                   </div>
                 </div>
-
-                {/* Level and Sort */}
                 <div className="grid md:grid-cols-2 gap-6">
                   <div>
-                    <h4 className="text-lg font-semibold text-gray-900 mb-4">
-                      Difficulty Level
-                    </h4>
+                    <h4 className="text-lg font-semibold text-gray-900 mb-4">Difficulty Level</h4>
                     <div className="flex flex-wrap gap-2">
                       {levels.map((level) => (
                         <Button
                           key={level}
-                          variant={
-                            selectedLevel === level ? "primary" : "outline"
-                          }
+                          variant={selectedLevel === level ? "primary" : "outline"}
                           size="sm"
                           onClick={() => setSelectedLevel(level)}
                           className={`transition-all ${
@@ -1140,11 +1200,8 @@ export default function CoursesPage() {
                       ))}
                     </div>
                   </div>
-
                   <div>
-                    <h4 className="text-lg font-semibold text-gray-900 mb-4">
-                      Sort By
-                    </h4>
+                    <h4 className="text-lg font-semibold text-gray-900 mb-4">Sort By</h4>
                     <select
                       value={sortBy}
                       onChange={(e) => setSortBy(e.target.value as any)}
@@ -1157,8 +1214,6 @@ export default function CoursesPage() {
                     </select>
                   </div>
                 </div>
-
-                {/* Clear Filters */}
                 {hasActiveFilters && (
                   <div className="flex items-center justify-between pt-4 border-t border-gray-200">
                     <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -1195,23 +1250,18 @@ export default function CoursesPage() {
             </CardContent>
           </Card>
         </section>
-
-        {/* Content Based on Available Courses */}
         {courses.length === 0 ? (
-          /* No Courses Available State */
           <section className="mb-12">
             <Card className="border-0 shadow-lg">
               <CardContent className="text-center py-20">
                 <div className="w-32 h-32 bg-gradient-to-br from-[#001e62]/10 to-blue-100 rounded-full flex items-center justify-center mx-auto mb-8">
                   <BookOpen className="w-16 h-16 text-[#001e62]" />
                 </div>
-                <h3 className="text-3xl font-bold text-gray-900 mb-4">
-                  No Courses Available Yet
-                </h3>
+                <h3 className="text-3xl font-bold text-gray-900 mb-4">No Courses Available Yet</h3>
                 <p className="text-gray-600 mb-8 max-w-2xl mx-auto text-lg">
-                  We're working hard to bring you amazing courses. Our expert
-                  instructors are creating comprehensive learning experiences
-                  that will help you master new skills and advance your career.
+                  We're working hard to bring you amazing courses. Our expert instructors are creating
+                  comprehensive learning experiences that will help you master new skills and advance
+                  your career.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4 justify-center max-w-md mx-auto">
                   <Button size="lg" className="bg-[#001e62] hover:bg-[#001e62]/90">
@@ -1220,7 +1270,11 @@ export default function CoursesPage() {
                   </Button>
                   {session?.user?.role === "ADMIN" && (
                     <Link href="/admin/courses/new">
-                      <Button size="lg" variant="outline" className="border-[#001e62] text-[#001e62] hover:bg-[#001e62]/5">
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        className="border-[#001e62] text-[#001e62] hover:bg-[#001e62]/5"
+                      >
                         <BookOpen className="w-5 h-5 mr-2" />
                         Create First Course
                       </Button>
@@ -1232,25 +1286,18 @@ export default function CoursesPage() {
           </section>
         ) : (
           <>
-            {/* Show Category Sliders only when no active filters */}
             {!hasActiveFilters &&
-              Object.entries(coursesByCategory).map(
-                ([categoryName, categoryCourses]) => {
-                  const categoryInfo = categories.find(
-                    (cat) => cat.name === categoryName
-                  );
-                  return categoryInfo ? (
-                    <CategorySlider
-                      key={categoryName}
-                      title={categoryName}
-                      courses={categoryCourses}
-                      icon={categoryInfo.icon}
-                    />
-                  ) : null;
-                }
-              )}
-
-            {/* Featured Courses Section - Show before All Courses when no active filters */}
+              Object.entries(coursesByCategory).map(([categoryName, categoryCourses]) => {
+                const categoryInfo = categories.find((cat) => cat.name === categoryName);
+                return categoryInfo ? (
+                  <CategorySlider
+                    key={categoryName}
+                    title={categoryName}
+                    courses={categoryCourses}
+                    Icon={categoryInfo.icon}
+                  />
+                ) : null;
+              })}
             {!hasActiveFilters && featuredCourses.length > 0 && (
               <section className="mb-16">
                 <div className="flex items-center justify-between mb-8">
@@ -1262,9 +1309,7 @@ export default function CoursesPage() {
                       <h2 className="text-2xl md:text-3xl font-bold text-gray-900">
                         Featured Courses
                       </h2>
-                      <p className="text-gray-600">
-                        Hand-picked by our experts
-                      </p>
+                      <p className="text-gray-600">Hand-picked by our experts</p>
                     </div>
                   </div>
                   <div className="flex items-center text-sm text-gray-600">
@@ -1272,12 +1317,9 @@ export default function CoursesPage() {
                     Trending This Week
                   </div>
                 </div>
-
-                {/* Hero Featured Course */}
                 {featuredCourses[0] && (
                   <div className="bg-gradient-to-r from-[#001e62]/5 via-blue-50 to-[#001e62]/5 rounded-3xl p-8 mb-8 relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-[#001e62]/20 to-blue-300/50 rounded-full blur-3xl transform translate-x-32 -translate-y-32"></div>
-
                     <div className="grid lg:grid-cols-2 gap-8 items-center relative">
                       <div>
                         <div className="inline-flex items-center bg-gradient-to-r from-[#001e62] to-blue-600 text-white px-4 py-2 rounded-full text-sm font-bold mb-6 shadow-lg">
@@ -1293,13 +1335,9 @@ export default function CoursesPage() {
                         <div className="grid grid-cols-3 gap-4 mb-8">
                           <div className="text-center">
                             <div className="text-xl md:text-2xl font-bold text-[#001e62]">
-                              {formatDuration(
-                                getTotalDuration(featuredCourses[0])
-                              )}
+                              {formatDuration(getTotalDuration(featuredCourses[0]))}
                             </div>
-                            <div className="text-sm text-gray-600">
-                              Total Duration
-                            </div>
+                            <div className="text-sm text-gray-600">Total Duration</div>
                           </div>
                           <div className="text-center">
                             <div className="text-xl md:text-2xl font-bold text-[#001e62]">
@@ -1311,9 +1349,7 @@ export default function CoursesPage() {
                             <div className="text-xl md:text-2xl font-bold text-[#001e62]">
                               {featuredCourses[0]._count?.enrollments || 0}+
                             </div>
-                            <div className="text-sm text-gray-600">
-                              Students
-                            </div>
+                            <div className="text-sm text-gray-600">Students</div>
                           </div>
                         </div>
                         <div className="flex flex-col sm:flex-row gap-4">
@@ -1378,21 +1414,13 @@ export default function CoursesPage() {
                     </div>
                   </div>
                 )}
-
-                {/* Additional Featured Courses */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {featuredCourses.slice(1, 9).map((course) => (
-                    <CourseCard
-                      key={course.id}
-                      course={course}
-                      featured={true}
-                    />
+                    <CourseCard key={course.id} course={course} featured={true} />
                   ))}
                 </div>
               </section>
             )}
-
-            {/* All Courses Section - Always show, but change title based on filters */}
             <section className="mb-12">
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -1417,7 +1445,6 @@ export default function CoursesPage() {
                   </Button>
                 )}
               </div>
-
               {filteredCourses.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {filteredCourses.map((course) => (
@@ -1430,19 +1457,24 @@ export default function CoursesPage() {
                     <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
                       <Search className="w-12 h-12 text-gray-400" />
                     </div>
-                    <h3 className="text-2xl font-bold text-gray-900 mb-4">
-                      No courses found
-                    </h3>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-4">No courses found</h3>
                     <p className="text-gray-600 mb-8 max-w-md mx-auto">
                       {searchTerm
                         ? `We couldn't find any courses matching "${searchTerm}". Try adjusting your search or filters.`
                         : "No courses match your current filters. Try expanding your search criteria."}
                     </p>
                     <div className="flex gap-4 justify-center">
-                      <Button variant="outline" onClick={clearFilters} className="border-[#001e62] text-[#001e62] hover:bg-[#001e62]/5">
+                      <Button
+                        variant="outline"
+                        onClick={clearFilters}
+                        className="border-[#001e62] text-[#001e62] hover:bg-[#001e62]/5"
+                      >
                         Clear All Filters
                       </Button>
-                      <Button onClick={() => setSearchTerm("JavaScript")} className="bg-[#001e62] hover:bg-[#001e62]/90">
+                      <Button
+                        onClick={() => setSearchTerm("JavaScript")}
+                        className="bg-[#001e62] hover:bg-[#001e62]/90"
+                      >
                         Try "JavaScript"
                       </Button>
                     </div>
@@ -1452,27 +1484,21 @@ export default function CoursesPage() {
             </section>
           </>
         )}
-
-        {/* CTA Section */}
         <section className="mt-20">
           <div className="bg-gradient-to-r from-[#001e62] via-[#001e62] to-blue-700 rounded-3xl p-8 md:p-16 text-white text-center relative overflow-hidden">
             <div className="absolute top-0 left-0 w-64 h-64 bg-white/10 rounded-full blur-3xl transform -translate-x-32 -translate-y-32"></div>
             <div className="absolute bottom-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl transform translate-x-32 translate-y-32"></div>
-
             <div className="relative">
               <h2 className="text-4xl md:text-5xl font-bold mb-6 leading-tight">
                 Ready to Transform Your
                 <span className="block text-blue-300">Career?</span>
               </h2>
-
               <p className="text-xl text-blue-100 mb-10 max-w-3xl mx-auto leading-relaxed">
-                Join over 50,000 successful students who have advanced their
-                careers with our comprehensive learning platform. Start with any
-                course and see immediate results.
+                Join over 50,000 successful students who have advanced their careers with our
+                comprehensive learning platform. Start with any course and see immediate results.
               </p>
-
               <div className="flex flex-col sm:flex-row gap-6 justify-center max-w-md mx-auto">
-                {status !== 'authenticated' ? (
+                {status !== "authenticated" ? (
                   <>
                     <Link href="/auth/signup" className="flex-1">
                       <Button
@@ -1496,7 +1522,11 @@ export default function CoursesPage() {
                   </>
                 ) : (
                   <Link href="/dashboard">
-                    <Button size="lg" variant="secondary" className="font-bold bg-white text-[#001e62] hover:bg-gray-100">
+                    <Button
+                      size="lg"
+                      variant="secondary"
+                      className="font-bold bg-white text-[#001e62] hover:bg-gray-100"
+                    >
                       <BarChart3 className="w-5 h-5 mr-2" />
                       View My Progress
                     </Button>
