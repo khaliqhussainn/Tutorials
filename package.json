@@ -12,7 +12,10 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
-    "prebuild": "node scripts/prebuild.js"
+    "prebuild": "node scripts/prebuild.js",
+ "transcript:generate": "npx ts-node scripts/generate-transcripts.ts",
+    "transcript:test": "npx ts-node scripts/test-transcript.ts",
+    "transcript:clear": "npx ts-node -e \"require('./lib/transcript-queue').TranscriptQueue.getInstance().clearFailed()\""
   },
   "dependencies": {
     "@google/generative-ai": "^0.1.3",
