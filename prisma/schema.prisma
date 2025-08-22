@@ -1,4 +1,4 @@
-// schema.prisma - UPDATED VERSION with transcript integration
+// schema.prisma - Updated with proper transcript support
 generator client {
   provider = "prisma-client-js"
 }
@@ -39,9 +39,9 @@ model User {
   notifications   Notification[]
   activities      UserActivity[]
   streaks         DailyStreak[]
-  testAnswers     UserTestAnswer[] // Added for transcript test integration
+  testAnswers     UserTestAnswer[]
 
-  @@map("User")
+  @@map("users")
 }
 
 model UserPreferences {
@@ -51,13 +51,13 @@ model UserPreferences {
   pushNotifications     Boolean  @default(false)
   weeklyDigest          Boolean  @default(true)
   courseRecommendations Boolean  @default(true)
-  theme                 String   @default("system") // light, dark, system
+  theme                 String   @default("system")
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("UserPreferences")
+  @@map("user_preferences")
 }
 
 model Notification {
@@ -69,7 +69,7 @@ model Notification {
   read        Boolean          @default(false)
   actionUrl   String?
   actionLabel String?
-  metadata    Json? // For storing additional data like course IDs, etc.
+  metadata    Json?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -77,6 +77,7 @@ model Notification {
 
   @@index([userId, createdAt])
   @@index([userId, read])
+  @@map("notifications")
 }
 
 model UserActivity {
@@ -90,7 +91,7 @@ model UserActivity {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("UserActivity")
+  @@map("user_activities")
 }
 
 model DailyStreak {
@@ -103,7 +104,7 @@ model DailyStreak {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, date])
-  @@map("DailyStreak")
+  @@map("daily_streaks")
 }
 
 model Account {
@@ -123,7 +124,7 @@ model Account {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
-  @@map("Account")
+  @@map("accounts")
 }
 
 model Session {
@@ -133,7 +134,7 @@ model Session {
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("Session")
+  @@map("sessions")
 }
 
 model VerificationToken {
@@ -142,7 +143,7 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
-  @@map("VerificationToken")
+  @@map("verification_tokens")
 }
 
 enum Role {
@@ -172,7 +173,7 @@ enum ActivityType {
   COURSE_FAVORITED
   PROFILE_UPDATED
   STREAK_MILESTONE
-  TRANSCRIPT_GENERATED // Added for transcript activity tracking
+  TRANSCRIPT_GENERATED
 }
 
 enum TranscriptStatus {
@@ -195,51 +196,49 @@ model Course {
   isFeatured  Boolean @default(false)
   rating      Float   @default(4.8)
 
-  // Enhanced course fields
-  duration      Int? // Total course duration in seconds
-  prerequisites String[] // Array of prerequisite skills
-  tags          String[] // Course tags for better categorization
+  duration      Int?     @map("duration")
+  prerequisites String[] @map("prerequisites")
+  tags          String[] @map("tags")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  // Relations
   sections    CourseSection[]
   videos      Video[]
   enrollments Enrollment[]
   favoritedBy FavoriteCourse[]
   reviews     CourseReview[]
 
-  @@map("Course")
+  @@map("courses")
 }
 
 model CourseReview {
   id        String   @id @default(cuid())
-  userId    String
-  courseId  String
-  rating    Int // 1-5 stars
+  userId    String   @map("user_id")
+  courseId  String   @map("course_id")
+  rating    Int
   comment   String?  @db.Text
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@unique([userId, courseId])
-  @@map("CourseReview")
+  @@map("course_reviews")
 }
 
 model FavoriteCourse {
   id        String   @id @default(cuid())
-  userId    String
-  courseId  String
-  createdAt DateTime @default(now())
+  userId    String   @map("user_id")
+  courseId  String   @map("course_id")
+  createdAt DateTime @default(now()) @map("created_at")
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@unique([userId, courseId])
-  @@map("FavoriteCourse")
+  @@map("favorite_courses")
 }
 
 model CourseSection {
@@ -247,190 +246,165 @@ model CourseSection {
   title       String
   description String?
   order       Int
-  courseId    String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  courseId    String   @map("course_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   course Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
   videos Video[]
 
   @@unique([courseId, order])
-  @@map("CourseSection")
+  @@map("course_sections")
 }
 
 model Video {
   id          String  @id @default(cuid())
   title       String
   description String?
-  videoUrl    String
-  duration    Int? // in seconds
+  videoUrl    String  @map("video_url")
+  duration    Int?
   order       Int
-  courseId    String
-  sectionId   String?
+  courseId    String  @map("course_id")
+  sectionId   String? @map("section_id")
 
-  // Enhanced video fields
   thumbnail    String?
   downloadable Boolean @default(false)
+  aiPrompt     String? @map("ai_prompt") @db.Text
 
-  // AI and transcript fields
-  aiPrompt String? @db.Text // for AI test generation
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
   course       Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
   section      CourseSection?  @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   tests        Test[]
-  transcript   Transcript? // One-to-one relation with transcript
+  transcript   Transcript?
   progress     VideoProgress[]
   notes        VideoNote[]
   quizAttempts QuizAttempt[]
 
   @@unique([courseId, order])
-  @@map("Video")
+  @@map("videos")
 }
 
 model Transcript {
   id          String           @id @default(cuid())
-  videoId     String           @unique
-  content     String           @db.Text // Full transcript text
-  language    String           @default("en") // Language code (en, es, fr, etc.)
-  segments    Json? // JSON array of transcript segments with timestamps
+  videoId     String           @unique @map("video_id")
+  content     String           @db.Text
+  language    String           @default("en")
+  segments    Json?
   status      TranscriptStatus @default(PENDING)
-  error       String? // Error message if generation failed
-  generatedAt DateTime? // When transcript was successfully generated
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  error       String?
+  confidence  Float?
+  provider    String?
+  generatedAt DateTime?        @map("generated_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
 
-  // Relations
-  video              Video               @relation(fields: [videoId], references: [id], onDelete: Cascade)
-  transcriptSegments TranscriptSegment[] // Add this relation
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
 
-  @@map("Transcript")
-}
-
-model TranscriptSegment {
-  id           String   @id @default(cuid())
-  transcriptId String
-  startTime    Float // Start time in seconds (allows decimals for precision)
-  endTime      Float // End time in seconds
-  text         String   @db.Text
-  speakerName  String? // Optional speaker identification
-  order        Int // Order of segment in transcript
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  // Relations
-  transcript Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
-
-  @@index([transcriptId, order])
-  @@map("TranscriptSegment")
+  @@map("transcripts")
 }
 
 model Test {
   id          String   @id @default(cuid())
-  videoId     String
-  question    String   @db.Text // Changed to Text for longer questions
+  videoId     String   @map("video_id")
+  question    String   @db.Text
   options     String[]
   correct     Int
-  explanation String?  @db.Text // Changed to Text for longer explanations
+  explanation String?  @db.Text
   difficulty  String   @default("medium")
   points      Int      @default(10)
-  order       Int      @default(0) // Added order field
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  order       Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  // Relations
   video   Video            @relation(fields: [videoId], references: [id], onDelete: Cascade)
   answers UserTestAnswer[]
 
-  @@map("Test")
+  @@map("tests")
 }
 
-// NEW: User test answers for transcript tests
 model UserTestAnswer {
   id        String   @id @default(cuid())
-  userId    String
-  testId    String
-  answer    Int // User's selected answer index
-  isCorrect Boolean
-  createdAt DateTime @default(now())
+  userId    String   @map("user_id")
+  testId    String   @map("test_id")
+  answer    Int
+  isCorrect Boolean  @map("is_correct")
+  createdAt DateTime @default(now()) @map("created_at")
 
-  // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   test Test @relation(fields: [testId], references: [id], onDelete: Cascade)
 
   @@unique([userId, testId])
-  @@map("UserTestAnswer")
+  @@map("user_test_answers")
 }
 
 model Enrollment {
   id          String    @id @default(cuid())
-  userId      String
-  courseId    String
-  progress    Float     @default(0) // 0-100 percentage
-  enrolledAt  DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  completedAt DateTime?
+  userId      String    @map("user_id")
+  courseId    String    @map("course_id")
+  progress    Float     @default(0)
+  enrolledAt  DateTime  @default(now()) @map("enrolled_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  completedAt DateTime? @map("completed_at")
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@unique([userId, courseId])
-  @@map("Enrollment")
+  @@map("enrollments")
 }
 
 model VideoProgress {
   id           String    @id @default(cuid())
-  userId       String
-  videoId      String
+  userId       String    @map("user_id")
+  videoId      String    @map("video_id")
   completed    Boolean   @default(false)
-  completedAt  DateTime?
-  watchTime    Int       @default(0) // in seconds
-  lastPosition Int       @default(0) // Last watched position in seconds
-  testPassed   Boolean   @default(false)
-  testPassedAt DateTime?
-  testScore    Int       @default(0) // percentage 0-100
-  testAttempts Int       @default(0)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  completedAt  DateTime? @map("completed_at")
+  watchTime    Int       @default(0)
+  lastPosition Int       @default(0) @map("last_position")
+  testPassed   Boolean   @default(false) @map("test_passed")
+  testPassedAt DateTime? @map("test_passed_at")
+  testScore    Int       @default(0) @map("test_score")
+  testAttempts Int       @default(0) @map("test_attempts")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
 
   @@unique([userId, videoId])
-  @@map("VideoProgress")
+  @@map("video_progress")
 }
 
 model VideoNote {
   id        String   @id @default(cuid())
-  userId    String
-  videoId   String
+  userId    String   @map("user_id")
+  videoId   String   @map("video_id")
   content   String   @db.Text
-  timestamp Int? // Position in video where note was taken
-  isPrivate Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  timestamp Int?
+  isPrivate Boolean  @default(true) @map("is_private")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
 
-  @@map("VideoNote")
+  @@map("video_notes")
 }
 
 model QuizAttempt {
   id          String   @id @default(cuid())
-  userId      String
-  videoId     String
-  answers     String   @db.Text // JSON string of user answers
-  score       Int // percentage 0-100
+  userId      String   @map("user_id")
+  videoId     String   @map("video_id")
+  answers     String   @db.Text
+  score       Int
   passed      Boolean
-  timeSpent   Int      @default(0) // in seconds
-  completedAt DateTime @default(now())
+  timeSpent   Int      @default(0) @map("time_spent")
+  completedAt DateTime @default(now()) @map("completed_at")
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
 
-  @@map("QuizAttempt")
+  @@map("quiz_attempts")
 }

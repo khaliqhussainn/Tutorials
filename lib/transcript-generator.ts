@@ -1,7 +1,7 @@
-// lib/transcript-generator.ts - Video Transcript Generation Service
+// lib/transcript-generator.ts
+import OpenAI from 'openai'
 import { prisma } from './prisma'
 
-// Types for transcript segments
 interface TranscriptSegment {
   start: number
   end: number
@@ -14,358 +14,251 @@ interface TranscriptResponse {
   segments: TranscriptSegment[]
   language: string
   confidence: number
+  provider: string
 }
 
-// Service configuration
-const SUPPORTED_PROVIDERS = {
-  OPENAI_WHISPER: 'openai',
-  GOOGLE_SPEECH: 'google',
-  ASSEMBLY_AI: 'assemblyai'
-} as const
+export class TranscriptGenerator {
+  private openai: OpenAI | null = null
+  private provider: string
 
-type TranscriptProvider = typeof SUPPORTED_PROVIDERS[keyof typeof SUPPORTED_PROVIDERS]
-
-class TranscriptGenerator {
-  private provider: TranscriptProvider
-  private apiKey: string
-
-  constructor(provider: TranscriptProvider = 'openai') {
+  constructor(provider: 'openai' = 'openai') {
     this.provider = provider
-    this.apiKey = this.getApiKey(provider)
-  }
-
-  private getApiKey(provider: TranscriptProvider): string {
-    switch (provider) {
-      case 'openai':
-        return process.env.OPENAI_API_KEY || ''
-      case 'google':
-        return process.env.GOOGLE_CLOUD_API_KEY || ''
-      case 'assemblyai':
-        return process.env.ASSEMBLYAI_API_KEY || ''
-      default:
-        throw new Error(`Unsupported provider: ${provider}`)
+    
+    if (provider === 'openai' && process.env.OPENAI_API_KEY) {
+      this.openai = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY
+      })
     }
   }
 
-  // Main method to generate transcript from video URL
-  async generateTranscript(videoUrl: string, videoId: string): Promise<TranscriptResponse> {
-    console.log(`🎬 Generating transcript for video: ${videoId}`)
+  async generateTranscript(videoId: string, videoUrl: string): Promise<TranscriptResponse> {
+    console.log(`🎬 Starting transcript generation for video: ${videoId}`)
     
     try {
-      // Extract audio from video
-      const audioUrl = await this.extractAudioFromVideo(videoUrl)
+      // Update status to processing
+      await this.updateTranscriptStatus(videoId, 'PROCESSING')
+
+      // Extract or prepare audio URL
+      const audioUrl = await this.getAudioUrl(videoUrl)
       
       // Generate transcript based on provider
-      let transcript: TranscriptResponse
+      let result: TranscriptResponse
       
       switch (this.provider) {
         case 'openai':
-          transcript = await this.generateWithOpenAI(audioUrl)
-          break
-        case 'google':
-          transcript = await this.generateWithGoogle(audioUrl)
-          break
-        case 'assemblyai':
-          transcript = await this.generateWithAssemblyAI(audioUrl)
+          result = await this.generateWithOpenAI(audioUrl)
           break
         default:
-          throw new Error(`Provider ${this.provider} not implemented`)
+          throw new Error(`Provider ${this.provider} not supported`)
       }
 
-      // Save transcript to database
-      await this.saveTranscript(videoId, transcript)
+      // Save successful result
+      await this.saveTranscript(videoId, result)
       
       console.log(`✅ Transcript generated successfully for video: ${videoId}`)
-      return transcript
+      return result
       
     } catch (error) {
       console.error(`❌ Failed to generate transcript for video ${videoId}:`, error)
+      
+      // Save error status
+      await this.updateTranscriptStatus(videoId, 'FAILED', error instanceof Error ? error.message : 'Unknown error')
+      
       throw error
     }
   }
 
-  // OpenAI Whisper implementation
   private async generateWithOpenAI(audioUrl: string): Promise<TranscriptResponse> {
-    const formData = new FormData()
-    
-    // Download audio file
-    const audioResponse = await fetch(audioUrl)
-    const audioBlob = await audioResponse.blob()
-    
-    formData.append('file', audioBlob, 'audio.mp3')
-    formData.append('model', 'whisper-1')
-    formData.append('response_format', 'verbose_json')
-    formData.append('timestamp_granularities[]', 'segment')
-
-    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-      },
-      body: formData
-    })
-
-    if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.statusText}`)
+    if (!this.openai) {
+      throw new Error('OpenAI not configured')
     }
 
-    const result = await response.json()
-    
-    return {
-      transcript: result.text,
-      segments: result.segments?.map((seg: any) => ({
-        start: seg.start,
-        end: seg.end,
-        text: seg.text,
-        confidence: seg.avg_logprob ? Math.exp(seg.avg_logprob) : undefined
-      })) || [],
-      language: result.language || 'en',
-      confidence: 0.9 // OpenAI doesn't provide overall confidence
-    }
-  }
+    console.log('🤖 Using OpenAI Whisper for transcription')
 
-  // Google Speech-to-Text implementation
-  private async generateWithGoogle(audioUrl: string): Promise<TranscriptResponse> {
-    // Note: This requires Google Cloud Speech-to-Text API
-    const audioResponse = await fetch(audioUrl)
-    const audioBuffer = await audioResponse.arrayBuffer()
-    const audioBase64 = Buffer.from(audioBuffer).toString('base64')
-
-    const requestBody = {
-      config: {
-        encoding: 'MP3',
-        sampleRateHertz: 16000,
-        languageCode: 'en-US',
-        enableWordTimeOffsets: true,
-        enableWordConfidence: true,
-        enableAutomaticPunctuation: true,
-        model: 'latest_long'
-      },
-      audio: {
-        content: audioBase64
+    try {
+      // Download audio file
+      const audioResponse = await fetch(audioUrl)
+      if (!audioResponse.ok) {
+        throw new Error(`Failed to download audio: ${audioResponse.statusText}`)
       }
-    }
 
-    const response = await fetch(
-      `https://speech.googleapis.com/v1/speech:recognize?key=${this.apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
+      const audioBuffer = await audioResponse.arrayBuffer()
+      const audioFile = new File([audioBuffer], 'audio.mp3', { type: 'audio/mpeg' })
+
+      // Check file size (OpenAI limit is 25MB)
+      const maxSize = 25 * 1024 * 1024 // 25MB
+      if (audioFile.size > maxSize) {
+        throw new Error(`Audio file too large: ${(audioFile.size / 1024 / 1024).toFixed(1)}MB (max 25MB)`)
       }
-    )
 
-    if (!response.ok) {
-      throw new Error(`Google Speech API error: ${response.statusText}`)
-    }
+      console.log(`🎵 Audio file size: ${(audioFile.size / 1024 / 1024).toFixed(1)}MB`)
 
-    const result = await response.json()
-    const alternatives = result.results?.[0]?.alternatives?.[0]
-    
-    if (!alternatives) {
-      throw new Error('No transcript alternatives found')
-    }
+      // Create transcription
+      const transcription = await this.openai.audio.transcriptions.create({
+        file: audioFile,
+        model: 'whisper-1',
+        language: 'en',
+        response_format: 'verbose_json',
+        timestamp_granularities: ['segment']
+      })
 
-    const segments: TranscriptSegment[] = alternatives.words?.map((word: any) => ({
-      start: parseFloat(word.startTime?.replace('s', '') || '0'),
-      end: parseFloat(word.endTime?.replace('s', '') || '0'),
-      text: word.word,
-      confidence: word.confidence
-    })) || []
+      // Process the response
+      const segments: TranscriptSegment[] = (transcription.segments || []).map((segment: any) => ({
+        start: segment.start,
+        end: segment.end,
+        text: segment.text.trim(),
+        confidence: segment.avg_logprob ? Math.exp(segment.avg_logprob) : undefined
+      }))
 
-    return {
-      transcript: alternatives.transcript,
-      segments,
-      language: 'en',
-      confidence: alternatives.confidence || 0.8
+      return {
+        transcript: transcription.text,
+        segments,
+        language: transcription.language || 'en',
+        confidence: 0.9,
+        provider: 'openai'
+      }
+
+    } catch (error) {
+      console.error('OpenAI transcription error:', error)
+      throw new Error(`OpenAI transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
-  // AssemblyAI implementation (recommended for better accuracy)
-  private async generateWithAssemblyAI(audioUrl: string): Promise<TranscriptResponse> {
-    // Step 1: Upload audio file
-    const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
-      method: 'POST',
-      headers: {
-        'authorization': this.apiKey,
-        'content-type': 'application/octet-stream'
-      },
-      body: await fetch(audioUrl).then(r => r.blob())
-    })
-
-    const { upload_url } = await uploadResponse.json()
-
-    // Step 2: Request transcription
-    const transcriptResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
-      method: 'POST',
-      headers: {
-        'authorization': this.apiKey,
-        'content-type': 'application/json'
-      },
-      body: JSON.stringify({
-        audio_url: upload_url,
-        speaker_labels: true,
-        punctuate: true,
-        format_text: true,
-        language_detection: true
-      })
-    })
-
-    const { id } = await transcriptResponse.json()
-
-    // Step 3: Poll for completion
-    let transcript: any
-    do {
-      await new Promise(resolve => setTimeout(resolve, 5000)) // Wait 5 seconds
-      
-      const pollResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${id}`, {
-        headers: { 'authorization': this.apiKey }
-      })
-      
-      transcript = await pollResponse.json()
-    } while (transcript.status === 'processing' || transcript.status === 'queued')
-
-    if (transcript.status === 'error') {
-      throw new Error(`AssemblyAI error: ${transcript.error}`)
-    }
-
-    const segments: TranscriptSegment[] = transcript.words?.map((word: any) => ({
-      start: word.start / 1000, // Convert ms to seconds
-      end: word.end / 1000,
-      text: word.text,
-      confidence: word.confidence
-    })) || []
-
-    return {
-      transcript: transcript.text,
-      segments,
-      language: transcript.language_code || 'en',
-      confidence: transcript.confidence || 0.8
-    }
-  }
-
-  // Extract audio from video using Cloudinary or external service
-  private async extractAudioFromVideo(videoUrl: string): Promise<string> {
-    // For Cloudinary videos, we can use their audio extraction
+  private async getAudioUrl(videoUrl: string): Promise<string> {
+    // For Cloudinary videos, generate audio URL
     if (videoUrl.includes('cloudinary.com')) {
-      // Extract public ID from Cloudinary URL
-      const publicIdMatch = videoUrl.match(/\/v\d+\/(.+)\.(mp4|mov|avi|mkv|webm)/)
-      if (publicIdMatch) {
-        const publicId = publicIdMatch[1]
+      try {
+        // Extract public ID from video URL
+        const urlParts = videoUrl.split('/')
+        const filename = urlParts[urlParts.length - 1]
+        const publicId = filename.replace(/\.[^/.]+$/, '') // Remove extension
+        
         // Generate audio URL using Cloudinary transformation
-        return `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/f_mp3,q_auto/${publicId}.mp3`
+        // You'll need to configure cloudinary properly
+        const audioUrl = videoUrl.replace(/\.(mp4|mov|avi|mkv|webm)$/i, '.mp3')
+        
+        console.log(`🎵 Generated audio URL: ${audioUrl}`)
+        return audioUrl
+        
+      } catch (error) {
+        console.error('Failed to generate Cloudinary audio URL:', error)
+        // Fallback to original video URL
+        return videoUrl
       }
     }
-
-    // For other video URLs, you might need to use a service like FFmpeg
-    // For now, we'll assume the video URL can be used directly
+    
+    // For other video sources, return the original URL
     return videoUrl
   }
 
-private async saveTranscript(videoId: string, transcript: TranscriptResponse): Promise<void> {
-  try {
-    await prisma.transcript.upsert({
-      where: { videoId },
-      update: {
-        content: transcript.transcript,
-        language: transcript.language,
-        segments: transcript.segments ? JSON.stringify(transcript.segments) : undefined,
-        status: 'COMPLETED',
-        generatedAt: new Date()
-      },
-      create: {
-        videoId,
-        content: transcript.transcript,
-        language: transcript.language,
-        segments: transcript.segments ? JSON.stringify(transcript.segments) : undefined,
-        status: 'COMPLETED',
-        generatedAt: new Date()
-      }
-    })
-
-    console.log(`💾 Transcript saved to database for video: ${videoId}`)
-  } catch (error) {
-    console.error('Failed to save transcript to database:', error)
-    throw error
-  }
-}
-
-
-
-  // Process transcript for search and accessibility
-  static formatTranscriptForDisplay(transcript: string, segments?: TranscriptSegment[]): string {
-    if (!segments || segments.length === 0) {
-      return transcript
-    }
-
-    // Format with timestamps every 30 seconds
-    const formattedSegments: string[] = []
-    let currentTime = 0
-    let currentText = ''
-
-    for (const segment of segments) {
-      if (segment.start >= currentTime + 30) {
-        if (currentText.trim()) {
-          const timestamp = this.formatTimestamp(currentTime)
-          formattedSegments.push(`[${timestamp}] ${currentText.trim()}`)
+  private async updateTranscriptStatus(
+    videoId: string, 
+    status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED',
+    error?: string
+  ): Promise<void> {
+    try {
+      await prisma.transcript.upsert({
+        where: { videoId },
+        update: { 
+          status, 
+          error: error || null,
+          updatedAt: new Date()
+        },
+        create: {
+          videoId,
+          content: '',
+          status,
+          error: error || null
         }
-        currentTime = Math.floor(segment.start / 30) * 30
-        currentText = segment.text
-      } else {
-        currentText += ` ${segment.text}`
-      }
+      })
+    } catch (dbError) {
+      console.error('Failed to update transcript status:', dbError)
     }
-
-    // Add final segment
-    if (currentText.trim()) {
-      const timestamp = this.formatTimestamp(currentTime)
-      formattedSegments.push(`[${timestamp}] ${currentText.trim()}`)
-    }
-
-    return formattedSegments.join('\n\n')
   }
 
-  private static formatTimestamp(seconds: number): string {
-    const minutes = Math.floor(seconds / 60)
-    const remainingSeconds = Math.floor(seconds % 60)
-    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
+  private async saveTranscript(videoId: string, result: TranscriptResponse): Promise<void> {
+    try {
+      await prisma.transcript.upsert({
+        where: { videoId },
+        update: {
+          content: result.transcript,
+          language: result.language,
+          segments: result.segments,
+          status: 'COMPLETED',
+          confidence: result.confidence,
+          provider: result.provider,
+          generatedAt: new Date(),
+          error: null
+        },
+        create: {
+          videoId,
+          content: result.transcript,
+          language: result.language,
+          segments: result.segments,
+          status: 'COMPLETED',
+          confidence: result.confidence,
+          provider: result.provider,
+          generatedAt: new Date()
+        }
+      })
+
+      console.log(`💾 Transcript saved successfully for video: ${videoId}`)
+    } catch (error) {
+      console.error('Failed to save transcript:', error)
+      throw error
+    }
   }
 
-  // Generate transcript for existing videos in database
+  // Static method to process all videos without transcripts
   static async generateTranscriptsForAllVideos(): Promise<void> {
     console.log('🚀 Starting bulk transcript generation...')
     
-    const videos = await prisma.video.findMany({
-      where: {
-        transcript: null,
-        videoUrl: { not: null }
-      },
-      select: {
-        id: true,
-        title: true,
-        videoUrl: true
+    try {
+      const videos = await prisma.video.findMany({
+        where: {
+          AND: [
+            { videoUrl: { not: null } },
+            {
+              OR: [
+                { transcript: null },
+                { transcript: { status: { in: ['PENDING', 'FAILED'] } } }
+              ]
+            }
+          ]
+        },
+        select: {
+          id: true,
+          title: true,
+          videoUrl: true,
+          transcript: {
+            select: { status: true }
+          }
+        },
+        take: 50
+      })
+
+      console.log(`📹 Found ${videos.length} videos needing transcripts`)
+
+      const generator = new TranscriptGenerator('openai')
+
+      for (const video of videos) {
+        try {
+          console.log(`Processing: ${video.title}`)
+          await generator.generateTranscript(video.id, video.videoUrl)
+          
+          // Add delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 2000))
+          
+        } catch (error) {
+          console.error(`Failed to process video ${video.title}:`, error)
+          // Continue with next video
+        }
       }
-    })
 
-    console.log(`📹 Found ${videos.length} videos without transcripts`)
-
-    const generator = new TranscriptGenerator('openai') // or your preferred provider
-
-    for (const video of videos) {
-      try {
-        console.log(`Processing: ${video.title}`)
-        await generator.generateTranscript(video.videoUrl, video.id)
-        
-        // Add delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        
-      } catch (error) {
-        console.error(`Failed to process video ${video.title}:`, error)
-      }
+      console.log('✅ Bulk transcript generation completed')
+    } catch (error) {
+      console.error('Bulk transcript generation failed:', error)
+      throw error
     }
-
-    console.log('✅ Bulk transcript generation completed')
   }
 }
-
-export { TranscriptGenerator, type TranscriptResponse, type TranscriptSegment }

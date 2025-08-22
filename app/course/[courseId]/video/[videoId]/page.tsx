@@ -1,14 +1,15 @@
-// app/course/[courseId]/video/[videoId]/page.tsx - Updated with Transcript Support
+// app/course/[courseId]/video/[videoId]/page.tsx
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { VideoPlayerWithTranscript } from '@/components/VideoPlayerWithTranscript'
+import { VideoPlayerWithTranscript, VideoPlayerRef } from '@/components/VideoPlayerWithTranscript'
+import { NotesTab } from '@/components/NotesTab'
 import { 
   ArrowLeft, 
   CheckCircle, 
@@ -31,7 +32,6 @@ import {
   Save,
   Eye
 } from 'lucide-react'
-import { formatDuration } from '@/lib/utils'
 
 interface Video {
   id: string
@@ -42,6 +42,13 @@ interface Video {
   order: number
   sectionId?: string
   tests: Test[]
+  transcript?: {
+    id: string
+    content: string
+    status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+    language: string
+    segments?: any[]
+  }
 }
 
 interface Test {
@@ -82,6 +89,13 @@ interface VideoProgress {
   hasAccess: boolean
 }
 
+const formatDuration = (seconds: number) => {
+  if (!seconds) return '0:00'
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
 export default function VideoPage({ 
   params 
 }: { 
@@ -89,17 +103,19 @@ export default function VideoPage({
 }) {
   const { data: session } = useSession()
   const router = useRouter()
+  const playerRef = useRef<VideoPlayerRef>(null)
+  
   const [video, setVideo] = useState<Video | null>(null)
   const [course, setCourse] = useState<Course | null>(null)
   const [videoProgress, setVideoProgress] = useState<VideoProgress[]>([])
   const [watchTime, setWatchTime] = useState(0)
   const [loading, setLoading] = useState(true)
   const [currentSection, setCurrentSection] = useState<CourseSection | null>(null)
-  const [notes, setNotes] = useState('')
   const [videoCompleted, setVideoCompleted] = useState(false)
   const [canWatch, setCanWatch] = useState(false)
   const [activeTab, setActiveTab] = useState<'tutorials' | 'quiz' | 'notes' | 'about' | 'certificates' | 'transcript'>('tutorials')
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
+  const [currentVideoTime, setCurrentVideoTime] = useState(0)
 
   useEffect(() => {
     if (session) {
@@ -172,6 +188,8 @@ export default function VideoPage({
   }
 
   const handleVideoProgress = async (progress: { played: number; playedSeconds: number }) => {
+    setCurrentVideoTime(progress.playedSeconds)
+    
     if (progress.playedSeconds > watchTime) {
       setWatchTime(progress.playedSeconds)
       
@@ -214,15 +232,10 @@ export default function VideoPage({
     }
   }
 
-  const saveNotes = async () => {
-    try {
-      await fetch(`/api/videos/${params.videoId}/notes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes })
-      })
-    } catch (error) {
-      console.error('Error saving notes:', error)
+  const handleSeekTo = (timeInSeconds: number) => {
+    if (playerRef.current) {
+      playerRef.current.seekTo(timeInSeconds, 'seconds')
+      setCurrentVideoTime(timeInSeconds)
     }
   }
 
@@ -563,31 +576,12 @@ export default function VideoPage({
 
   // Render notes tab
   const renderNotesTab = () => (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center">
-          <StickyNote className="w-5 h-5 mr-2" />
-          My Notes
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Add your notes about this lecture..."
-            className="w-full h-48 p-4 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#001e62] focus:border-transparent"
-          />
-          <Button
-            onClick={saveNotes}
-            className="bg-[#001e62] hover:bg-[#001e62]/90"
-          >
-            <Save className="w-4 h-4 mr-2" />
-            Save Notes
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+    <NotesTab
+      videoId={params.videoId}
+      currentTime={currentVideoTime}
+      videoDuration={video?.duration || 0}
+      onSeekTo={handleSeekTo}
+    />
   )
 
   // Render about tab
@@ -808,6 +802,7 @@ export default function VideoPage({
       <div className="bg-black">
         <div className="max-w-7xl mx-auto p-4">
           <VideoPlayerWithTranscript
+            ref={playerRef}
             videoUrl={video.videoUrl}
             title={video.title}
             videoId={video.id}
@@ -839,6 +834,12 @@ export default function VideoPage({
                   <div className="flex items-center text-green-600">
                     <CheckCircle className="w-4 h-4 mr-1" />
                     <span>Completed</span>
+                  </div>
+                )}
+                {video.transcript && video.transcript.status === 'COMPLETED' && (
+                  <div className="flex items-center text-blue-600">
+                    <FileText className="w-4 h-4 mr-1" />
+                    <span>Transcript Available</span>
                   </div>
                 )}
               </div>

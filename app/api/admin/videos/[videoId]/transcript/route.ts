@@ -1,12 +1,12 @@
 // app/api/admin/videos/[videoId]/transcript/route.ts
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { TranscriptGenerator } from "@/lib/transcript-generator"
 
 export async function POST(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { videoId: string } }
 ) {
   try {
@@ -16,15 +16,12 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const videoId = params.videoId
+    const { videoId } = params
 
     // Get video details
     const video = await prisma.video.findUnique({
       where: { id: videoId },
-      select: {
-        id: true,
-        title: true,
-        videoUrl: true,
+      include: {
         transcript: true
       }
     })
@@ -37,8 +34,8 @@ export async function POST(
       return NextResponse.json({ error: "Video has no URL" }, { status: 400 })
     }
 
-    // Check if transcript already exists
-    if (video.transcript) {
+    // Check if transcript already exists and is completed
+    if (video.transcript?.status === 'COMPLETED') {
       return NextResponse.json({ 
         message: "Transcript already exists",
         transcript: video.transcript 
@@ -46,16 +43,19 @@ export async function POST(
     }
 
     // Generate transcript
-    const generator = new TranscriptGenerator('openai') // You can make this configurable
-    const transcriptResult = await generator.generateTranscript(video.videoUrl, video.id)
+    console.log(`🎬 Generating transcript for video: ${videoId}`)
+    
+    const generator = new TranscriptGenerator('openai')
+    const transcriptResult = await generator.generateTranscript(video.id, video.videoUrl)
 
     return NextResponse.json({
       success: true,
       message: "Transcript generated successfully",
-      transcript: transcriptResult.transcript,
+      transcript: transcriptResult,
       confidence: transcriptResult.confidence,
       language: transcriptResult.language,
-      segmentCount: transcriptResult.segments.length
+      segmentCount: transcriptResult.segments.length,
+      provider: transcriptResult.provider
     })
 
   } catch (error) {
@@ -68,7 +68,7 @@ export async function POST(
 }
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { videoId: string } }
 ) {
   try {
@@ -80,9 +80,7 @@ export async function GET(
 
     const video = await prisma.video.findUnique({
       where: { id: params.videoId },
-      select: {
-        id: true,
-        title: true,
+      include: {
         transcript: true
       }
     })
@@ -94,8 +92,13 @@ export async function GET(
     return NextResponse.json({
       videoId: video.id,
       title: video.title,
-      transcript: video.transcript,
-      hasTranscript: !!video.transcript
+      transcript: video.transcript?.content || null,
+      segments: video.transcript?.segments || null,
+      status: video.transcript?.status || 'PENDING',
+      language: video.transcript?.language || 'en',
+      confidence: video.transcript?.confidence || null,
+      provider: video.transcript?.provider || null,
+      hasTranscript: !!video.transcript && video.transcript.status === 'COMPLETED'
     })
 
   } catch (error) {
@@ -105,7 +108,7 @@ export async function GET(
 }
 
 export async function DELETE(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { videoId: string } }
 ) {
   try {
@@ -115,9 +118,8 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    await prisma.video.update({
-      where: { id: params.videoId },
-      data: { transcript: null }
+    await prisma.transcript.delete({
+      where: { videoId: params.videoId }
     })
 
     return NextResponse.json({ 

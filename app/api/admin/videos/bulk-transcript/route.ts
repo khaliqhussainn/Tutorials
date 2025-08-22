@@ -1,4 +1,4 @@
-// app/api/admin/videos/bulk-transcript/route.ts
+// app/api/admin/transcripts/bulk-generate/route.ts
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -12,16 +12,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { provider = 'openai' } = await request.json()
+    const { provider = 'openai', batchSize = 10 } = await request.json()
 
-    // Start bulk transcript generation in background
-    // Note: In production, you'd want to use a job queue like Bull or Agenda
+    console.log('🚀 Starting bulk transcript generation...')
+
+    // Start bulk generation in background
     TranscriptGenerator.generateTranscriptsForAllVideos()
-      .catch(error => console.error('Bulk transcript generation failed:', error))
+      .then(() => {
+        console.log('✅ Bulk transcript generation completed')
+      })
+      .catch(error => {
+        console.error('❌ Bulk transcript generation failed:', error)
+      })
 
     return NextResponse.json({
       success: true,
-      message: "Bulk transcript generation started in background"
+      message: "Bulk transcript generation started in background",
+      provider,
+      note: "Check the logs or transcript status API for progress updates"
     })
 
   } catch (error) {

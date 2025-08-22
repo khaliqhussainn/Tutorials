@@ -1,7 +1,7 @@
 // components/VideoPlayerWithTranscript.tsx
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import { 
   Play, 
   Pause, 
@@ -18,17 +18,18 @@ import {
   Eye,
   EyeOff,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Loader2
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Input } from '@/components/ui/Input'
 
 interface TranscriptSegment {
-  id: string
-  startTime: number
-  endTime: number
+  start: number
+  end: number
   text: string
-  speakerName?: string
+  confidence?: number
 }
 
 interface VideoPlayerWithTranscriptProps {
@@ -41,7 +42,13 @@ interface VideoPlayerWithTranscriptProps {
   initialTime?: number
 }
 
-export function VideoPlayerWithTranscript({
+export interface VideoPlayerRef {
+  seekTo: (time: number, type?: 'seconds' | 'fraction') => void
+  getCurrentTime: () => number
+  getDuration: () => number
+}
+
+const VideoPlayerWithTranscript = forwardRef<VideoPlayerRef, VideoPlayerWithTranscriptProps>(({
   videoUrl,
   title,
   videoId,
@@ -49,7 +56,7 @@ export function VideoPlayerWithTranscript({
   onEnded,
   canWatch,
   initialTime = 0
-}: VideoPlayerWithTranscriptProps) {
+}, ref) => {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const transcriptRef = useRef<HTMLDivElement>(null)
@@ -61,18 +68,36 @@ export function VideoPlayerWithTranscript({
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [showControls, setShowControls] = useState(true)
-  const [playbackRate, setPlaybackRate] = useState(1)
-  const [showSettings, setShowSettings] = useState(false)
   const [buffered, setBuffered] = useState(0)
   
   // Transcript state
-  const [transcript, setTranscript] = useState<TranscriptSegment[]>([])
+  const [transcript, setTranscript] = useState<{
+    content: string
+    segments: TranscriptSegment[]
+    status: string
+  } | null>(null)
   const [showTranscript, setShowTranscript] = useState(false)
   const [transcriptLoading, setTranscriptLoading] = useState(false)
-  const [activeSegment, setActiveSegment] = useState<string | null>(null)
+  const [activeSegment, setActiveSegment] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [filteredTranscript, setFilteredTranscript] = useState<TranscriptSegment[]>([])
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(false)
+
+  // Expose methods to parent component
+  useImperativeHandle(ref, () => ({
+    seekTo: (time: number, type: 'seconds' | 'fraction' = 'seconds') => {
+      if (!videoRef.current) return
+      
+      if (type === 'seconds') {
+        videoRef.current.currentTime = time
+      } else {
+        videoRef.current.currentTime = time * duration
+      }
+      setCurrentTime(videoRef.current.currentTime)
+    },
+    getCurrentTime: () => currentTime,
+    getDuration: () => duration
+  }))
 
   // Fetch transcript data
   useEffect(() => {
@@ -84,12 +109,19 @@ export function VideoPlayerWithTranscript({
   const fetchTranscript = async () => {
     try {
       setTranscriptLoading(true)
-      const response = await fetch(`/api/videos/${videoId}/transcript`)
+      const response = await fetch(`/api/admin/videos/${videoId}/transcript`)
       
       if (response.ok) {
         const data = await response.json()
-        setTranscript(data.segments || [])
-        setFilteredTranscript(data.segments || [])
+        if (data.hasTranscript && data.transcript) {
+          const segments = Array.isArray(data.segments) ? data.segments : []
+          setTranscript({
+            content: data.transcript,
+            segments: segments,
+            status: data.status
+          })
+          setFilteredTranscript(segments)
+        }
       }
     } catch (error) {
       console.error('Error fetching transcript:', error)
@@ -100,12 +132,13 @@ export function VideoPlayerWithTranscript({
 
   // Filter transcript based on search
   useEffect(() => {
+    if (!transcript) return
+    
     if (searchQuery.trim() === '') {
-      setFilteredTranscript(transcript)
+      setFilteredTranscript(transcript.segments)
     } else {
-      const filtered = transcript.filter(segment =>
-        segment.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        segment.speakerName?.toLowerCase().includes(searchQuery.toLowerCase())
+      const filtered = transcript.segments.filter(segment =>
+        segment.text.toLowerCase().includes(searchQuery.toLowerCase())
       )
       setFilteredTranscript(filtered)
     }
@@ -113,14 +146,17 @@ export function VideoPlayerWithTranscript({
 
   // Update active segment based on current time
   useEffect(() => {
-    const currentSegment = transcript.find(segment =>
-      currentTime >= segment.startTime && currentTime <= segment.endTime
+    if (!transcript?.segments) return
+    
+    const currentSegment = transcript.segments.findIndex(segment =>
+      currentTime >= segment.start && currentTime <= segment.end
     )
-    setActiveSegment(currentSegment?.id || null)
+    
+    setActiveSegment(currentSegment >= 0 ? currentSegment : null)
 
     // Auto-scroll to active segment
-    if (currentSegment && transcriptRef.current) {
-      const segmentElement = transcriptRef.current.querySelector(`[data-segment-id="${currentSegment.id}"]`)
+    if (currentSegment >= 0 && transcriptRef.current) {
+      const segmentElement = transcriptRef.current.querySelector(`[data-segment-id="${currentSegment}"]`)
       if (segmentElement) {
         segmentElement.scrollIntoView({
           behavior: 'smooth',
@@ -136,10 +172,11 @@ export function VideoPlayerWithTranscript({
     if (!video) return
 
     const handleTimeUpdate = () => {
-      setCurrentTime(video.currentTime)
+      const current = video.currentTime
+      setCurrentTime(current)
       onProgress({
-        played: video.currentTime / video.duration,
-        playedSeconds: video.currentTime
+        played: current / video.duration,
+        playedSeconds: current
       })
       
       if (video.buffered.length > 0) {
@@ -205,11 +242,9 @@ export function VideoPlayerWithTranscript({
   }
 
   const downloadTranscript = () => {
-    const transcriptText = transcript
-      .map(segment => `[${formatTime(segment.startTime)}] ${segment.speakerName ? `${segment.speakerName}: ` : ''}${segment.text}`)
-      .join('\n\n')
+    if (!transcript?.content) return
     
-    const blob = new Blob([transcriptText], { type: 'text/plain' })
+    const blob = new Blob([transcript.content], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -341,7 +376,7 @@ export function VideoPlayerWithTranscript({
                 </div>
                 
                 <div className="flex items-center space-x-3">
-                  {transcript.length > 0 && (
+                  {transcript && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
@@ -397,7 +432,7 @@ export function VideoPlayerWithTranscript({
                   )}
                 </CardTitle>
                 <div className="flex items-center space-x-2">
-                  {transcript.length > 0 && (
+                  {transcript && (
                     <button
                       onClick={downloadTranscript}
                       className="text-gray-400 hover:text-gray-600 p-1"
@@ -421,15 +456,15 @@ export function VideoPlayerWithTranscript({
                 </div>
               </div>
               
-              {!transcriptCollapsed && transcript.length > 0 && (
+              {!transcriptCollapsed && transcript && (
                 <div className="relative">
                   <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                  <input
+                  <Input
                     type="text"
                     placeholder="Search transcript..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#001e62] focus:border-transparent"
+                    className="pl-10"
                   />
                 </div>
               )}
@@ -439,9 +474,9 @@ export function VideoPlayerWithTranscript({
               <CardContent className="flex-1 overflow-hidden p-0">
                 {transcriptLoading ? (
                   <div className="flex items-center justify-center h-32">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#001e62]"></div>
+                    <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
                   </div>
-                ) : transcript.length === 0 ? (
+                ) : !transcript ? (
                   <div className="flex flex-col items-center justify-center h-32 text-gray-500">
                     <FileText className="w-12 h-12 mb-2 text-gray-300" />
                     <p className="text-sm">No transcript available</p>
@@ -451,39 +486,35 @@ export function VideoPlayerWithTranscript({
                     ref={transcriptRef}
                     className="h-full overflow-y-auto px-6 pb-6 space-y-3"
                   >
-                    {filteredTranscript.map((segment) => (
+                    {filteredTranscript.map((segment, index) => (
                       <div
-                        key={segment.id}
-                        data-segment-id={segment.id}
+                        key={index}
+                        data-segment-id={index}
                         className={`p-3 rounded-lg cursor-pointer transition-all duration-200 ${
-                          activeSegment === segment.id
+                          activeSegment === index
                             ? 'bg-[#001e62]/10 border-l-4 border-l-[#001e62]'
                             : 'hover:bg-gray-50'
                         }`}
-                        onClick={() => seekToTime(segment.startTime)}
+                        onClick={() => seekToTime(segment.start)}
                       >
                         <div className="flex items-start justify-between mb-1">
                           <span className="text-xs font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                            {formatTime(segment.startTime)}
+                            {formatTime(segment.start)}
                           </span>
-                          {segment.speakerName && (
-                            <span className="text-xs font-medium text-gray-500">
-                              {segment.speakerName}
-                            </span>
-                          )}
                         </div>
                         <p className={`text-sm leading-relaxed ${
-                          activeSegment === segment.id ? 'text-[#001e62] font-medium' : 'text-gray-700'
+                          activeSegment === index ? 'text-[#001e62] font-medium' : 'text-gray-700'
                         }`}>
-                          {searchQuery && (
+                          {searchQuery ? (
                             <span dangerouslySetInnerHTML={{
                               __html: segment.text.replace(
                                 new RegExp(`(${searchQuery})`, 'gi'),
                                 '<mark class="bg-yellow-200">$1</mark>'
                               )
                             }} />
+                          ) : (
+                            segment.text
                           )}
-                          {!searchQuery && segment.text}
                         </p>
                       </div>
                     ))}
@@ -496,4 +527,8 @@ export function VideoPlayerWithTranscript({
       )}
     </div>
   )
-}
+})
+
+VideoPlayerWithTranscript.displayName = 'VideoPlayerWithTranscript'
+
+export { VideoPlayerWithTranscript }

@@ -534,7 +534,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
     }
 
     try {
-      const response = await fetch(`/api/admin/sections/${sectionId}`, {
+      const response = await fetch(`/api/admin/courses/${params.courseId}/sections/${sectionId}`, {
         method: 'DELETE'
       })
 

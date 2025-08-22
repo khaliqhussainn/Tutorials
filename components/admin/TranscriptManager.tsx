@@ -1,7 +1,9 @@
+// components/admin/TranscriptManager.tsx
 'use client'
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
 import {
   FileText,
   Download,
@@ -20,19 +22,12 @@ import {
   Copy,
   Search
 } from 'lucide-react'
-import { Input } from '@/components/ui/Input'
 
 interface TranscriptSegment {
-  id: number
-  seek: number
   start: number
   end: number
   text: string
-  tokens: number[]
-  temperature: number
-  avg_logprob: number
-  compression_ratio: number
-  no_speech_prob: number
+  confidence?: number
 }
 
 interface Transcript {
@@ -43,11 +38,9 @@ interface Transcript {
   segments?: TranscriptSegment[]
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
   error?: string
-  generatedAt: string
-  video?: {
-    title: string
-    duration?: number
-  }
+  generatedAt?: string
+  confidence?: number
+  provider?: string
 }
 
 interface TranscriptManagerProps {
@@ -88,11 +81,25 @@ export default function TranscriptManager({
       setIsLoading(true)
       setError('')
 
-      const response = await fetch(`/api/admin/videos/${videoId}/generate-transcript`)
+      const response = await fetch(`/api/admin/videos/${videoId}/transcript`)
 
       if (response.ok) {
         const data = await response.json()
-        setTranscript(data)
+        if (data.hasTranscript) {
+          setTranscript({
+            id: data.videoId,
+            videoId: data.videoId,
+            content: data.transcript || '',
+            language: data.language || 'en',
+            segments: data.segments || [],
+            status: data.status || 'PENDING',
+            confidence: data.confidence,
+            provider: data.provider,
+            generatedAt: new Date().toISOString()
+          })
+        } else {
+          setTranscript(null)
+        }
       } else if (response.status === 404) {
         setTranscript(null)
       } else {
@@ -116,7 +123,7 @@ export default function TranscriptManager({
       setIsGenerating(true)
       setError('')
       setSuccess('')
-      const response = await fetch(`/api/admin/videos/${videoId}/generate-transcript`, {
+      const response = await fetch(`/api/admin/videos/${videoId}/transcript`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -128,9 +135,19 @@ export default function TranscriptManager({
       })
       const data = await response.json()
       if (response.ok) {
-        setTranscript(data.transcript)
+        setTranscript({
+          id: videoId,
+          videoId: videoId,
+          content: data.transcript?.transcript || data.transcript || '',
+          language: data.language || 'en',
+          segments: data.segments || [],
+          status: 'COMPLETED',
+          confidence: data.confidence,
+          provider: data.provider,
+          generatedAt: new Date().toISOString()
+        })
         setSuccess('Transcript generated successfully!')
-        onTranscriptGenerated?.(data.transcript)
+        onTranscriptGenerated?.(transcript!)
         setTimeout(() => setSuccess(''), 5000)
       } else {
         setError(data.error || 'Failed to generate transcript')
@@ -148,7 +165,7 @@ export default function TranscriptManager({
       return
     }
     try {
-      const response = await fetch(`/api/admin/videos/${videoId}/generate-transcript`, {
+      const response = await fetch(`/api/admin/videos/${videoId}/transcript`, {
         method: 'DELETE'
       })
       if (response.ok) {
@@ -256,6 +273,7 @@ export default function TranscriptManager({
           <span className="text-sm">{success}</span>
         </div>
       )}
+
       {/* Main Transcript Card */}
       <Card>
         <CardHeader>
@@ -320,6 +338,7 @@ export default function TranscriptManager({
                   <p className="text-gray-500 mb-6">
                     Generate an AI-powered transcript for this video using OpenAI Whisper.
                   </p>
+
                   {/* Generation Settings */}
                   <div className="max-w-md mx-auto space-y-4 mb-6">
                     <div className="grid grid-cols-2 gap-4">
@@ -364,6 +383,7 @@ export default function TranscriptManager({
                         </label>
                       </div>
                     </div>
+
                     <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                       <div className="flex items-start">
                         <Volume2 className="w-4 h-4 text-blue-600 mr-2 mt-0.5" />
@@ -379,6 +399,7 @@ export default function TranscriptManager({
                       </div>
                     </div>
                   </div>
+
                   <Button
                     onClick={generateTranscript}
                     disabled={isGenerating}
@@ -416,16 +437,20 @@ export default function TranscriptManager({
                     {transcript.language.toUpperCase()}
                   </div>
 
-                  <div className="flex items-center text-sm text-gray-600">
-                    <Clock className="w-4 h-4 mr-1" />
-                    Generated {new Date(transcript.generatedAt).toLocaleDateString()}
-                  </div>
+                  {transcript.generatedAt && (
+                    <div className="flex items-center text-sm text-gray-600">
+                      <Clock className="w-4 h-4 mr-1" />
+                      Generated {new Date(transcript.generatedAt).toLocaleDateString()}
+                    </div>
+                  )}
+
                   {transcript.segments && (
                     <div className="text-sm text-gray-600">
                       {transcript.segments.length} segments
                     </div>
                   )}
                 </div>
+
                 <Button
                   variant="outline"
                   size="sm"
@@ -439,6 +464,7 @@ export default function TranscriptManager({
                   Regenerate
                 </Button>
               </div>
+
               {/* Error Display */}
               {transcript.status === 'FAILED' && transcript.error && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -447,6 +473,7 @@ export default function TranscriptManager({
                   </p>
                 </div>
               )}
+
               {/* Transcript Content */}
               {transcript.status === 'COMPLETED' && transcript.content && (
                 <div className="space-y-4">
@@ -482,6 +509,7 @@ export default function TranscriptManager({
                       </Button>
                     </div>
                   )}
+
                   {/* Transcript Display */}
                   <div className="border border-gray-200 rounded-lg">
                     {showFullTranscript || !transcript.segments ? (
@@ -496,7 +524,7 @@ export default function TranscriptManager({
                       <div className="divide-y divide-gray-200 max-h-96 overflow-y-auto">
                         {(searchTerm ? filteredSegments : transcript.segments).map((segment, index) => (
                           <div
-                            key={segment.id || index}
+                            key={index}
                             className={`p-3 hover:bg-gray-50 cursor-pointer transition-colors ${
                               currentSegment === index ? 'bg-blue-50 border-l-4 border-blue-500' : ''
                             }`}
@@ -540,6 +568,7 @@ export default function TranscriptManager({
                       </div>
                     )}
                   </div>
+
                   {/* Transcript Stats */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-3 bg-gray-50 rounded-lg text-sm">
                     <div>
@@ -567,6 +596,7 @@ export default function TranscriptManager({
           )}
         </CardContent>
       </Card>
+
       {/* Processing Status */}
       {transcript && (transcript.status === 'PROCESSING' || transcript.status === 'PENDING') && (
         <Card>
