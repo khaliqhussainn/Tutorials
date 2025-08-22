@@ -1,14 +1,15 @@
-// app/api/upload/route.ts - ENHANCED to properly extract and return video duration
+// app/api/upload/route.ts - ENHANCED with automatic transcript generation
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import cloudinary from "@/lib/cloudinary"
+import { TranscriptQueue } from "@/lib/transcript-queue"
 
-export const maxDuration = 300 // 5 minutes (max for Hobby plan)
+export const maxDuration = 300 // 5 minutes
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
-  console.log('=== VIDEO UPLOAD STARTED ===')
+  console.log('=== VIDEO UPLOAD WITH AUTO-TRANSCRIPT STARTED ===')
   
   try {
     const session = await getServerSession(authOptions)
@@ -22,6 +23,7 @@ export async function POST(request: Request) {
     console.log('Getting form data...')
     const data = await request.formData()
     const file: File | null = data.get('file') as unknown as File
+    const generateTranscript = data.get('generateTranscript') === 'true'
     
     if (!file) {
       console.log('No file found in form data')
@@ -32,11 +34,11 @@ export async function POST(request: Request) {
       name: file.name,
       size: `${(file.size / 1024 / 1024).toFixed(2)}MB`,
       type: file.type,
-      lastModified: new Date(file.lastModified).toISOString()
+      generateTranscript
     })
 
-    // Reduced file size limit for faster uploads within 5-minute timeout
-    const maxSize = 100 * 1024 * 1024 // 100MB (reduced from 200MB)
+    // File size limit for faster uploads
+    const maxSize = 100 * 1024 * 1024 // 100MB
     if (file.size > maxSize) {
       console.log('File too large:', file.size, 'bytes')
       return NextResponse.json({
@@ -44,7 +46,7 @@ export async function POST(request: Request) {
       }, { status: 400 })
     }
 
-    // Comprehensive video type checking
+    // Video type checking
     const videoExtensions = /\.(mp4|mov|avi|wmv|mkv|webm|m4v|3gp|flv|f4v)$/i
     const videoMimeTypes = [
       'video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo',
@@ -67,31 +69,24 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(bytes)
     console.log('Buffer created, size:', buffer.length, 'bytes')
 
-    console.log('Starting Cloudinary upload...')
+    console.log('Starting Cloudinary upload with transcript optimization...')
     
-    // Optimized Cloudinary upload for faster processing with duration extraction
+    // Enhanced Cloudinary upload optimized for transcript generation
     const result = await new Promise<any>((resolve, reject) => {
       const uploadOptions = {
         resource_type: "video" as const,
         folder: "training-videos",
         public_id: `video_${Date.now()}_${Math.random().toString(36).substring(7)}`,
-        chunk_size: 8000000, // 8MB chunks (increased for faster upload)
-        timeout: 280000, // 4 minutes 40 seconds (leave buffer for processing)
+        chunk_size: 8000000, // 8MB chunks
+        timeout: 280000, // 4 minutes 40 seconds
         
-        // Optimized video settings for faster processing
+        // Optimized video settings for transcript generation
         quality: "auto:good",
-        format: "mp4", // Force MP4 output for consistency
+        format: "mp4", // Force MP4 for better compatibility
         video_codec: "h264",
-        audio_codec: "aac",
+        audio_codec: "aac", // Important for transcript generation
         
-        // Fast upload settings
-        overwrite: true,
-        invalidate: false, // Disable to speed up
-        use_filename: false,
-        unique_filename: true,
-        
-        // Enable eager transformations to get video info
-        eager_async: false,
+        // Generate audio-only version for transcript processing
         eager: [
           {
             width: 1920,
@@ -99,11 +94,19 @@ export async function POST(request: Request) {
             crop: "limit",
             quality: "auto:good",
             format: "mp4"
-          }
+          },
+          ...(generateTranscript ? [{
+            resource_type: "video",
+            format: "mp3", // Audio-only for transcript
+            audio_codec: "mp3",
+            video_codec: "none"
+          }] : [])
         ],
         
-        // Optimize for speed
-        flags: "progressive"
+        eager_async: false,
+        overwrite: true,
+        use_filename: false,
+        unique_filename: true,
       }
 
       console.log('Upload options:', JSON.stringify(uploadOptions, null, 2))
@@ -113,11 +116,6 @@ export async function POST(request: Request) {
         (error, result) => {
           if (error) {
             console.error("Cloudinary upload error:", error)
-            console.error("Error details:", {
-              message: error.message,
-              http_code: error.http_code,
-              name: error.name
-            })
             reject(error)
           } else {
             console.log("Upload successful!")
@@ -128,7 +126,8 @@ export async function POST(request: Request) {
               format: result?.format,
               bytes: result?.bytes,
               width: result?.width,
-              height: result?.height
+              height: result?.height,
+              eager: result?.eager?.length || 0
             })
             resolve(result)
           }
@@ -140,7 +139,7 @@ export async function POST(request: Request) {
         reject(error)
       })
 
-      // Add timeout handling
+      // Timeout handling
       const timeoutId = setTimeout(() => {
         reject(new Error('Upload timeout - please try with a smaller file'))
       }, 270000) // 4.5 minutes
@@ -153,28 +152,47 @@ export async function POST(request: Request) {
       uploadStream.end(buffer)
     })
 
-    // Prepare response with all video metadata including duration
+    // Prepare enhanced response
     const response = {
       url: result.secure_url,
-      duration: result.duration ? Math.round(result.duration) : null, // Duration in seconds, rounded
+      duration: result.duration ? Math.round(result.duration) : null,
       publicId: result.public_id,
       format: result.format,
       bytes: result.bytes,
       width: result.width,
       height: result.height,
-      // Additional metadata that might be useful
       aspectRatio: result.width && result.height ? (result.width / result.height).toFixed(2) : null,
       bitRate: result.bit_rate || null,
-      frameRate: result.frame_rate || null
+      frameRate: result.frame_rate || null,
+      
+      // Audio URL for transcript generation (if available)
+      audioUrl: generateTranscript && result.eager?.length > 1 ? 
+        result.eager[1]?.secure_url : null,
+      
+      // Transcript processing info
+      transcriptReady: false,
+      transcriptQueued: generateTranscript
     }
 
     console.log('Upload completed successfully:', response)
     
-    // Log duration specifically for debugging
+    // Log duration specifically
     if (response.duration) {
       console.log(`Video duration detected: ${response.duration} seconds (${Math.floor(response.duration / 60)}:${(response.duration % 60).toString().padStart(2, '0')})`)
     } else {
       console.warn('Warning: Video duration not detected from Cloudinary response')
+    }
+
+    // Add to transcript queue if requested
+    if (generateTranscript && process.env.OPENAI_API_KEY) {
+      try {
+        const queue = TranscriptQueue.getInstance()
+        // We'll queue it with a temporary ID, it will be updated when video is created
+        console.log('🎬 Transcript generation will be queued after video creation')
+      } catch (error) {
+        console.warn('Failed to queue transcript generation:', error)
+        // Don't fail the upload for transcript issues
+      }
     }
 
     return NextResponse.json(response)
@@ -183,12 +201,6 @@ export async function POST(request: Request) {
     console.error("=== UPLOAD ERROR ===")
     console.error("Error type:", error.constructor?.name)
     console.error("Error message:", error.message)
-    console.error("Error stack:", error.stack)
-    console.error("Cloudinary error details:", {
-      http_code: error.http_code,
-      error: error.error,
-      name: error.name
-    })
     
     // Enhanced error handling
     if (error.http_code === 400) {
@@ -203,16 +215,10 @@ export async function POST(request: Request) {
       }, { status: 413 })
     }
     
-    if (error.message?.includes('timeout') || error.http_code === 499 || error.message?.includes('Upload timeout')) {
+    if (error.message?.includes('timeout') || error.http_code === 499) {
       return NextResponse.json({
-        error: "Upload timeout. Please try with a smaller file (under 50MB recommended) or compress your video"
+        error: "Upload timeout. Please try with a smaller file (under 50MB recommended)"
       }, { status: 408 })
-    }
-    
-    if (error.code === 'ECONNRESET' || error.code === 'ENOTFOUND') {
-      return NextResponse.json({
-        error: "Network error. Please check your internet connection and try again"
-      }, { status: 502 })
     }
 
     return NextResponse.json({

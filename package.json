@@ -1,5 +1,6 @@
 {
   "name": "training-platform",
+  "description": "A platform for training and educational content with video support and user management.",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -13,7 +14,7 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "prebuild": "node scripts/prebuild.js",
- "transcript:generate": "npx ts-node scripts/generate-transcripts.ts",
+    "transcript:generate": "npx ts-node scripts/generate-transcripts.ts",
     "transcript:test": "npx ts-node scripts/test-transcript.ts",
     "transcript:clear": "npx ts-node -e \"require('./lib/transcript-queue').TranscriptQueue.getInstance().clearFailed()\""
   },
@@ -33,6 +34,7 @@
     "multer": "^1.4.5-lts.1",
     "next": "^14.2.30",
     "next-auth": "^4.24.5",
+    "openai": "^5.15.0",
     "react": "^18",
     "react-dom": "^18",
     "react-hook-form": "^7.48.2",

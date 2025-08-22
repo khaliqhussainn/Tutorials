@@ -1,4 +1,4 @@
-// app/admin/courses/[courseId]/page.tsx - Complete Integration
+// app/admin/courses/[courseId]/page.tsx - Complete Integration with Transcript
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -9,7 +9,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
+import TranscriptManager from '@/components/admin/TranscriptManager'
 import { 
+  FileText, // Added for transcript functionality
   ArrowLeft, 
   Plus, 
   Play, 
@@ -37,6 +39,19 @@ import {
   BookOpen,
   Zap
 } from 'lucide-react'
+
+interface Transcript {
+  id: string
+  videoId: string
+  content: string
+  language: string
+  segments?: any[]
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+  error?: string
+  generatedAt?: string
+  createdAt: string
+  updatedAt: string
+}
 
 interface CourseSection {
   id: string
@@ -67,6 +82,7 @@ interface Video {
   order: number
   aiPrompt?: string
   tests: Test[]
+  transcript?: Transcript  // Added transcript support
   sectionId?: string
 }
 
@@ -77,6 +93,7 @@ interface Test {
   correct: number
   explanation?: string
   difficulty: string
+  order?: number  // Added order support
 }
 
 interface SectionFormData {
@@ -90,12 +107,13 @@ interface VideoFormData {
   aiPrompt: string
   videoFile: File | null
   sectionId: string
+  generateTranscript: boolean  // Added transcript generation option
 }
 
 interface UploadState {
   uploading: boolean
   progress: number
-  stage: 'idle' | 'uploading' | 'processing' | 'success' | 'error'
+  stage: 'idle' | 'uploading' | 'processing' | 'generating_transcript' | 'success' | 'error'
   error: string
   retryCount: number
 }
@@ -163,6 +181,9 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   
+  // Transcript management state
+  const [showTranscriptManager, setShowTranscriptManager] = useState<string | null>(null)
+  
   const [sectionForm, setSectionForm] = useState<SectionFormData>({
     title: '',
     description: ''
@@ -173,7 +194,8 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
     description: '',
     aiPrompt: '',
     videoFile: null,
-    sectionId: ''
+    sectionId: '',
+    generateTranscript: false // Added transcript generation option
   })
 
   const [uploadState, setUploadState] = useState<UploadState>({
@@ -229,6 +251,15 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
     }
   }
 
+  // Transcript management functions
+  const openTranscriptManager = (videoId: string) => {
+    setShowTranscriptManager(videoId)
+  }
+
+  const closeTranscriptManager = () => {
+    setShowTranscriptManager(null)
+  }
+
   const handleSectionFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
     setSectionForm(prev => ({ ...prev, [name]: value }))
@@ -240,7 +271,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
     setSuccess('')
 
     try {
-      const response = await fetch(`/api/courses/${params.courseId}/sections`, {
+      const response = await fetch(`/api/admin/courses/${params.courseId}/sections`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(sectionForm)
@@ -261,12 +292,17 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
   }
 
   const handleVideoFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target
-    setVideoForm(prev => ({ ...prev, [name]: value }))
+    const { name, value, type, checked } = e.target as HTMLInputElement
     
-    // Analyze AI prompt quality
-    if (name === 'aiPrompt') {
-      analyzePromptQuality(value)
+    if (type === 'checkbox') {
+      setVideoForm(prev => ({ ...prev, [name]: checked }))
+    } else {
+      setVideoForm(prev => ({ ...prev, [name]: value }))
+      
+      // Analyze AI prompt quality
+      if (name === 'aiPrompt') {
+        analyzePromptQuality(value)
+      }
     }
   }
 
@@ -405,14 +441,14 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
       setUploadState(prev => ({ ...prev, stage: 'uploading' }))
       const uploadData = await uploadWithRetry()
       
-      // Step 2: Create video record with AI test generation
+      // Step 2: Create video record with AI test generation and transcript
       setUploadState(prev => ({ 
         ...prev, 
         progress: 95, 
-        stage: 'processing' 
+        stage: videoForm.generateTranscript ? 'generating_transcript' : 'processing' 
       }))
       
-      const videoResponse = await fetch(`/api/courses/${params.courseId}/videos`, {
+      const videoResponse = await fetch(`/api/admin/videos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -421,7 +457,9 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
           videoUrl: uploadData.url,
           duration: uploadData.duration,
           aiPrompt: videoForm.aiPrompt,
-          sectionId: videoForm.sectionId
+          sectionId: videoForm.sectionId,
+          courseId: params.courseId,
+          generateTranscript: videoForm.generateTranscript // Include transcript generation
         })
       })
 
@@ -442,7 +480,8 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
           description: '',
           aiPrompt: '',
           videoFile: null,
-          sectionId: ''
+          sectionId: '',
+          generateTranscript: false
         })
         setUploadState({
           uploading: false,
@@ -509,7 +548,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
   }
 
   const deleteVideo = async (videoId: string) => {
-    if (!confirm('Are you sure you want to delete this video? This will also delete associated tests.')) {
+    if (!confirm('Are you sure you want to delete this video? This will also delete associated tests and transcripts.')) {
       return
     }
 
@@ -641,7 +680,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                 {course.title}
               </h1>
               <p className="text-lg text-dark-600">
-                Manage course sections, videos, and AI-generated tests
+                Manage course sections, videos, AI-generated tests, and transcripts
               </p>
             </div>
           </div>
@@ -693,6 +732,14 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                   <p className="text-dark-900">
                     {course.sections?.reduce((acc, section) => 
                       acc + section.videos.reduce((vidAcc, video) => vidAcc + video.tests.length, 0), 0
+                    ) || 0}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-sm font-medium text-dark-700">Transcripts:</span>
+                  <p className="text-dark-900">
+                    {course.sections?.reduce((acc, section) => 
+                      acc + section.videos.filter(video => video.transcript?.status === 'COMPLETED').length, 0
                     ) || 0}
                   </p>
                 </div>
@@ -795,7 +842,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                 <CardHeader>
                   <CardTitle className="flex items-center">
                     <Upload className="w-5 h-5 mr-2" />
-                    Add New Video with AI-Generated Tests
+                    Add New Video with AI Features
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -825,6 +872,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                           <span className="text-blue-800 font-medium">
                             {uploadState.stage === 'uploading' ? 'Uploading video file...' :
                              uploadState.stage === 'processing' ? 'AI is analyzing content and generating test questions...' :
+                             uploadState.stage === 'generating_transcript' ? 'AI is generating transcript...' :
                              'Processing...'}
                           </span>
                           <span className="text-blue-600">{uploadState.progress.toFixed(0)}%</span>
@@ -840,6 +888,11 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                             AI is creating personalized test questions based on your prompt...
                           </p>
                         )}
+                        {uploadState.stage === 'generating_transcript' && (
+                          <p className="text-xs text-blue-600">
+                            AI is generating transcript from video audio...
+                          </p>
+                        )}
                       </div>
                     )}
 
@@ -847,7 +900,9 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                     {uploadState.stage === 'success' && (
                       <div className="flex items-center p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
                         <CheckCircle className="w-5 h-5 mr-2 flex-shrink-0" />
-                        <span className="text-sm">Video uploaded successfully with AI-generated tests!</span>
+                        <span className="text-sm">
+                          Video uploaded successfully with AI-generated {videoForm.generateTranscript ? 'tests and transcript!' : 'tests!'}
+                        </span>
                       </div>
                     )}
 
@@ -979,6 +1034,48 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                       </div>
                     </div>
 
+                    {/* AI Features Section */}
+                    <div className="space-y-4">
+                      <h4 className="text-sm font-medium text-dark-700">AI Features</h4>
+                      
+                      <div className="flex items-center">
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            name="generateTranscript"
+                            checked={videoForm.generateTranscript}
+                            onChange={handleVideoFormChange}
+                            className="mr-2"
+                            disabled={uploadState.uploading}
+                          />
+                          <span className="text-sm text-dark-700">
+                            Generate AI transcript after upload
+                          </span>
+                        </label>
+                        {process.env.NEXT_PUBLIC_HAS_OPENAI !== 'true' && (
+                          <span className="ml-2 text-xs text-gray-500">(OpenAI not configured)</span>
+                        )}
+                      </div>
+
+                      {videoForm.generateTranscript && (
+                        <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                          <div className="flex items-start">
+                            <FileText className="w-4 h-4 text-green-600 mr-2 mt-0.5 flex-shrink-0" />
+                            <div className="text-xs text-green-800">
+                              <p className="font-medium mb-1">AI Transcript Features:</p>
+                              <ul className="space-y-1">
+                                <li>• High accuracy speech recognition with OpenAI Whisper</li>
+                                <li>• Automatic punctuation and formatting</li>
+                                <li>• Support for 50+ languages</li>
+                                <li>• Timestamp segments for navigation</li>
+                                <li>• Searchable and downloadable text</li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     {/* AI Helper Panel */}
                     {showAIHelper && (
                       <Card className="border-blue-200 bg-blue-50">
@@ -1064,7 +1161,8 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                           <>
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
                             {uploadState.stage === 'uploading' ? 'Uploading Video...' : 
-                             uploadState.stage === 'processing' ? 'Generating AI Tests...' : 'Processing...'}
+                             uploadState.stage === 'processing' ? 'Generating AI Tests...' :
+                             uploadState.stage === 'generating_transcript' ? 'Generating Transcript...' : 'Processing...'}
                           </>
                         ) : uploadState.stage === 'success' ? (
                           <>
@@ -1074,7 +1172,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                         ) : (
                           <>
                             <Upload className="w-4 h-4 mr-2" />
-                            Upload Video & Generate Tests
+                            Upload Video & Generate AI Content
                           </>
                         )}
                       </Button>
@@ -1157,7 +1255,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                                 <p className="text-sm text-dark-600">{section.description}</p>
                               )}
                               <p className="text-xs text-dark-500 mt-1">
-                                {section.videos.length} videos • {section.videos.reduce((acc, v) => acc + v.tests.length, 0)} tests
+                                {section.videos.length} videos • {section.videos.reduce((acc, v) => acc + v.tests.length, 0)} tests • {section.videos.filter(v => v.transcript?.status === 'COMPLETED').length} transcripts
                               </p>
                             </div>
                           </div>
@@ -1219,10 +1317,39 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                                             AI Enabled
                                           </div>
                                         )}
+                                        {/* Add transcript indicator */}
+                                        {video.transcript && (
+                                          <div className="flex items-center">
+                                            <FileText className="w-3 h-3 mr-1" />
+                                            <span className={
+                                              video.transcript.status === 'COMPLETED' ? 'text-green-600' :
+                                              video.transcript.status === 'PROCESSING' ? 'text-blue-600' :
+                                              video.transcript.status === 'FAILED' ? 'text-red-600' :
+                                              'text-gray-600'
+                                            }>
+                                              {video.transcript.status === 'COMPLETED' ? 'Transcript' :
+                                               video.transcript.status === 'PROCESSING' ? 'Processing...' :
+                                               video.transcript.status === 'FAILED' ? 'Failed' :
+                                               'Pending'}
+                                            </span>
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
                                     
                                     <div className="flex items-center space-x-2 ml-4">
+                                      {/* Add transcript button */}
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => openTranscriptManager(video.id)}
+                                        className="flex items-center"
+                                        title="Manage transcript"
+                                      >
+                                        <FileText className="w-3 h-3 mr-1" />
+                                        Transcript
+                                      </Button>
+                                      
                                       {video.tests.length > 0 && (
                                         <Button
                                           variant="outline"
@@ -1349,6 +1476,51 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                     )}
                   </Button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Transcript Management Dialog */}
+        {showTranscriptManager && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-bold text-gray-900 flex items-center">
+                    <FileText className="w-6 h-6 mr-2 text-primary-600" />
+                    Transcript Management
+                  </h2>
+                  <button
+                    onClick={closeTranscriptManager}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+
+                {(() => {
+                  const video = course.sections
+                    ?.flatMap(s => s.videos)
+                    ?.find(v => v.id === showTranscriptManager) ||
+                    course.videos?.find(v => v.id === showTranscriptManager)
+                  
+                  return video ? (
+                    <TranscriptManager
+                      videoId={video.id}
+                      videoUrl={video.videoUrl}
+                      videoTitle={video.title}
+                      onTranscriptGenerated={(transcript) => {
+                        // Refresh course data to show transcript indicator
+                        fetchCourse()
+                      }}
+                    />
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className="text-gray-500">Video not found</p>
+                    </div>
+                  )
+                })()}
               </div>
             </div>
           </div>

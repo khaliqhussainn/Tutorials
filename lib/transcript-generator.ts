@@ -262,24 +262,35 @@ class TranscriptGenerator {
     return videoUrl
   }
 
-  // Save transcript to database
-  private async saveTranscript(videoId: string, transcript: TranscriptResponse): Promise<void> {
-    try {
-      await prisma.video.update({
-        where: { id: videoId },
-        data: {
-          transcript: transcript.transcript,
-          // Store segments as JSON in a separate field if needed
-          // transcriptSegments: JSON.stringify(transcript.segments)
-        }
-      })
-      
-      console.log(`💾 Transcript saved to database for video: ${videoId}`)
-    } catch (error) {
-      console.error('Failed to save transcript to database:', error)
-      throw error
-    }
+private async saveTranscript(videoId: string, transcript: TranscriptResponse): Promise<void> {
+  try {
+    await prisma.transcript.upsert({
+      where: { videoId },
+      update: {
+        content: transcript.transcript,
+        language: transcript.language,
+        segments: transcript.segments ? JSON.stringify(transcript.segments) : undefined,
+        status: 'COMPLETED',
+        generatedAt: new Date()
+      },
+      create: {
+        videoId,
+        content: transcript.transcript,
+        language: transcript.language,
+        segments: transcript.segments ? JSON.stringify(transcript.segments) : undefined,
+        status: 'COMPLETED',
+        generatedAt: new Date()
+      }
+    })
+
+    console.log(`💾 Transcript saved to database for video: ${videoId}`)
+  } catch (error) {
+    console.error('Failed to save transcript to database:', error)
+    throw error
   }
+}
+
+
 
   // Process transcript for search and accessibility
   static formatTranscriptForDisplay(transcript: string, segments?: TranscriptSegment[]): string {

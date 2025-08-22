@@ -16,28 +16,31 @@ async function main() {
 
   try {
     // Get all videos without transcripts
-    const videos = await prisma.video.findMany({
-      where: {
-        AND: [
-          { videoUrl: { not: null } },
-          { 
-            OR: [
-              { transcript: null },
-              { transcript: '' }
-            ]
-          }
+   const videos = await prisma.video.findMany({
+  where: {
+    AND: [
+      { videoUrl: { not: null } },
+      {
+        OR: [
+          { transcript: { is: null } },  // no Transcript row at all
+          { transcript: { is: { status: { not: 'COMPLETED' } } } } // transcript exists but not completed
         ]
-      },
-      select: {
-        id: true,
-        title: true,
-        videoUrl: true,
-        transcript: true
-      },
-      orderBy: {
-        createdAt: 'desc'
       }
-    })
+    ]
+  },
+  select: {
+    id: true,
+    title: true,
+    videoUrl: true,
+    transcript: {
+      select: { id: true, status: true, content: true }
+    }
+  },
+  orderBy: {
+    createdAt: 'desc'
+  }
+})
+
 
     console.log(`📹 Found ${videos.length} videos without transcripts`)
 

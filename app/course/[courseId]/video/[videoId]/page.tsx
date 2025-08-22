@@ -1,38 +1,24 @@
-// app/course/[courseId]/video/[videoId]/page.tsx - Restructured Layout
+// app/course/[courseId]/video/[videoId]/page.tsx - Updated with Transcript Support
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
+import { VideoPlayerWithTranscript } from '@/components/VideoPlayerWithTranscript'
 import { 
   ArrowLeft, 
-  ArrowRight, 
   CheckCircle, 
   Clock, 
-  BookOpen, 
   Target, 
   Award,
-  Users,
   PlayCircle,
   Star,
   Lock,
-  Pause,
-  Play,
-  Volume2,
-  VolumeX,
-  Maximize,
-  SkipBack,
-  SkipForward,
-  Settings,
-  Save,
-  Eye,
-  EyeOff,
   FileText,
-  Download,
   Share2,
   Brain,
   Zap,
@@ -40,7 +26,10 @@ import {
   Info,
   StickyNote,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Download,
+  Save,
+  Eye
 } from 'lucide-react'
 import { formatDuration } from '@/lib/utils'
 
@@ -93,367 +82,6 @@ interface VideoProgress {
   hasAccess: boolean
 }
 
-// Enhanced Video Player Component
-function ProfessionalVideoPlayer({ 
-  videoUrl, 
-  title, 
-  onProgress, 
-  onEnded, 
-  canWatch,
-  initialTime = 0
-}: {
-  videoUrl: string
-  title: string
-  onProgress: (progress: { played: number; playedSeconds: number }) => void
-  onEnded: () => void
-  canWatch: boolean
-  initialTime?: number
-}) {
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [playing, setPlaying] = useState(false)
-  const [muted, setMuted] = useState(false)
-  const [volume, setVolume] = useState(1)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(0)
-  const [showControls, setShowControls] = useState(true)
-  const [playbackRate, setPlaybackRate] = useState(1)
-  const [showSettings, setShowSettings] = useState(false)
-  const [buffered, setBuffered] = useState(0)
-
-  useEffect(() => {
-    const video = videoRef.current
-    if (!video) return
-
-    const handleTimeUpdate = () => {
-      setCurrentTime(video.currentTime)
-      onProgress({
-        played: video.currentTime / video.duration,
-        playedSeconds: video.currentTime
-      })
-      
-      if (video.buffered.length > 0) {
-        setBuffered(video.buffered.end(video.buffered.length - 1))
-      }
-    }
-
-    const handleLoadedMetadata = () => {
-      setDuration(video.duration)
-      if (initialTime > 0) {
-        video.currentTime = initialTime
-        setCurrentTime(initialTime)
-      }
-    }
-
-    const handleEnded = () => {
-      setPlaying(false)
-      onEnded()
-    }
-
-    const handlePlay = () => setPlaying(true)
-    const handlePause = () => setPlaying(false)
-
-    video.addEventListener('timeupdate', handleTimeUpdate)
-    video.addEventListener('loadedmetadata', handleLoadedMetadata)
-    video.addEventListener('ended', handleEnded)
-    video.addEventListener('play', handlePlay)
-    video.addEventListener('pause', handlePause)
-
-    return () => {
-      video.removeEventListener('timeupdate', handleTimeUpdate)
-      video.removeEventListener('loadedmetadata', handleLoadedMetadata)
-      video.removeEventListener('ended', handleEnded)
-      video.removeEventListener('play', handlePlay)
-      video.removeEventListener('pause', handlePause)
-    }
-  }, [onProgress, onEnded, initialTime])
-
-  useEffect(() => {
-    let timeout: NodeJS.Timeout
-    
-    if (playing && showControls) {
-      timeout = setTimeout(() => {
-        setShowControls(false)
-      }, 3000)
-    }
-
-    return () => clearTimeout(timeout)
-  }, [playing, showControls])
-
-  const togglePlay = () => {
-    if (!videoRef.current) return
-    
-    if (playing) {
-      videoRef.current.pause()
-    } else {
-      videoRef.current.play().catch(console.error)
-    }
-  }
-
-  const toggleMute = () => {
-    if (!videoRef.current) return
-    videoRef.current.muted = !muted
-    setMuted(!muted)
-  }
-
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newVolume = parseFloat(e.target.value)
-    setVolume(newVolume)
-    if (videoRef.current) {
-      videoRef.current.volume = newVolume
-      if (newVolume === 0) {
-        setMuted(true)
-        videoRef.current.muted = true
-      } else if (muted) {
-        setMuted(false)
-        videoRef.current.muted = false
-      }
-    }
-  }
-
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!videoRef.current) return
-    const time = (parseFloat(e.target.value) / 100) * duration
-    videoRef.current.currentTime = time
-    setCurrentTime(time)
-  }
-
-  const skipTime = (seconds: number) => {
-    if (!videoRef.current) return
-    videoRef.current.currentTime = Math.max(0, Math.min(duration, currentTime + seconds))
-  }
-
-  const toggleFullscreen = () => {
-    if (!containerRef.current) return
-    
-    if (document.fullscreenElement) {
-      document.exitFullscreen()
-    } else {
-      containerRef.current.requestFullscreen()
-    }
-  }
-
-  const changePlaybackRate = (rate: number) => {
-    if (!videoRef.current) return
-    videoRef.current.playbackRate = rate
-    setPlaybackRate(rate)
-    setShowSettings(false)
-  }
-
-  const formatTime = (time: number) => {
-    const hours = Math.floor(time / 3600)
-    const minutes = Math.floor((time % 3600) / 60)
-    const seconds = Math.floor(time % 60)
-    
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-    }
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`
-  }
-
-  if (!canWatch) {
-    return (
-      <div className="aspect-video bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-lg flex items-center justify-center relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-r from-[#001e62]/20 to-[#001e62]/40"></div>
-        
-        <div className="text-center max-w-md p-8 relative z-10">
-          <div className="w-20 h-20 bg-white/10 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-6 border border-white/20">
-            <Lock className="w-10 h-10 text-white/80" />
-          </div>
-          <h3 className="text-xl font-semibold text-white mb-3">
-            Complete Previous Lectures
-          </h3>
-          <p className="text-gray-300 leading-relaxed">
-            You need to complete previous lectures and pass their quizzes to unlock this content.
-          </p>
-          <div className="mt-6 p-4 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10">
-            <p className="text-sm text-gray-400">
-              💡 Tip: Sequential learning helps build a strong foundation
-            </p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div 
-      ref={containerRef}
-      className="relative aspect-video bg-black rounded-lg overflow-hidden group cursor-pointer shadow-2xl"
-      onMouseEnter={() => setShowControls(true)}
-      onMouseMove={() => setShowControls(true)}
-      onMouseLeave={() => !playing && setShowControls(true)}
-      onClick={togglePlay}
-    >
-      <video
-        ref={videoRef}
-        src={videoUrl}
-        className="w-full h-full object-contain"
-        preload="metadata"
-        onError={(e) => {
-          console.error('Video loading error:', e)
-        }}
-      />
-      
-      <div className={`absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 transition-opacity duration-300 ${
-        showControls ? 'opacity-100' : 'opacity-0'
-      }`}>
-        
-        {!playing && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                togglePlay()
-              }}
-              className="w-20 h-20 bg-white/95 hover:bg-white rounded-full flex items-center justify-center transform hover:scale-110 transition-all duration-200 shadow-2xl border-4 border-white/20"
-            >
-              <Play className="w-8 h-8 text-gray-900 ml-1" />
-            </button>
-          </div>
-        )}
-
-        <div className="absolute top-0 left-0 right-0 p-6 bg-gradient-to-b from-black/60 to-transparent">
-          <h3 className="text-white font-semibold text-lg truncate">{title}</h3>
-        </div>
-
-        <div className="absolute bottom-0 left-0 right-0 p-4 space-y-3">
-          <div className="flex items-center space-x-3">
-            <span className="text-white text-sm font-mono">
-              {formatTime(currentTime)}
-            </span>
-            <div className="flex-1 relative">
-              <div 
-                className="absolute top-0 h-1 bg-white/30 rounded-full"
-                style={{ width: duration ? `${(buffered / duration) * 100}%` : '0%' }}
-              />
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={duration ? (currentTime / duration) * 100 : 0}
-                onChange={handleSeek}
-                className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer slider"
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  background: `linear-gradient(to right, #001e62 0%, #001e62 ${duration ? (currentTime / duration) * 100 : 0}%, rgba(255,255,255,0.2) ${duration ? (currentTime / duration) * 100 : 0}%, rgba(255,255,255,0.2) 100%)`
-                }}
-              />
-            </div>
-            <span className="text-white text-sm font-mono">
-              {formatTime(duration)}
-            </span>
-          </div>
-          
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  togglePlay()
-                }}
-                className="text-white hover:text-blue-400 transition-colors p-2 rounded-full hover:bg-white/10"
-              >
-                {playing ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6" />}
-              </button>
-              
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  skipTime(-10)
-                }}
-                className="text-white hover:text-blue-400 transition-colors p-2 rounded-full hover:bg-white/10"
-              >
-                <SkipBack className="w-5 h-5" />
-              </button>
-              
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  skipTime(10)
-                }}
-                className="text-white hover:text-blue-400 transition-colors p-2 rounded-full hover:bg-white/10"
-              >
-                <SkipForward className="w-5 h-5" />
-              </button>
-              
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    toggleMute()
-                  }}
-                  className="text-white hover:text-blue-400 transition-colors rounded-full hover:bg-white/10 p-1"
-                >
-                  {muted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-                </button>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={muted ? 0 : volume}
-                  onChange={handleVolumeChange}
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-20 h-1 bg-white/30 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-3">
-              <div className="relative">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setShowSettings(!showSettings)
-                  }}
-                  className="text-white hover:text-blue-400 transition-colors p-2 rounded-full hover:bg-white/10"
-                >
-                  <Settings className="w-5 h-5" />
-                </button>
-                
-                {showSettings && (
-                  <div className="absolute bottom-full right-0 mb-2 bg-black/95 backdrop-blur-sm rounded-lg p-3 min-w-32 border border-white/20">
-                    <div className="text-white text-sm font-medium mb-2">Playback Speed</div>
-                    <div className="space-y-1">
-                      {[0.5, 0.75, 1, 1.25, 1.5, 2].map(rate => (
-                        <button
-                          key={rate}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            changePlaybackRate(rate)
-                          }}
-                          className={`block w-full text-left px-2 py-1 text-sm rounded transition-colors ${
-                            playbackRate === rate 
-                              ? 'bg-[#001e62] text-white' 
-                              : 'text-gray-300 hover:bg-white/10'
-                          }`}
-                        >
-                          {rate}x
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  toggleFullscreen()
-                }}
-                className="text-white hover:text-blue-400 transition-colors p-2 rounded-full hover:bg-white/10"
-              >
-                <Maximize className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export default function VideoPage({ 
   params 
 }: { 
@@ -470,7 +98,7 @@ export default function VideoPage({
   const [notes, setNotes] = useState('')
   const [videoCompleted, setVideoCompleted] = useState(false)
   const [canWatch, setCanWatch] = useState(false)
-  const [activeTab, setActiveTab] = useState<'tutorials' | 'quiz' | 'notes' | 'about' | 'certificates'>('tutorials')
+  const [activeTab, setActiveTab] = useState<'tutorials' | 'quiz' | 'notes' | 'about' | 'certificates' | 'transcript'>('tutorials')
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -520,7 +148,6 @@ export default function VideoPage({
         const data = await response.json()
         setVideoProgress(data)
         
-        // Get current video progress
         const currentVideoProgress = data.find((p: VideoProgress) => p.videoId === params.videoId)
         if (currentVideoProgress) {
           setWatchTime(currentVideoProgress.watchTime || 0)
@@ -695,6 +322,7 @@ export default function VideoPage({
     return total > 0 ? Math.round((completed / total) * 100) : 0
   }
 
+  // Render tutorials tab
   const renderTutorialsTab = () => (
     <div className="space-y-6">
       {course?.sections?.map((section, sectionIndex) => (
@@ -759,7 +387,7 @@ export default function VideoPage({
                       {status === 'completed' ? (
                         <CheckCircle className="w-6 h-6 text-green-600" />
                       ) : status === 'available' ? (
-                        <Play className={`w-6 h-6 ${isCurrentVideo ? 'text-[#001e62]' : 'text-blue-600'}`} />
+                        <PlayCircle className={`w-6 h-6 ${isCurrentVideo ? 'text-[#001e62]' : 'text-blue-600'}`} />
                       ) : (
                         <Lock className="w-6 h-6 text-gray-400" />
                       )}
@@ -827,6 +455,7 @@ export default function VideoPage({
     </div>
   )
 
+  // Render quiz tab
   const renderQuizTab = () => (
     <div className="space-y-6">
       {video!.tests.length > 0 ? (
@@ -932,6 +561,7 @@ export default function VideoPage({
     </div>
   )
 
+  // Render notes tab
   const renderNotesTab = () => (
     <Card>
       <CardHeader>
@@ -960,6 +590,7 @@ export default function VideoPage({
     </Card>
   )
 
+  // Render about tab
   const renderAboutTab = () => (
     <div className="space-y-8">
       <Card>
@@ -1027,62 +658,10 @@ export default function VideoPage({
           </div>
         </CardContent>
       </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>What you'll learn</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="space-y-3">
-              <div className="flex items-start">
-                <CheckCircle className="w-5 h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
-                <span>Master the fundamentals of {course?.category}</span>
-              </div>
-              <div className="flex items-start">
-                <CheckCircle className="w-5 h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
-                <span>Build real-world projects from scratch</span>
-              </div>
-              <div className="flex items-start">
-                <CheckCircle className="w-5 h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
-                <span>Understand industry best practices</span>
-              </div>
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-start">
-                <CheckCircle className="w-5 h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
-                <span>Apply modern development techniques</span>
-              </div>
-              <div className="flex items-start">
-                <CheckCircle className="w-5 h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
-                <span>Gain hands-on experience with tools</span>
-              </div>
-              <div className="flex items-start">
-                <CheckCircle className="w-5 h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
-                <span>Prepare for professional development</span>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Skills you'll gain</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {[course?.category, 'Problem Solving', 'Project Development', 'Best Practices', 'Modern Tools', 'Industry Standards'].map((skill, index) => (
-              <span key={index} className="px-3 py-1 bg-[#001e62]/10 text-[#001e62] rounded-full text-sm font-medium">
-                {skill}
-              </span>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 
+  // Render certificates tab
   const renderCertificatesTab = () => (
     <Card>
       <CardHeader>
@@ -1114,18 +693,38 @@ export default function VideoPage({
               <p className="text-sm text-gray-600">
                 {getProgressPercentage()}% complete - {getTotalVideos() - getCompletedVideos()} videos remaining
               </p>
-              <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
-                <div className="text-center">
-                  <div className="text-xl font-bold text-[#001e62]">{getCompletedVideos()}</div>
-                  <div className="text-xs text-gray-600">Completed</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xl font-bold text-gray-400">{getTotalVideos() - getCompletedVideos()}</div>
-                  <div className="text-xs text-gray-600">Remaining</div>
-                </div>
-              </div>
             </div>
           )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+
+  // Render transcript tab
+  const renderTranscriptTab = () => (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center">
+          <FileText className="w-5 h-5 mr-2" />
+          Video Transcript
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-center py-12">
+          <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Interactive Transcript</h3>
+          <p className="text-gray-600 mb-6">
+            The transcript is available directly in the video player. Click the transcript icon on the video controls to view it alongside the video.
+          </p>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center justify-center space-x-2 text-blue-700">
+              <FileText className="w-5 h-5" />
+              <span className="font-medium">Pro Tip:</span>
+            </div>
+            <p className="text-blue-600 text-sm mt-2">
+              Click on any transcript segment to jump to that part of the video, or use the search function to find specific content.
+            </p>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -1208,9 +807,10 @@ export default function VideoPage({
       {/* Video Player Section */}
       <div className="bg-black">
         <div className="max-w-7xl mx-auto p-4">
-          <ProfessionalVideoPlayer
+          <VideoPlayerWithTranscript
             videoUrl={video.videoUrl}
             title={video.title}
+            videoId={video.id}
             onProgress={handleVideoProgress}
             onEnded={handleVideoEnd}
             canWatch={canWatch}
@@ -1261,7 +861,8 @@ export default function VideoPage({
               { id: 'quiz', label: 'Quiz', icon: Target },
               { id: 'notes', label: 'Notes', icon: StickyNote },
               { id: 'about', label: 'About', icon: Info },
-              { id: 'certificates', label: 'Certificate', icon: Award }
+              { id: 'certificates', label: 'Certificate', icon: Award },
+              { id: 'transcript', label: 'Transcript', icon: FileText }
             ].map((tab) => {
               const Icon = tab.icon
               return (
@@ -1289,6 +890,7 @@ export default function VideoPage({
           {activeTab === 'notes' && renderNotesTab()}
           {activeTab === 'about' && renderAboutTab()}
           {activeTab === 'certificates' && renderCertificatesTab()}
+          {activeTab === 'transcript' && renderTranscriptTab()}
         </div>
       </div>
     </div>
