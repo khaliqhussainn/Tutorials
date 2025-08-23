@@ -1,10 +1,19 @@
-// lib/jobs/generateTranscripts.ts
+// lib/jobs/generateTranscripts.ts - Final Fixed version with proper JSON handling
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 
 interface TranscriptJob {
   videoId: string
   videoUrl: string
   priority: 'high' | 'medium' | 'low'
+}
+
+interface TranscriptSegment {
+  start: number
+  end: number
+  text: string
+  confidence?: number
+  speaker?: string
 }
 
 export class TranscriptGenerator {
@@ -26,7 +35,7 @@ export class TranscriptGenerator {
       where: { videoId }
     })
 
-    if (existingTranscript && existingTranscript.status === 'completed') {
+    if (existingTranscript && existingTranscript.status === 'COMPLETED') {
       console.log(`Transcript already exists for video ${videoId}`)
       return
     }
@@ -74,13 +83,14 @@ export class TranscriptGenerator {
     try {
       console.log(`Starting transcript generation for video ${job.videoId}`)
       
-      // Mark as processing
+      // Mark as processing - Fixed: Use uppercase enum values
       await prisma.transcript.upsert({
         where: { videoId: job.videoId },
-        update: { status: 'processing' },
+        update: { status: 'PROCESSING' },
         create: {
           videoId: job.videoId,
-          status: 'processing'
+          content: '',
+          status: 'PROCESSING'
         }
       })
 
@@ -88,14 +98,14 @@ export class TranscriptGenerator {
       const result = await this.generateTranscript(job.videoUrl, job.videoId)
 
       if (result) {
-        // Save segments to database
-        await this.saveTranscript(job.videoId, result.segments, result.language)
+        // Save transcript to database - Fixed: Save as JSON
+        await this.saveTranscript(job.videoId, result.segments, result.language, result.content)
         console.log(`Transcript completed for video ${job.videoId}`)
       } else {
-        // Mark as failed
+        // Mark as failed - Fixed: Use uppercase enum value
         await prisma.transcript.update({
           where: { videoId: job.videoId },
-          data: { status: 'failed' }
+          data: { status: 'FAILED' }
         })
         console.error(`Transcript generation failed for video ${job.videoId}`)
       }
@@ -103,10 +113,10 @@ export class TranscriptGenerator {
     } catch (error) {
       console.error(`Error processing transcript job for video ${job.videoId}:`, error)
       
-      // Mark as failed
+      // Mark as failed - Fixed: Use uppercase enum value
       await prisma.transcript.update({
         where: { videoId: job.videoId },
-        data: { status: 'failed' }
+        data: { status: 'FAILED', error: error instanceof Error ? error.message : 'Unknown error' }
       }).catch(console.error)
     }
   }
@@ -130,6 +140,10 @@ export class TranscriptGenerator {
         })
       })
 
+      if (!response.ok) {
+        throw new Error(`AssemblyAI API error: ${response.status} ${response.statusText}`)
+      }
+
       const transcriptRequest = await response.json()
       
       if (!transcriptRequest.id) {
@@ -149,8 +163,14 @@ export class TranscriptGenerator {
             'Authorization': `Bearer ${process.env.ASSEMBLYAI_API_KEY}`
           }
         })
+
+        if (!statusResponse.ok) {
+          throw new Error(`AssemblyAI status check error: ${statusResponse.status}`)
+        }
         
         transcript = await statusResponse.json()
+        
+        console.log(`Transcript status: ${transcript.status} (attempt ${attempts + 1}/${maxAttempts})`)
         
         if (transcript.status === 'completed') {
           break
@@ -165,19 +185,55 @@ export class TranscriptGenerator {
         throw new Error('Transcript generation timed out')
       }
 
-      // Convert to our format
-      const segments = transcript.utterances?.map((utterance: any, index: number) => ({
-        id: `${videoId}-${index}`,
-        startTime: utterance.start / 1000, // Convert ms to seconds
-        endTime: utterance.end / 1000,
-        text: utterance.text,
-        speakerName: `Speaker ${utterance.speaker}`,
-        confidence: utterance.confidence
-      })) || []
+      // Convert to our format - Fixed: Proper segment format
+      const segments: TranscriptSegment[] = []
+      
+      if (transcript.utterances && transcript.utterances.length > 0) {
+        // Use utterances (speaker-separated segments)
+        transcript.utterances.forEach((utterance: any) => {
+          segments.push({
+            start: utterance.start / 1000, // Convert ms to seconds
+            end: utterance.end / 1000,
+            text: utterance.text,
+            confidence: utterance.confidence,
+            speaker: utterance.speaker ? `Speaker ${utterance.speaker}` : undefined
+          })
+        })
+      } else if (transcript.words && transcript.words.length > 0) {
+        // Fallback: group words into sentences
+        let currentSegment: TranscriptSegment | null = null
+        const maxWordsPerSegment = 15
+        let wordCount = 0
+
+        transcript.words.forEach((word: any, index: number) => {
+          if (!currentSegment || wordCount >= maxWordsPerSegment) {
+            if (currentSegment) {
+              segments.push(currentSegment)
+            }
+            currentSegment = {
+              start: word.start / 1000,
+              end: word.end / 1000,
+              text: word.text,
+              confidence: word.confidence
+            }
+            wordCount = 1
+          } else {
+            currentSegment.end = word.end / 1000
+            currentSegment.text += ' ' + word.text
+            currentSegment.confidence = (currentSegment.confidence! + word.confidence) / 2
+            wordCount++
+          }
+        })
+
+        if (currentSegment) {
+          segments.push(currentSegment)
+        }
+      }
 
       return {
         segments,
-        language: transcript.language_code || 'en'
+        language: transcript.language_code || 'en',
+        content: transcript.text || ''
       }
 
     } catch (error) {
@@ -186,30 +242,35 @@ export class TranscriptGenerator {
     }
   }
 
-  private async saveTranscript(videoId: string, segments: any[], language: string) {
+  // Fixed: Save transcript as JSON with proper Prisma types
+  private async saveTranscript(videoId: string, segments: TranscriptSegment[], language: string, content: string) {
     try {
-      // Update transcript status and language
-      const transcript = await prisma.transcript.update({
+      // Convert segments to proper JSON format for Prisma
+      const segmentsJson = segments.map(segment => ({
+        start: segment.start,
+        end: segment.end,
+        text: segment.text,
+        confidence: segment.confidence || null,
+        speaker: segment.speaker || null
+      }))
+
+      // Update transcript with all data - Fixed: Proper JSON handling
+      await prisma.transcript.update({
         where: { videoId },
         data: {
-          status: 'completed',
-          language
+          content: content,
+          language: language,
+          segments: segmentsJson as Prisma.JsonArray, // Proper Prisma JSON type
+          status: 'COMPLETED',
+          generatedAt: new Date(),
+          provider: 'assemblyai',
+          confidence: segments.length > 0 ? 
+            segments.reduce((acc, seg) => acc + (seg.confidence || 0), 0) / segments.length : 
+            null
         }
       })
 
-      // Create transcript segments
-      if (segments.length > 0) {
-        await prisma.transcriptSegment.createMany({
-          data: segments.map(segment => ({
-            transcriptId: transcript.id,
-            startTime: segment.startTime,
-            endTime: segment.endTime,
-            text: segment.text,
-            speakerName: segment.speakerName,
-            confidence: segment.confidence
-          }))
-        })
-      }
+      console.log(`✅ Transcript saved successfully for video: ${videoId} (${segments.length} segments)`)
 
     } catch (error) {
       console.error('Error saving transcript to database:', error)
@@ -244,6 +305,37 @@ export class TranscriptGenerator {
 
     } catch (error) {
       console.error('Error queuing missing transcripts:', error)
+    }
+  }
+
+  // Method to retry failed transcripts
+  async retryFailedTranscripts() {
+    try {
+      const failedTranscripts = await prisma.transcript.findMany({
+        where: {
+          status: 'FAILED'
+        },
+        include: {
+          video: {
+            select: {
+              id: true,
+              videoUrl: true,
+              title: true
+            }
+          }
+        }
+      })
+
+      console.log(`Found ${failedTranscripts.length} failed transcripts to retry`)
+
+      for (const transcript of failedTranscripts) {
+        if (transcript.video.videoUrl) {
+          await this.queueVideo(transcript.video.id, transcript.video.videoUrl, 'medium')
+        }
+      }
+
+    } catch (error) {
+      console.error('Error retrying failed transcripts:', error)
     }
   }
 }

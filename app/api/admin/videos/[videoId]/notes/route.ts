@@ -1,4 +1,4 @@
-// app/api/videos/[videoId]/notes/route.ts - Fixed version for existing schema
+// app/api/videos/[videoId]/notes/route.ts
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -11,18 +11,8 @@ export async function POST(
   try {
     const session = await getServerSession(authOptions)
     
-    if (!session?.user?.email) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    // Get user ID from email since session.user.id might not be available
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      select: { id: true }
-    })
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
     const body = await request.json()
@@ -32,54 +22,49 @@ export async function POST(
       return NextResponse.json({ error: "Content is required" }, { status: 400 })
     }
 
-    // Verify video exists
+    // Verify video exists and user has access
     const video = await prisma.video.findUnique({
-      where: { id: params.videoId }
+      where: { id: params.videoId },
+      include: {
+        course: {
+          select: {
+            enrollments: {
+              where: { userId: session.user.id },
+              select: { id: true }
+            }
+          }
+        }
+      }
     })
 
     if (!video) {
       return NextResponse.json({ error: "Video not found" }, { status: 404 })
     }
 
-    // Check if note already exists for this user and video
-    const existingNote = await prisma.videoNote.findFirst({
-      where: {
-        userId: user.id,
-        videoId: params.videoId
+    const isEnrolled = video.course.enrollments.length > 0
+    const isAdmin = session.user.role === 'ADMIN'
+
+    if (!isEnrolled && !isAdmin) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 })
+    }
+
+    // Create new note
+    const videoNote = await prisma.videoNote.create({
+      data: {
+        userId: session.user.id,
+        videoId: params.videoId,
+        content: content.trim(),
+        timestamp: timestamp || null
       }
     })
-
-    let videoNote
-
-    if (existingNote) {
-      // Update existing note
-      videoNote = await prisma.videoNote.update({
-        where: { id: existingNote.id },
-        data: {
-          content: content.trim(),
-          ...(timestamp !== undefined && { timestamp }),
-          updatedAt: new Date()
-        }
-      })
-    } else {
-      // Create new note
-      videoNote = await prisma.videoNote.create({
-        data: {
-          userId: user.id,
-          videoId: params.videoId,
-          content: content.trim(),
-          ...(timestamp !== undefined && { timestamp })
-        }
-      })
-    }
 
     return NextResponse.json({
       success: true,
       note: videoNote,
-      message: existingNote ? "Note updated successfully" : "Note created successfully"
+      message: "Note created successfully"
     })
   } catch (error) {
-    console.error("Error saving notes:", error)
+    console.error("Error saving note:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
@@ -91,24 +76,14 @@ export async function GET(
   try {
     const session = await getServerSession(authOptions)
     
-    if (!session?.user?.email) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    // Get user ID from email
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      select: { id: true }
-    })
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
     // Get all notes for this video by this user
     const notes = await prisma.videoNote.findMany({
       where: {
-        userId: user.id,
+        userId: session.user.id,
         videoId: params.videoId
       },
       orderBy: {
@@ -116,22 +91,11 @@ export async function GET(
       }
     })
 
-    // For backward compatibility, if there's only one note, return its content
-    // Otherwise return all notes
-    if (notes.length === 1) {
-      const note = notes[0]
-      return NextResponse.json({ 
-        content: note.content || '',
-        timestamp: 'timestamp' in note ? note.timestamp : null,
-        updatedAt: note.updatedAt
-      })
-    }
-
     return NextResponse.json({ 
       notes: notes.map(note => ({
         id: note.id,
         content: note.content,
-        timestamp: 'timestamp' in note ? note.timestamp : null,
+        timestamp: note.timestamp,
         createdAt: note.createdAt,
         updatedAt: note.updatedAt
       })),
@@ -150,17 +114,8 @@ export async function DELETE(
   try {
     const session = await getServerSession(authOptions)
     
-    if (!session?.user?.email) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      select: { id: true }
-    })
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
     const url = new URL(request.url)
@@ -171,7 +126,7 @@ export async function DELETE(
       const note = await prisma.videoNote.findFirst({
         where: {
           id: noteId,
-          userId: user.id,
+          userId: session.user.id,
           videoId: params.videoId
         }
       })
@@ -192,7 +147,7 @@ export async function DELETE(
       // Delete all notes for this video by this user
       const deleteResult = await prisma.videoNote.deleteMany({
         where: {
-          userId: user.id,
+          userId: session.user.id,
           videoId: params.videoId
         }
       })

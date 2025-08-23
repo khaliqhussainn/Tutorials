@@ -1,4 +1,4 @@
-// app/admin/courses/[courseId]/page.tsx - Complete Integration with Transcript
+// app/admin/courses/[courseId]/page.tsx - Fixed with proper transcript integration
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import TranscriptManager from '@/components/admin/TranscriptManager'
 import { 
-  FileText, // Added for transcript functionality
+  FileText,
   ArrowLeft, 
   Plus, 
   Play, 
@@ -30,14 +30,13 @@ import {
   Brain,
   Settings,
   Eye,
-  BarChart3,
   Users,
-  TrendingUp,
   Award,
   HelpCircle,
   Lightbulb,
   BookOpen,
-  Zap
+  Zap,
+  Loader2
 } from 'lucide-react'
 
 interface Transcript {
@@ -70,7 +69,7 @@ interface Course {
   isPublished: boolean
   thumbnail?: string
   sections: CourseSection[]
-  videos: Video[] // Legacy videos without sections
+  videos: Video[]
 }
 
 interface Video {
@@ -82,7 +81,7 @@ interface Video {
   order: number
   aiPrompt?: string
   tests: Test[]
-  transcript?: Transcript  // Added transcript support
+  transcript?: Transcript
   sectionId?: string
 }
 
@@ -93,7 +92,7 @@ interface Test {
   correct: number
   explanation?: string
   difficulty: string
-  order?: number  // Added order support
+  order?: number
 }
 
 interface SectionFormData {
@@ -107,7 +106,7 @@ interface VideoFormData {
   aiPrompt: string
   videoFile: File | null
   sectionId: string
-  generateTranscript: boolean  // Added transcript generation option
+  generateTranscript: boolean
 }
 
 interface UploadState {
@@ -118,18 +117,6 @@ interface UploadState {
   retryCount: number
 }
 
-interface TestManagementState {
-  videoId: string | null
-  showDialog: boolean
-  regenerating: boolean
-  settings: {
-    difficulty: 'mixed' | 'easy' | 'medium' | 'hard'
-    questionCount: number
-    focusAreas: string[]
-    avoidTopics: string[]
-  }
-}
-
 // AI Prompt Suggestions
 const AI_PROMPT_SUGGESTIONS = [
   {
@@ -138,11 +125,6 @@ const AI_PROMPT_SUGGESTIONS = [
       "This video covers HTML fundamentals including basic tags (h1-h6, p, div, span), semantic elements (header, nav, main, footer), and document structure. Students will learn how to create well-structured web pages with proper HTML5 syntax.",
       "Introduction to HTML forms: form elements, input types (text, email, password, checkbox, radio), form validation attributes, labels for accessibility, and best practices for creating user-friendly web forms.",
     ],
-    tips: [
-      "Include specific HTML tags and attributes covered",
-      "Mention practical applications and use cases",
-      "Note any accessibility or SEO concepts discussed"
-    ]
   },
   {
     category: "CSS & Styling",
@@ -150,11 +132,6 @@ const AI_PROMPT_SUGGESTIONS = [
       "CSS fundamentals: selectors (element, class, ID), properties for text styling (color, font-size, font-family), layout basics with margin and padding, and understanding the CSS box model concept.",
       "Advanced CSS layouts with Flexbox: container and item properties, justify-content, align-items, flex-direction, responsive design patterns, and solving common layout challenges with modern CSS.",
     ],
-    tips: [
-      "Specify CSS properties and selectors taught",
-      "Include layout concepts and responsive design elements",
-      "Mention any design principles or best practices"
-    ]
   },
   {
     category: "JavaScript & Programming",
@@ -162,11 +139,6 @@ const AI_PROMPT_SUGGESTIONS = [
       "JavaScript basics: variables (let, const, var), data types (strings, numbers, booleans, arrays, objects), basic operations, and understanding scope and hoisting concepts.",
       "DOM manipulation: selecting elements with querySelector and getElementById, modifying content with innerHTML and textContent, event handling (click, submit, change), and creating interactive web pages.",
     ],
-    tips: [
-      "List specific JavaScript concepts and syntax covered",
-      "Include any DOM methods or APIs used",
-      "Mention programming concepts like loops, functions, or conditionals"
-    ]
   }
 ]
 
@@ -195,7 +167,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
     aiPrompt: '',
     videoFile: null,
     sectionId: '',
-    generateTranscript: false // Added transcript generation option
+    generateTranscript: false
   })
 
   const [uploadState, setUploadState] = useState<UploadState>({
@@ -206,22 +178,13 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
     retryCount: 0
   })
 
-  const [testManagement, setTestManagement] = useState<TestManagementState>({
-    videoId: null,
-    showDialog: false,
-    regenerating: false,
-    settings: {
-      difficulty: 'mixed',
-      questionCount: 5,
-      focusAreas: [],
-      avoidTopics: []
-    }
-  })
-
   // AI Helper state
   const [showAIHelper, setShowAIHelper] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState<string>('')
   const [promptQuality, setPromptQuality] = useState<'poor' | 'good' | 'excellent' | null>(null)
+
+  // Check if OpenAI is configured
+  const hasOpenAI = process.env.NEXT_PUBLIC_HAS_OPENAI === 'true'
 
   useEffect(() => {
     if (session?.user.role !== 'ADMIN') {
@@ -237,7 +200,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
       if (response.ok) {
         const data = await response.json()
         setCourse(data)
-        // Expand all sections by default
         const sectionIds = new Set<string>(data.sections?.map((s: CourseSection) => s.id) || [])
         setExpandedSections(sectionIds)
       } else {
@@ -251,7 +213,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
     }
   }
 
-  // Transcript management functions
   const openTranscriptManager = (videoId: string) => {
     setShowTranscriptManager(videoId)
   }
@@ -292,14 +253,14 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
   }
 
   const handleVideoFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value, type, checked } = e.target as HTMLInputElement
+    const { name, value, type } = e.target as HTMLInputElement
     
     if (type === 'checkbox') {
+      const { checked } = e.target as HTMLInputElement
       setVideoForm(prev => ({ ...prev, [name]: checked }))
     } else {
       setVideoForm(prev => ({ ...prev, [name]: value }))
       
-      // Analyze AI prompt quality
       if (name === 'aiPrompt') {
         analyzePromptQuality(value)
       }
@@ -357,7 +318,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      // Validate file
       if (file.size > 200 * 1024 * 1024) {
         setUploadState(prev => ({ ...prev, error: 'File size must be less than 200MB' }))
         return
@@ -380,7 +340,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
         const formDataToSend = new FormData()
         formDataToSend.append('file', videoForm.videoFile!)
 
-        // Simulate progress updates
         const progressInterval = setInterval(() => {
           setUploadState(prev => ({
             ...prev,
@@ -391,7 +350,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
         const response = await fetch('/api/upload', {
           method: 'POST',
           body: formDataToSend,
-          signal: AbortSignal.timeout(600000) // 10 minutes
+          signal: AbortSignal.timeout(600000)
         })
 
         clearInterval(progressInterval)
@@ -411,11 +370,8 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
           throw error
         }
         
-        // Wait before retry (exponential backoff)
         const delay = Math.pow(2, attempt - 1) * 2000
         await new Promise(resolve => setTimeout(resolve, delay))
-        
-        // Reset progress for retry
         setUploadState(prev => ({ ...prev, progress: 0 }))
       }
     }
@@ -448,6 +404,11 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
         stage: videoForm.generateTranscript ? 'generating_transcript' : 'processing' 
       }))
       
+      console.log('Creating video with transcript generation:', {
+        generateTranscript: videoForm.generateTranscript,
+        hasOpenAI
+      })
+      
       const videoResponse = await fetch(`/api/admin/videos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -459,13 +420,17 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
           aiPrompt: videoForm.aiPrompt,
           sectionId: videoForm.sectionId,
           courseId: params.courseId,
-          generateTranscript: videoForm.generateTranscript // Include transcript generation
+          generateTranscript: videoForm.generateTranscript && hasOpenAI
         })
       })
 
       if (!videoResponse.ok) {
-        throw new Error('Failed to create video record')
+        const errorData = await videoResponse.json()
+        throw new Error(errorData.error || 'Failed to create video record')
       }
+
+      const createdVideo = await videoResponse.json()
+      console.log('Video created with transcript status:', createdVideo)
 
       setUploadState(prev => ({ 
         ...prev, 
@@ -473,7 +438,14 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
         stage: 'success' 
       }))
 
-      // Reset form and call success callback
+      // Show success message
+      if (videoForm.generateTranscript && hasOpenAI) {
+        setSuccess('Video uploaded successfully! Transcript generation started in background.')
+      } else {
+        setSuccess('Video uploaded successfully!')
+      }
+
+      // Reset form
       setTimeout(() => {
         setVideoForm({
           title: '',
@@ -493,7 +465,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
         setShowVideoForm(false)
         setPromptQuality(null)
         fetchCourse()
-      }, 2000)
+      }, 3000)
 
     } catch (error: any) {
       console.error('Upload failed:', error)
@@ -572,72 +544,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
-  // Test Management Functions
-  const openTestManagement = (videoId: string, currentTests: Test[]) => {
-    setTestManagement({
-      videoId,
-      showDialog: true,
-      regenerating: false,
-      settings: {
-        difficulty: 'mixed',
-        questionCount: Math.max(3, Math.min(8, currentTests.length || 5)),
-        focusAreas: [],
-        avoidTopics: []
-      }
-    })
-  }
-
-  const closeTestManagement = () => {
-    setTestManagement({
-      videoId: null,
-      showDialog: false,
-      regenerating: false,
-      settings: {
-        difficulty: 'mixed',
-        questionCount: 5,
-        focusAreas: [],
-        avoidTopics: []
-      }
-    })
-  }
-
-  const handleRegenerateTests = async () => {
-    if (!testManagement.videoId) return
-
-    setTestManagement(prev => ({ ...prev, regenerating: true }))
-    setError('')
-    setSuccess('')
-
-    try {
-      const response = await fetch(`/api/admin/videos/${testManagement.videoId}/regenerate-tests`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(testManagement.settings)
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to regenerate tests')
-      }
-
-      const result = await response.json()
-      setSuccess(`Successfully generated ${result.testsCreated} new test questions!`)
-      
-      // Refresh course data
-      await fetchCourse()
-      
-      // Close dialog after delay
-      setTimeout(() => {
-        closeTestManagement()
-      }, 2000)
-
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to regenerate tests')
-    } finally {
-      setTestManagement(prev => ({ ...prev, regenerating: false }))
-    }
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -691,6 +597,9 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
           <div className="mb-6 flex items-center p-3 bg-red-50 border border-red-200 rounded-lg text-red-700">
             <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
             <span className="text-sm">{error}</span>
+            <button onClick={() => setError('')} className="ml-auto">
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
 
@@ -698,6 +607,22 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
           <div className="mb-6 flex items-center p-3 bg-green-50 border border-green-200 rounded-lg text-green-700">
             <CheckCircle className="w-5 h-5 mr-2 flex-shrink-0" />
             <span className="text-sm">{success}</span>
+            <button onClick={() => setSuccess('')} className="ml-auto">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* OpenAI Configuration Warning */}
+        {!hasOpenAI && (
+          <div className="mb-6 flex items-center p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-800">
+            <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="font-medium">OpenAI API Key Not Configured</p>
+              <p className="text-sm mt-1">
+                Add your OpenAI API key to <code>OPENAI_API_KEY</code> in your environment variables to enable automatic transcript generation.
+              </p>
+            </div>
           </div>
         )}
 
@@ -725,14 +650,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                   <span className="text-sm font-medium text-dark-700">Total Videos:</span>
                   <p className="text-dark-900">
                     {(course.sections?.reduce((acc, section) => acc + section.videos.length, 0) || 0) + (course.videos?.length || 0)}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-sm font-medium text-dark-700">AI Tests:</span>
-                  <p className="text-dark-900">
-                    {course.sections?.reduce((acc, section) => 
-                      acc + section.videos.reduce((vidAcc, video) => vidAcc + video.tests.length, 0), 0
-                    ) || 0}
                   </p>
                 </div>
                 <div>
@@ -1000,7 +917,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                       <textarea
                         name="aiPrompt"
                         rows={4}
-                        placeholder="Describe in detail what this video teaches. Include specific topics, concepts, techniques, and learning objectives. The more detailed and specific you are, the better the AI-generated test questions will be."
+                        placeholder="Describe in detail what this video teaches. Include specific topics, concepts, techniques, and learning objectives."
                         value={videoForm.aiPrompt}
                         onChange={handleVideoFormChange}
                         className="flex w-full rounded-md border border-dark-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
@@ -1017,21 +934,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                           </div>
                         </div>
                       )}
-
-                      <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        <div className="flex items-start">
-                          <Lightbulb className="w-4 h-4 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
-                          <div className="text-xs text-blue-800">
-                            <p className="font-medium mb-1">Tips for effective AI prompts:</p>
-                            <ul className="space-y-1">
-                              <li>• Be specific about topics, concepts, and techniques covered</li>
-                              <li>• Include technical terms, tools, or methods demonstrated</li>
-                              <li>• Mention skill level and learning objectives</li>
-                              <li>• Describe practical applications or examples shown</li>
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
                     </div>
 
                     {/* AI Features Section */}
@@ -1046,18 +948,18 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                             checked={videoForm.generateTranscript}
                             onChange={handleVideoFormChange}
                             className="mr-2"
-                            disabled={uploadState.uploading}
+                            disabled={uploadState.uploading || !hasOpenAI}
                           />
                           <span className="text-sm text-dark-700">
                             Generate AI transcript after upload
                           </span>
                         </label>
-                        {process.env.NEXT_PUBLIC_HAS_OPENAI !== 'true' && (
-                          <span className="ml-2 text-xs text-gray-500">(OpenAI not configured)</span>
+                        {!hasOpenAI && (
+                          <span className="ml-2 text-xs text-red-500">(OpenAI API key required)</span>
                         )}
                       </div>
 
-                      {videoForm.generateTranscript && (
+                      {videoForm.generateTranscript && hasOpenAI && (
                         <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
                           <div className="flex items-start">
                             <FileText className="w-4 h-4 text-green-600 mr-2 mt-0.5 flex-shrink-0" />
@@ -1130,20 +1032,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                                   ))}
                                 </div>
                               </div>
-
-                              <div>
-                                <h4 className="font-medium text-blue-900 mb-2 flex items-center">
-                                  <HelpCircle className="w-4 h-4 mr-2" />
-                                  Tips for {selectedCategory}:
-                                </h4>
-                                <ul className="space-y-1 text-sm text-blue-800">
-                                  {AI_PROMPT_SUGGESTIONS
-                                    .find(s => s.category === selectedCategory)
-                                    ?.tips.map((tip, index) => (
-                                    <li key={index}>• {tip}</li>
-                                  ))}
-                                </ul>
-                              </div>
                             </div>
                           )}
                         </CardContent>
@@ -1159,7 +1047,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                       >
                         {uploadState.uploading ? (
                           <>
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                             {uploadState.stage === 'uploading' ? 'Uploading Video...' : 
                              uploadState.stage === 'processing' ? 'Generating AI Tests...' :
                              uploadState.stage === 'generating_transcript' ? 'Generating Transcript...' : 'Processing...'}
@@ -1185,37 +1073,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                       >
                         Cancel
                       </Button>
-                    </div>
-
-                    {/* Upload Tips */}
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                        <h4 className="font-medium text-green-900 mb-2 flex items-center">
-                          <Zap className="w-4 h-4 mr-2" />
-                          AI Test Generation
-                        </h4>
-                        <ul className="text-sm text-green-800 space-y-1">
-                          <li>• Tests are automatically generated from your AI prompt</li>
-                          <li>• Questions test understanding, not just memorization</li>
-                          <li>• 3-7 questions per video (recommended)</li>
-                          <li>• Multiple difficulty levels supported</li>
-                          <li>• You can regenerate tests anytime</li>
-                        </ul>
-                      </div>
-
-                      <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                        <h4 className="font-medium text-blue-900 mb-2 flex items-center">
-                          <BookOpen className="w-4 h-4 mr-2" />
-                          Video Requirements
-                        </h4>
-                        <ul className="text-sm text-blue-800 space-y-1">
-                          <li>• Maximum file size: 200MB</li>
-                          <li>• Supported: MP4, MOV, AVI, WMV, MKV</li>
-                          <li>• Recommended: MP4 with H.264 encoding</li>
-                          <li>• Automatic duration detection</li>
-                          <li>• Progress tracking enabled</li>
-                        </ul>
-                      </div>
                     </div>
                   </form>
                 </CardContent>
@@ -1255,7 +1112,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                                 <p className="text-sm text-dark-600">{section.description}</p>
                               )}
                               <p className="text-xs text-dark-500 mt-1">
-                                {section.videos.length} videos • {section.videos.reduce((acc, v) => acc + v.tests.length, 0)} tests • {section.videos.filter(v => v.transcript?.status === 'COMPLETED').length} transcripts
+                                {section.videos.length} videos • {section.videos.filter(v => v.transcript?.status === 'COMPLETED').length} transcripts
                               </p>
                             </div>
                           </div>
@@ -1317,7 +1174,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                                             AI Enabled
                                           </div>
                                         )}
-                                        {/* Add transcript indicator */}
+                                        {/* Transcript indicator */}
                                         {video.transcript && (
                                           <div className="flex items-center">
                                             <FileText className="w-3 h-3 mr-1" />
@@ -1338,7 +1195,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                                     </div>
                                     
                                     <div className="flex items-center space-x-2 ml-4">
-                                      {/* Add transcript button */}
+                                      {/* Transcript button */}
                                       <Button
                                         variant="outline"
                                         size="sm"
@@ -1349,18 +1206,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                                         <FileText className="w-3 h-3 mr-1" />
                                         Transcript
                                       </Button>
-                                      
-                                      {video.tests.length > 0 && (
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          onClick={() => openTestManagement(video.id, video.tests)}
-                                          className="flex items-center"
-                                        >
-                                          <Settings className="w-3 h-3 mr-1" />
-                                          Tests
-                                        </Button>
-                                      )}
                                       
                                       <Button variant="outline" size="sm">
                                         <Edit className="w-3 h-3" />
@@ -1419,68 +1264,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
           </div>
         </div>
 
-        {/* Test Management Dialog */}
-        {testManagement.showDialog && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold text-gray-900 flex items-center">
-                    <Brain className="w-6 h-6 mr-2 text-primary-600" />
-                    AI Test Management
-                  </h2>
-                  <button
-                    onClick={closeTestManagement}
-                    className="text-gray-400 hover:text-gray-600"
-                    disabled={testManagement.regenerating}
-                  >
-                    <X className="w-6 h-6" />
-                  </button>
-                </div>
-
-                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <h3 className="font-medium text-blue-900 mb-2">Current Tests</h3>
-                  <p className="text-sm text-blue-800">
-                    This video currently has {
-                      course.sections
-                        ?.flatMap(s => s.videos)
-                        ?.find(v => v.id === testManagement.videoId)?.tests.length || 0
-                    } test questions. Use the settings below to generate new ones.
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-end space-x-4 pt-4 border-t border-gray-200">
-                  <Button
-                    variant="outline"
-                    onClick={closeTestManagement}
-                    disabled={testManagement.regenerating}
-                  >
-                    Cancel
-                  </Button>
-                  
-                  <Button
-                    onClick={handleRegenerateTests}
-                    disabled={testManagement.regenerating}
-                    className="min-w-40"
-                  >
-                    {testManagement.regenerating ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                        Generate Tests
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Transcript Management Dialog */}
         {showTranscriptManager && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1511,7 +1294,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                       videoUrl={video.videoUrl}
                       videoTitle={video.title}
                       onTranscriptGenerated={(transcript) => {
-                        // Refresh course data to show transcript indicator
                         fetchCourse()
                       }}
                     />

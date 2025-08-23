@@ -1,9 +1,9 @@
 // components/admin/TranscriptManager.tsx
-'use client'
-import { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
+"use client";
+import { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import {
   FileText,
   Download,
@@ -20,232 +20,238 @@ import {
   Eye,
   EyeOff,
   Copy,
-  Search
-} from 'lucide-react'
+  Search,
+} from "lucide-react";
 
 interface TranscriptSegment {
-  start: number
-  end: number
-  text: string
-  confidence?: number
+  start: number;
+  end: number;
+  text: string;
+  confidence?: number;
 }
 
 interface Transcript {
-  id: string
-  videoId: string
-  content: string
-  language: string
-  segments?: TranscriptSegment[]
-  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
-  error?: string
-  generatedAt?: string
-  confidence?: number
-  provider?: string
+  id: string;
+  videoId: string;
+  content: string;
+  language: string;
+  segments?: TranscriptSegment[];
+  status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
+  error?: string;
+  generatedAt?: string;
+  confidence?: number;
+  provider?: string;
 }
 
 interface TranscriptManagerProps {
-  videoId: string
-  videoUrl: string
-  videoTitle: string
-  onTranscriptGenerated?: (transcript: Transcript) => void
+  videoId: string;
+  videoUrl: string;
+  videoTitle: string;
+  onTranscriptGenerated?: (transcript: Transcript) => void;
 }
 
 export default function TranscriptManager({
   videoId,
   videoUrl,
   videoTitle,
-  onTranscriptGenerated
+  onTranscriptGenerated,
 }: TranscriptManagerProps) {
-  const [transcript, setTranscript] = useState<Transcript | null>(null)
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-  const [showFullTranscript, setShowFullTranscript] = useState(false)
-  const [currentSegment, setCurrentSegment] = useState<number | null>(null)
-  const [searchTerm, setSearchTerm] = useState('')
+  const [transcript, setTranscript] = useState<Transcript | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [showFullTranscript, setShowFullTranscript] = useState(false);
+  const [currentSegment, setCurrentSegment] = useState<number | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
   const [generationSettings, setGenerationSettings] = useState({
-    language: 'en',
+    language: "en",
     includeTimestamps: true,
-    regenerate: false
-  })
+    regenerate: false,
+  });
 
-  const hasOpenAI = process.env.NEXT_PUBLIC_HAS_OPENAI === 'true'
+  const hasOpenAI = process.env.NEXT_PUBLIC_HAS_OPENAI === "true";
+  const hasAssemblyAI = process.env.NEXT_PUBLIC_HAS_ASSEMBLYAI === "true";
+
+  const hasAnyProvider = hasAssemblyAI || hasOpenAI;
 
   useEffect(() => {
-    fetchTranscript()
-  }, [videoId])
+    fetchTranscript();
+  }, [videoId]);
 
   const fetchTranscript = async () => {
     try {
-      setIsLoading(true)
-      setError('')
+      setIsLoading(true);
+      setError("");
 
-      const response = await fetch(`/api/admin/videos/${videoId}/transcript`)
+      const response = await fetch(`/api/admin/videos/${videoId}/transcript`);
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await response.json();
         if (data.hasTranscript) {
           setTranscript({
             id: data.videoId,
             videoId: data.videoId,
-            content: data.transcript || '',
-            language: data.language || 'en',
+            content: data.transcript || "",
+            language: data.language || "en",
             segments: data.segments || [],
-            status: data.status || 'PENDING',
+            status: data.status || "PENDING",
             confidence: data.confidence,
             provider: data.provider,
-            generatedAt: new Date().toISOString()
-          })
+            generatedAt: new Date().toISOString(),
+          });
         } else {
-          setTranscript(null)
+          setTranscript(null);
         }
       } else if (response.status === 404) {
-        setTranscript(null)
+        setTranscript(null);
       } else {
-        const errorData = await response.json()
-        setError(errorData.error || 'Failed to fetch transcript')
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to fetch transcript");
       }
     } catch (error) {
-      console.error('Error fetching transcript:', error)
-      setError('Failed to fetch transcript')
+      console.error("Error fetching transcript:", error);
+      setError("Failed to fetch transcript");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const generateTranscript = async () => {
     if (!hasOpenAI) {
-      setError('OpenAI integration is not configured')
-      return
+      setError("OpenAI integration is not configured");
+      return;
     }
     try {
-      setIsGenerating(true)
-      setError('')
-      setSuccess('')
+      setIsGenerating(true);
+      setError("");
+      setSuccess("");
       const response = await fetch(`/api/admin/videos/${videoId}/transcript`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json'
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           videoUrl,
-          ...generationSettings
-        })
-      })
-      const data = await response.json()
+          ...generationSettings,
+        }),
+      });
+      const data = await response.json();
       if (response.ok) {
         setTranscript({
           id: videoId,
           videoId: videoId,
-          content: data.transcript?.transcript || data.transcript || '',
-          language: data.language || 'en',
+          content: data.transcript?.transcript || data.transcript || "",
+          language: data.language || "en",
           segments: data.segments || [],
-          status: 'COMPLETED',
+          status: "COMPLETED",
           confidence: data.confidence,
           provider: data.provider,
-          generatedAt: new Date().toISOString()
-        })
-        setSuccess('Transcript generated successfully!')
-        onTranscriptGenerated?.(transcript!)
-        setTimeout(() => setSuccess(''), 5000)
+          generatedAt: new Date().toISOString(),
+        });
+        setSuccess("Transcript generated successfully!");
+        onTranscriptGenerated?.(transcript!);
+        setTimeout(() => setSuccess(""), 5000);
       } else {
-        setError(data.error || 'Failed to generate transcript')
+        setError(data.error || "Failed to generate transcript");
       }
     } catch (error) {
-      console.error('Error generating transcript:', error)
-      setError('Failed to generate transcript')
+      console.error("Error generating transcript:", error);
+      setError("Failed to generate transcript");
     } finally {
-      setIsGenerating(false)
+      setIsGenerating(false);
     }
-  }
+  };
 
   const deleteTranscript = async () => {
-    if (!confirm('Are you sure you want to delete this transcript?')) {
-      return
+    if (!confirm("Are you sure you want to delete this transcript?")) {
+      return;
     }
     try {
       const response = await fetch(`/api/admin/videos/${videoId}/transcript`, {
-        method: 'DELETE'
-      })
+        method: "DELETE",
+      });
       if (response.ok) {
-        setTranscript(null)
-        setSuccess('Transcript deleted successfully!')
-        setTimeout(() => setSuccess(''), 3000)
+        setTranscript(null);
+        setSuccess("Transcript deleted successfully!");
+        setTimeout(() => setSuccess(""), 3000);
       } else {
-        const errorData = await response.json()
-        setError(errorData.error || 'Failed to delete transcript')
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to delete transcript");
       }
     } catch (error) {
-      console.error('Error deleting transcript:', error)
-      setError('Failed to delete transcript')
+      console.error("Error deleting transcript:", error);
+      setError("Failed to delete transcript");
     }
-  }
+  };
 
   const downloadTranscript = () => {
-    if (!transcript) return
-    const content = transcript.content
-    const blob = new Blob([content], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${videoTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_transcript.txt`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }
+    if (!transcript) return;
+    const content = transcript.content;
+    const blob = new Blob([content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${videoTitle
+      .replace(/[^a-z0-9]/gi, "_")
+      .toLowerCase()}_transcript.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const copyTranscript = async () => {
-    if (!transcript) return
+    if (!transcript) return;
     try {
-      await navigator.clipboard.writeText(transcript.content)
-      setSuccess('Transcript copied to clipboard!')
-      setTimeout(() => setSuccess(''), 3000)
+      await navigator.clipboard.writeText(transcript.content);
+      setSuccess("Transcript copied to clipboard!");
+      setTimeout(() => setSuccess(""), 3000);
     } catch (error) {
-      setError('Failed to copy transcript')
+      setError("Failed to copy transcript");
     }
-  }
+  };
 
   const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = Math.floor(seconds % 60)
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
 
   const getStatusIcon = () => {
-    if (!transcript) return null
+    if (!transcript) return null;
     switch (transcript.status) {
-      case 'COMPLETED':
-        return <CheckCircle className="w-5 h-5 text-green-600" />
-      case 'PROCESSING':
-      case 'PENDING':
-        return <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
-      case 'FAILED':
-        return <AlertCircle className="w-5 h-5 text-red-600" />
+      case "COMPLETED":
+        return <CheckCircle className="w-5 h-5 text-green-600" />;
+      case "PROCESSING":
+      case "PENDING":
+        return <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />;
+      case "FAILED":
+        return <AlertCircle className="w-5 h-5 text-red-600" />;
       default:
-        return null
+        return null;
     }
-  }
+  };
 
   const getStatusColor = () => {
-    if (!transcript) return 'text-gray-500'
+    if (!transcript) return "text-gray-500";
     switch (transcript.status) {
-      case 'COMPLETED':
-        return 'text-green-600'
-      case 'PROCESSING':
-      case 'PENDING':
-        return 'text-blue-600'
-      case 'FAILED':
-        return 'text-red-600'
+      case "COMPLETED":
+        return "text-green-600";
+      case "PROCESSING":
+      case "PENDING":
+        return "text-blue-600";
+      case "FAILED":
+        return "text-red-600";
       default:
-        return 'text-gray-500'
+        return "text-gray-500";
     }
-  }
+  };
 
-  const filteredSegments = transcript?.segments?.filter(segment =>
-    segment.text.toLowerCase().includes(searchTerm.toLowerCase())
-  ) || []
+  const filteredSegments =
+    transcript?.segments?.filter((segment) =>
+      segment.text.toLowerCase().includes(searchTerm.toLowerCase())
+    ) || [];
 
   if (isLoading) {
     return (
@@ -255,7 +261,7 @@ export default function TranscriptManager({
           <p className="text-gray-600">Loading transcript...</p>
         </CardContent>
       </Card>
-    )
+    );
   }
 
   return (
@@ -288,11 +294,7 @@ export default function TranscriptManager({
 
             {transcript && (
               <div className="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={copyTranscript}
-                >
+                <Button variant="outline" size="sm" onClick={copyTranscript}>
                   <Copy className="w-4 h-4 mr-1" />
                   Copy
                 </Button>
@@ -327,16 +329,19 @@ export default function TranscriptManager({
                 No transcript available
               </h3>
 
-              {!hasOpenAI ? (
+              {!hasAnyProvider ? (
                 <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg mb-4">
                   <p className="text-sm text-yellow-800">
-                    OpenAI integration is not configured. Please add your OpenAI API key to enable transcript generation.
+                    No transcript provider configured. Please add
+                    ASSEMBLYAI_API_KEY or OPENAI_API_KEY to enable transcript
+                    generation.
                   </p>
                 </div>
               ) : (
                 <>
                   <p className="text-gray-500 mb-6">
-                    Generate an AI-powered transcript for this video using OpenAI Whisper.
+                    Generate an AI-powered transcript for this video using
+                    OpenAI Whisper.
                   </p>
 
                   {/* Generation Settings */}
@@ -348,10 +353,12 @@ export default function TranscriptManager({
                         </label>
                         <select
                           value={generationSettings.language}
-                          onChange={(e) => setGenerationSettings(prev => ({
-                            ...prev,
-                            language: e.target.value
-                          }))}
+                          onChange={(e) =>
+                            setGenerationSettings((prev) => ({
+                              ...prev,
+                              language: e.target.value,
+                            }))
+                          }
                           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                           disabled={isGenerating}
                         >
@@ -372,14 +379,18 @@ export default function TranscriptManager({
                           <input
                             type="checkbox"
                             checked={generationSettings.includeTimestamps}
-                            onChange={(e) => setGenerationSettings(prev => ({
-                              ...prev,
-                              includeTimestamps: e.target.checked
-                            }))}
+                            onChange={(e) =>
+                              setGenerationSettings((prev) => ({
+                                ...prev,
+                                includeTimestamps: e.target.checked,
+                              }))
+                            }
                             className="mr-2"
                             disabled={isGenerating}
                           />
-                          <span className="text-sm text-gray-700">Include timestamps</span>
+                          <span className="text-sm text-gray-700">
+                            Include timestamps
+                          </span>
                         </label>
                       </div>
                     </div>
@@ -388,7 +399,9 @@ export default function TranscriptManager({
                       <div className="flex items-start">
                         <Volume2 className="w-4 h-4 text-blue-600 mr-2 mt-0.5" />
                         <div className="text-xs text-blue-800">
-                          <p className="font-medium mb-1">AI Transcript Features:</p>
+                          <p className="font-medium mb-1">
+                            AI Transcript Features:
+                          </p>
                           <ul className="space-y-1">
                             <li>• High accuracy speech recognition</li>
                             <li>• Automatic punctuation and formatting</li>
@@ -440,7 +453,8 @@ export default function TranscriptManager({
                   {transcript.generatedAt && (
                     <div className="flex items-center text-sm text-gray-600">
                       <Clock className="w-4 h-4 mr-1" />
-                      Generated {new Date(transcript.generatedAt).toLocaleDateString()}
+                      Generated{" "}
+                      {new Date(transcript.generatedAt).toLocaleDateString()}
                     </div>
                   )}
 
@@ -455,8 +469,11 @@ export default function TranscriptManager({
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    setGenerationSettings(prev => ({ ...prev, regenerate: true }))
-                    generateTranscript()
+                    setGenerationSettings((prev) => ({
+                      ...prev,
+                      regenerate: true,
+                    }));
+                    generateTranscript();
                   }}
                   disabled={isGenerating}
                 >
@@ -466,7 +483,7 @@ export default function TranscriptManager({
               </div>
 
               {/* Error Display */}
-              {transcript.status === 'FAILED' && transcript.error && (
+              {transcript.status === "FAILED" && transcript.error && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
                   <p className="text-sm text-red-800">
                     <strong>Error:</strong> {transcript.error}
@@ -475,7 +492,7 @@ export default function TranscriptManager({
               )}
 
               {/* Transcript Content */}
-              {transcript.status === 'COMPLETED' && transcript.content && (
+              {transcript.status === "COMPLETED" && transcript.content && (
                 <div className="space-y-4">
                   {/* Search and View Toggle */}
                   {transcript.segments && transcript.segments.length > 0 && (
@@ -493,7 +510,9 @@ export default function TranscriptManager({
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setShowFullTranscript(!showFullTranscript)}
+                        onClick={() =>
+                          setShowFullTranscript(!showFullTranscript)
+                        }
                       >
                         {showFullTranscript ? (
                           <>
@@ -522,13 +541,22 @@ export default function TranscriptManager({
                     ) : (
                       // Segmented view with timestamps
                       <div className="divide-y divide-gray-200 max-h-96 overflow-y-auto">
-                        {(searchTerm ? filteredSegments : transcript.segments).map((segment, index) => (
+                        {(searchTerm
+                          ? filteredSegments
+                          : transcript.segments
+                        ).map((segment, index) => (
                           <div
                             key={index}
                             className={`p-3 hover:bg-gray-50 cursor-pointer transition-colors ${
-                              currentSegment === index ? 'bg-blue-50 border-l-4 border-blue-500' : ''
+                              currentSegment === index
+                                ? "bg-blue-50 border-l-4 border-blue-500"
+                                : ""
                             }`}
-                            onClick={() => setCurrentSegment(currentSegment === index ? null : index)}
+                            onClick={() =>
+                              setCurrentSegment(
+                                currentSegment === index ? null : index
+                              )
+                            }
                           >
                             <div className="flex items-start space-x-3">
                               <div className="flex-shrink-0">
@@ -542,9 +570,10 @@ export default function TranscriptManager({
                                     <span
                                       dangerouslySetInnerHTML={{
                                         __html: segment.text.replace(
-                                          new RegExp(searchTerm, 'gi'),
-                                          (match) => `<mark class="bg-yellow-200">${match}</mark>`
-                                        )
+                                          new RegExp(searchTerm, "gi"),
+                                          (match) =>
+                                            `<mark class="bg-yellow-200">${match}</mark>`
+                                        ),
                                       }}
                                     />
                                   ) : (
@@ -573,21 +602,31 @@ export default function TranscriptManager({
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-3 bg-gray-50 rounded-lg text-sm">
                     <div>
                       <span className="text-gray-600">Characters:</span>
-                      <span className="ml-1 font-medium">{transcript.content.length.toLocaleString()}</span>
+                      <span className="ml-1 font-medium">
+                        {transcript.content.length.toLocaleString()}
+                      </span>
                     </div>
                     <div>
                       <span className="text-gray-600">Words:</span>
-                      <span className="ml-1 font-medium">{transcript.content.split(/\s+/).length.toLocaleString()}</span>
+                      <span className="ml-1 font-medium">
+                        {transcript.content
+                          .split(/\s+/)
+                          .length.toLocaleString()}
+                      </span>
                     </div>
                     {transcript.segments && (
                       <div>
                         <span className="text-gray-600">Segments:</span>
-                        <span className="ml-1 font-medium">{transcript.segments.length}</span>
+                        <span className="ml-1 font-medium">
+                          {transcript.segments.length}
+                        </span>
                       </div>
                     )}
                     <div>
                       <span className="text-gray-600">Language:</span>
-                      <span className="ml-1 font-medium">{transcript.language.toUpperCase()}</span>
+                      <span className="ml-1 font-medium">
+                        {transcript.language.toUpperCase()}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -598,19 +637,24 @@ export default function TranscriptManager({
       </Card>
 
       {/* Processing Status */}
-      {transcript && (transcript.status === 'PROCESSING' || transcript.status === 'PENDING') && (
-        <Card>
-          <CardContent className="p-6 text-center">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">
-              {transcript.status === 'PROCESSING' ? 'Processing Audio...' : 'Queued for Processing...'}
-            </h3>
-            <p className="text-gray-500">
-              AI is analyzing the video audio and generating the transcript. This may take a few minutes.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      {transcript &&
+        (transcript.status === "PROCESSING" ||
+          transcript.status === "PENDING") && (
+          <Card>
+            <CardContent className="p-6 text-center">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                {transcript.status === "PROCESSING"
+                  ? "Processing Audio..."
+                  : "Queued for Processing..."}
+              </h3>
+              <p className="text-gray-500">
+                AI is analyzing the video audio and generating the transcript.
+                This may take a few minutes.
+              </p>
+            </CardContent>
+          </Card>
+        )}
     </div>
-  )
+  );
 }

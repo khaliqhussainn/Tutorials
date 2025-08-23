@@ -16,14 +16,22 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    // Check if any transcript provider is configured
+    const hasAssemblyAI = !!process.env.ASSEMBLYAI_API_KEY
+    const hasOpenAI = !!process.env.OPENAI_API_KEY
+    
+    if (!hasAssemblyAI && !hasOpenAI) {
+      return NextResponse.json({ 
+        error: "No transcript provider configured. Please add ASSEMBLYAI_API_KEY or OPENAI_API_KEY to your environment variables." 
+      }, { status: 400 })
+    }
+
     const { videoId } = params
 
     // Get video details
     const video = await prisma.video.findUnique({
       where: { id: videoId },
-      include: {
-        transcript: true
-      }
+      include: { transcript: true }
     })
 
     if (!video) {
@@ -42,10 +50,12 @@ export async function POST(
       })
     }
 
-    // Generate transcript
-    console.log(`🎬 Generating transcript for video: ${videoId}`)
+    // Auto-select best provider
+    const provider = hasAssemblyAI ? 'assemblyai' : 'openai'
     
-    const generator = new TranscriptGenerator('openai')
+    console.log(`🎬 Generating transcript for video: ${videoId} using ${provider}`)
+    
+    const generator = new TranscriptGenerator(provider)
     const transcriptResult = await generator.generateTranscript(video.id, video.videoUrl)
 
     return NextResponse.json({
@@ -58,77 +68,32 @@ export async function POST(
       provider: transcriptResult.provider
     })
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error generating transcript:", error)
-    return NextResponse.json({ 
-      error: "Failed to generate transcript",
-      details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 })
-  }
-}
-
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { videoId: string } }
-) {
-  try {
-    const session = await getServerSession(authOptions)
     
-    if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    const video = await prisma.video.findUnique({
-      where: { id: params.videoId },
-      include: {
-        transcript: true
-      }
-    })
-
-    if (!video) {
-      return NextResponse.json({ error: "Video not found" }, { status: 404 })
-    }
-
-    return NextResponse.json({
-      videoId: video.id,
-      title: video.title,
-      transcript: video.transcript?.content || null,
-      segments: video.transcript?.segments || null,
-      status: video.transcript?.status || 'PENDING',
-      language: video.transcript?.language || 'en',
-      confidence: video.transcript?.confidence || null,
-      provider: video.transcript?.provider || null,
-      hasTranscript: !!video.transcript && video.transcript.status === 'COMPLETED'
-    })
-
-  } catch (error) {
-    console.error("Error fetching transcript:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
-  }
-}
-
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { videoId: string } }
-) {
-  try {
-    const session = await getServerSession(authOptions)
+    // Enhanced error response
+    let errorMessage = "Failed to generate transcript"
+    let statusCode = 500
     
-    if (!session || session.user.role !== 'ADMIN') {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    if (error.message.includes('quota exceeded') || error.message.includes('insufficient_quota')) {
+      errorMessage = "API quota exceeded. Please check your billing and add credits to your account."
+      statusCode = 402
+    } else if (error.message.includes('Invalid') && error.message.includes('API key')) {
+      errorMessage = "API key is invalid. Please check your configuration."
+      statusCode = 401
+    } else if (error.message.includes('too large')) {
+      errorMessage = "Video file is too large for transcript generation."
+      statusCode = 413
+    } else if (error.message.includes('not configured')) {
+      errorMessage = "Transcript provider not configured properly."
+      statusCode = 400
     }
-
-    await prisma.transcript.delete({
-      where: { videoId: params.videoId }
-    })
-
+    
     return NextResponse.json({ 
-      success: true,
-      message: "Transcript deleted successfully" 
-    })
-
-  } catch (error) {
-    console.error("Error deleting transcript:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+      error: errorMessage,
+      details: error.message,
+      provider: error.message.includes('AssemblyAI') ? 'assemblyai' : 
+                error.message.includes('OpenAI') ? 'openai' : 'unknown'
+    }, { status: statusCode })
   }
 }
