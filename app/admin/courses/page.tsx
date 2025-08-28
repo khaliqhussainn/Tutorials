@@ -1,4 +1,4 @@
-// app/admin/courses/page.tsx - ENHANCED with better deletion handling
+// app/admin/courses/page.tsx - ENHANCED with Q&A management and better deletion handling
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -27,7 +27,8 @@ import {
   Loader2,
   X,
   ChevronDown,
-  TrendingUp
+  TrendingUp,
+  MessageSquare
 } from 'lucide-react'
 
 interface AdminCourse {
@@ -45,9 +46,20 @@ interface AdminCourse {
     videos: { id: string; duration?: number }[]
   }[]
   videos: { id: string; duration?: number }[]
-  _count: { enrollments: number }
+  _count: { 
+    enrollments: number
+    questions?: number
+    unansweredQuestions?: number
+  }
   totalVideos?: number
   totalDuration?: number
+}
+
+interface AdminStats {
+  totalQuestions: number
+  unansweredQuestions: number
+  totalAnnouncements: number
+  recentActivity: number
 }
 
 // Confirmation Modal Component
@@ -85,6 +97,8 @@ function DeleteConfirmationModal({
               <li>• All student progress and quiz data</li>
               <li>• {course._count.enrollments} student enrollments</li>
               <li>• All sections and course structure</li>
+              <li>• All Q&A questions and answers</li>
+              <li>• All course announcements</li>
             </ul>
           </div>
           
@@ -145,6 +159,12 @@ export default function AdminCoursesPage() {
   const [success, setSuccess] = useState('')
   const [courseToDelete, setCourseToDelete] = useState<AdminCourse | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [stats, setStats] = useState<AdminStats>({
+    totalQuestions: 0,
+    unansweredQuestions: 0,
+    totalAnnouncements: 0,
+    recentActivity: 0
+  })
 
   useEffect(() => {
     if (session?.user.role !== 'ADMIN') {
@@ -152,6 +172,7 @@ export default function AdminCoursesPage() {
       return
     }
     fetchCourses()
+    fetchStats()
   }, [session, router])
 
   useEffect(() => {
@@ -175,6 +196,18 @@ export default function AdminCoursesPage() {
       setError('Failed to fetch courses')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchStats = async () => {
+    try {
+      const response = await fetch('/api/admin/stats')
+      if (response.ok) {
+        const data = await response.json()
+        setStats(data)
+      }
+    } catch (error) {
+      console.error('Error fetching stats:', error)
     }
   }
 
@@ -253,6 +286,8 @@ export default function AdminCoursesPage() {
         setSuccess(responseData.message || 'Course deleted successfully!')
         setCourseToDelete(null)
         setTimeout(() => setSuccess(''), 5000)
+        // Refresh stats after deletion
+        fetchStats()
       } else {
         setError(responseData.error || 'Failed to delete course')
       }
@@ -353,8 +388,8 @@ export default function AdminCoursesPage() {
             </Link>
           </div>
 
-          {/* Stats Overview */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          {/* Stats Overview - Enhanced with Q&A stats */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center">
@@ -406,6 +441,29 @@ export default function AdminCoursesPage() {
                     </p>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* NEW: Q&A Activity Card */}
+            <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+              <CardContent className="p-4">
+                <div className="flex items-center">
+                  <MessageSquare className={`w-8 h-8 mr-3 ${stats.unansweredQuestions > 0 ? 'text-red-600' : 'text-purple-600'}`} />
+                  <div>
+                    <p className="text-sm text-gray-600">Unanswered Q&A</p>
+                    <p className={`text-2xl font-bold ${stats.unansweredQuestions > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                      {stats.unansweredQuestions || 0}
+                    </p>
+                  </div>
+                </div>
+                {stats.unansweredQuestions > 0 && (
+                  <div className="mt-2">
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                      <AlertCircle className="w-3 h-3 mr-1" />
+                      Needs attention
+                    </span>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -501,6 +559,16 @@ export default function AdminCoursesPage() {
                       </span>
                     </div>
                   )}
+
+                  {/* Q&A Alert Badge */}
+                  {course._count.unansweredQuestions && course._count.unansweredQuestions > 0 && (
+                    <div className="absolute bottom-3 left-3">
+                      <span className="bg-red-500 text-white px-2 py-1 rounded-full text-xs font-medium flex items-center">
+                        <MessageSquare className="w-3 h-3 mr-1" />
+                        {course._count.unansweredQuestions} Q&A
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <CardHeader>
@@ -539,39 +607,78 @@ export default function AdminCoursesPage() {
                         Updated {formatDate(course.updatedAt)}
                       </div>
                     </div>
+
+                    {/* Q&A Stats */}
+                    {course._count.questions && course._count.questions > 0 && (
+                      <div className="flex items-center justify-between text-sm text-gray-500">
+                        <div className="flex items-center">
+                          <MessageSquare className="w-4 h-4 mr-1" />
+                          {course._count.questions} questions
+                        </div>
+                        {course._count.unansweredQuestions && course._count.unansweredQuestions > 0 && (
+                          <div className="text-xs text-red-600 font-medium">
+                            {course._count.unansweredQuestions} unanswered
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  <div className="flex items-center space-x-2">
-                    <Link href={`/admin/courses/${course.id}`} className="flex-1">
-                      <Button variant="outline" size="sm" className="w-full">
-                        <Edit className="w-4 h-4 mr-2" />
-                        Manage
+                  {/* UPDATED: Action Buttons with Q&A Management */}
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <Link href={`/admin/courses/${course.id}`} className="flex-1">
+                        <Button variant="outline" size="sm" className="w-full">
+                          <Edit className="w-4 h-4 mr-2" />
+                          Edit
+                        </Button>
+                      </Link>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => togglePublished(course.id, course.isPublished)}
+                        className="flex-shrink-0"
+                        title={course.isPublished ? 'Unpublish course' : 'Publish course'}
+                      >
+                        {course.isPublished ? (
+                          <EyeOff className="w-4 h-4" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
+                      </Button>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCourseToDelete(course)}
+                        className="flex-shrink-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                        title="Delete course"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    {/* NEW: Q&A and Announcements Management Button */}
+                    <Link href={`/admin/courses/${course.id}/manage`} className="block">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className={`w-full ${
+                          course._count.unansweredQuestions && course._count.unansweredQuestions > 0
+                            ? 'border-red-200 text-red-700 hover:bg-red-50' 
+                            : 'text-purple-700 hover:bg-purple-50'
+                        }`}
+                      >
+                        <MessageSquare className="w-4 h-4 mr-2" />
+                        Manage Q&A & Announcements
+                        {course._count.unansweredQuestions && course._count.unansweredQuestions > 0 && (
+                          <span className="ml-2 bg-red-100 text-red-800 px-1.5 py-0.5 rounded-full text-xs font-medium">
+                            {course._count.unansweredQuestions}
+                          </span>
+                        )}
                       </Button>
                     </Link>
-                    
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => togglePublished(course.id, course.isPublished)}
-                      className="flex-shrink-0"
-                      title={course.isPublished ? 'Unpublish course' : 'Publish course'}
-                    >
-                      {course.isPublished ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
-                    </Button>
-                    
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCourseToDelete(course)}
-                      className="flex-shrink-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                      title="Delete course"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -617,10 +724,10 @@ export default function AdminCoursesPage() {
           </Card>
         )}
 
-        {/* Quick Actions */}
+        {/* Enhanced Quick Actions with Q&A Management */}
         <div className="mt-8 bg-white rounded-lg border p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Link href="/admin/courses/create">
               <Card className="hover:shadow-md transition-shadow cursor-pointer">
                 <CardContent className="p-4 text-center">
@@ -662,6 +769,33 @@ export default function AdminCoursesPage() {
                 </CardContent>
               </Card>
             </button>
+
+            {/* NEW: Q&A Management Quick Action */}
+            <Link href="/admin/qa">
+              <Card className={`hover:shadow-md transition-shadow cursor-pointer ${
+                stats.unansweredQuestions > 0 ? 'ring-2 ring-red-200 bg-red-50' : ''
+              }`}>
+                <CardContent className="p-4 text-center">
+                  <div className="relative">
+                    <MessageSquare className={`w-8 h-8 mx-auto mb-2 ${
+                      stats.unansweredQuestions > 0 ? 'text-red-600' : 'text-purple-600'
+                    }`} />
+                    {stats.unansweredQuestions > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center font-medium">
+                        {stats.unansweredQuestions}
+                      </span>
+                    )}
+                  </div>
+                  <p className="font-medium text-gray-900">Manage Q&A</p>
+                  <p className="text-sm text-gray-600">
+                    {stats.unansweredQuestions > 0 
+                      ? `${stats.unansweredQuestions} need answers`
+                      : 'All questions answered'
+                    }
+                  </p>
+                </CardContent>
+              </Card>
+            </Link>
           </div>
         </div>
 
@@ -671,6 +805,33 @@ export default function AdminCoursesPage() {
             <p className="text-sm text-gray-500">
               Showing {filteredCourses.length} of {courses.length} courses
             </p>
+          </div>
+        )}
+
+        {/* Alert for pending Q&A */}
+        {stats.unansweredQuestions > 0 && (
+          <div className="mt-6">
+            <Card className="border-red-200 bg-red-50">
+              <CardContent className="p-4">
+                <div className="flex items-center">
+                  <AlertCircle className="w-5 h-5 text-red-600 mr-3 flex-shrink-0" />
+                  <div className="flex-1">
+                    <h4 className="font-medium text-red-900 mb-1">
+                      Attention Required: Unanswered Questions
+                    </h4>
+                    <p className="text-sm text-red-700 mb-3">
+                      You have {stats.unansweredQuestions} unanswered student questions that need your attention.
+                      Responding promptly helps maintain student engagement and course quality.
+                    </p>
+                  </div>
+                  <Link href="/admin/qa">
+                    <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white ml-4">
+                      Review Questions
+                    </Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
       </div>

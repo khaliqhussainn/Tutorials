@@ -1,4 +1,3 @@
-// app/api/videos/[videoId]/notes/route.ts - Fixed version for existing schema
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -41,45 +40,29 @@ export async function POST(
       return NextResponse.json({ error: "Video not found" }, { status: 404 })
     }
 
-    // Check if note already exists for this user and video
-    const existingNote = await prisma.videoNote.findFirst({
-      where: {
+    // Always create a new note (multiple notes per video per user)
+    const videoNote = await prisma.videoNote.create({
+      data: {
         userId: user.id,
-        videoId: params.videoId
+        videoId: params.videoId,
+        content: content.trim(),
+        timestamp: timestamp !== undefined && timestamp !== null ? Math.floor(timestamp) : null
       }
     })
 
-    let videoNote
-
-    if (existingNote) {
-      // Update existing note
-      videoNote = await prisma.videoNote.update({
-        where: { id: existingNote.id },
-        data: {
-          content: content.trim(),
-          ...(timestamp !== undefined && { timestamp }),
-          updatedAt: new Date()
-        }
-      })
-    } else {
-      // Create new note
-      videoNote = await prisma.videoNote.create({
-        data: {
-          userId: user.id,
-          videoId: params.videoId,
-          content: content.trim(),
-          ...(timestamp !== undefined && { timestamp })
-        }
-      })
-    }
-
     return NextResponse.json({
       success: true,
-      note: videoNote,
-      message: existingNote ? "Note updated successfully" : "Note created successfully"
+      note: {
+        id: videoNote.id,
+        content: videoNote.content,
+        timestamp: videoNote.timestamp,
+        createdAt: videoNote.createdAt.toISOString(),
+        updatedAt: videoNote.updatedAt.toISOString()
+      },
+      message: "Note created successfully"
     })
   } catch (error) {
-    console.error("Error saving notes:", error)
+    console.error("Error saving note:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
@@ -116,24 +99,14 @@ export async function GET(
       }
     })
 
-    // For backward compatibility, if there's only one note, return its content
-    // Otherwise return all notes
-    if (notes.length === 1) {
-      const note = notes[0]
-      return NextResponse.json({ 
-        content: note.content || '',
-        timestamp: 'timestamp' in note ? note.timestamp : null,
-        updatedAt: note.updatedAt
-      })
-    }
-
+    // Return all notes in consistent format
     return NextResponse.json({ 
       notes: notes.map(note => ({
         id: note.id,
         content: note.content,
-        timestamp: 'timestamp' in note ? note.timestamp : null,
-        createdAt: note.createdAt,
-        updatedAt: note.updatedAt
+        timestamp: note.timestamp,
+        createdAt: note.createdAt.toISOString(),
+        updatedAt: note.updatedAt.toISOString()
       })),
       count: notes.length
     })

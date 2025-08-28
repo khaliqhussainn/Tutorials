@@ -1,4 +1,4 @@
-// schema.prisma - Updated with proper transcript support
+// Fixed schema.prisma - Removed @constraint attribute
 generator client {
   provider = "prisma-client-js"
 }
@@ -40,6 +40,14 @@ model User {
   activities      UserActivity[]
   streaks         DailyStreak[]
   testAnswers     UserTestAnswer[]
+
+  // NEW: Q&A and Announcements
+  questions     CourseQuestion[]
+  answers       CourseAnswer[]
+  announcements CourseAnnouncement[]
+  questionVotes QuestionVote[]
+  answerVotes   AnswerVote[]
+  reviewVotes   ReviewVote[]
 
   @@map("users")
 }
@@ -209,23 +217,11 @@ model Course {
   favoritedBy FavoriteCourse[]
   reviews     CourseReview[]
 
+  // NEW: Q&A and Announcements
+  questions     CourseQuestion[]
+  announcements CourseAnnouncement[]
+
   @@map("courses")
-}
-
-model CourseReview {
-  id        String   @id @default(cuid())
-  userId    String   @map("user_id")
-  courseId  String   @map("course_id")
-  rating    Int
-  comment   String?  @db.Text
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, courseId])
-  @@map("course_reviews")
 }
 
 model FavoriteCourse {
@@ -255,6 +251,135 @@ model CourseSection {
 
   @@unique([courseId, order])
   @@map("course_sections")
+}
+
+// NEW: Course Questions (Q&A)
+model CourseQuestion {
+  id         String   @id @default(cuid())
+  courseId   String   @map("course_id")
+  userId     String   @map("user_id")
+  title      String
+  content    String   @db.Text
+  isAnswered Boolean  @default(false) @map("is_answered")
+  isPinned   Boolean  @default(false) @map("is_pinned")
+  upvotes    Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  course  Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers CourseAnswer[]
+  votes   QuestionVote[]
+
+  @@index([courseId, createdAt])
+  @@map("course_questions")
+}
+
+// NEW: Course Answers
+model CourseAnswer {
+  id         String   @id @default(cuid())
+  questionId String   @map("question_id")
+  userId     String   @map("user_id")
+  content    String   @db.Text
+  isCorrect  Boolean  @default(false) @map("is_correct")
+  upvotes    Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  question CourseQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  votes    AnswerVote[]
+
+  @@index([questionId, createdAt])
+  @@map("course_answers")
+}
+
+// NEW: Question Votes
+model QuestionVote {
+  id         String   @id @default(cuid())
+  questionId String   @map("question_id")
+  userId     String   @map("user_id")
+  isUpvote   Boolean  @map("is_upvote")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  question CourseQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, userId])
+  @@map("question_votes")
+}
+
+// NEW: Answer Votes
+model AnswerVote {
+  id        String   @id @default(cuid())
+  answerId  String   @map("answer_id")
+  userId    String   @map("user_id")
+  isUpvote  Boolean  @map("is_upvote")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  answer CourseAnswer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([answerId, userId])
+  @@map("answer_votes")
+}
+
+// NEW: Course Announcements
+model CourseAnnouncement {
+  id          String   @id @default(cuid())
+  courseId    String   @map("course_id")
+  authorId    String   @map("author_id")
+  title       String
+  content     String   @db.Text
+  isPinned    Boolean  @default(false) @map("is_pinned")
+  isPublished Boolean  @default(true) @map("is_published")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([courseId, createdAt])
+  @@index([courseId, isPinned])
+  @@map("course_announcements")
+}
+
+// Enhanced existing CourseReview model
+model CourseReview {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  courseId     String   @map("course_id")
+  rating       Int // Removed @constraint - will validate in app logic instead
+  title        String?
+  comment      String?  @db.Text
+  isPublic     Boolean  @default(true) @map("is_public")
+  isVerified   Boolean  @default(false) @map("is_verified")
+  helpfulCount Int      @default(0) @map("helpful_count")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  votes  ReviewVote[]
+
+  @@unique([userId, courseId])
+  @@index([courseId, rating])
+  @@map("course_reviews")
+}
+
+// NEW: Review Votes (helpful/not helpful)
+model ReviewVote {
+  id        String   @id @default(cuid())
+  reviewId  String   @map("review_id")
+  userId    String   @map("user_id")
+  isHelpful Boolean  @map("is_helpful")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  review CourseReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, userId])
+  @@map("review_votes")
 }
 
 model Video {

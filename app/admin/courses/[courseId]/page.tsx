@@ -1,6 +1,4 @@
-// app/admin/courses/[courseId]/page.tsx - Fixed with proper transcript integration
 'use client'
-
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
@@ -9,14 +7,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
+import QuizManager from '@/components/admin/QuizManager'
 import TranscriptManager from '@/components/admin/TranscriptManager'
-import { 
+import {
   FileText,
-  ArrowLeft, 
-  Plus, 
-  Play, 
-  Edit, 
-  Trash2, 
+  ArrowLeft,
+  Plus,
+  Play,
+  Edit,
+  Trash2,
   Upload,
   Clock,
   AlertCircle,
@@ -107,12 +106,13 @@ interface VideoFormData {
   videoFile: File | null
   sectionId: string
   generateTranscript: boolean
+  generateQuiz: boolean
 }
 
 interface UploadState {
   uploading: boolean
   progress: number
-  stage: 'idle' | 'uploading' | 'processing' | 'generating_transcript' | 'success' | 'error'
+  stage: 'idle' | 'uploading' | 'processing' | 'generating_transcript' | 'generating_quiz' | 'success' | 'error'
   error: string
   retryCount: number
 }
@@ -152,22 +152,23 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  
-  // Transcript management state
   const [showTranscriptManager, setShowTranscriptManager] = useState<string | null>(null)
-  
+  const [showQuizManager, setShowQuizManager] = useState<string | null>(null)
+  const [bulkGenerating, setBulkGenerating] = useState(false)
+
   const [sectionForm, setSectionForm] = useState<SectionFormData>({
     title: '',
     description: ''
   })
-  
+
   const [videoForm, setVideoForm] = useState<VideoFormData>({
     title: '',
     description: '',
     aiPrompt: '',
     videoFile: null,
     sectionId: '',
-    generateTranscript: false
+    generateTranscript: false,
+    generateQuiz: false
   })
 
   const [uploadState, setUploadState] = useState<UploadState>({
@@ -221,6 +222,35 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
     setShowTranscriptManager(null)
   }
 
+  const openQuizManager = (videoId: string) => {
+    setShowQuizManager(videoId)
+  }
+
+  const closeQuizManager = () => {
+    setShowQuizManager(null)
+  }
+
+  const generateAllQuizzes = async () => {
+    setBulkGenerating(true)
+    setError('')
+    setSuccess('')
+    try {
+      const response = await fetch('/api/admin/generate-all-quizzes', {
+        method: 'POST'
+      })
+      if (response.ok) {
+        setSuccess('Quiz generation started for all videos. This may take several minutes.')
+      } else {
+        const errorData = await response.json()
+        setError(errorData.error || 'Failed to start quiz generation')
+      }
+    } catch (error) {
+      setError('Network error while starting quiz generation')
+    } finally {
+      setBulkGenerating(false)
+    }
+  }
+
   const handleSectionFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
     setSectionForm(prev => ({ ...prev, [name]: value }))
@@ -230,23 +260,19 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
     e.preventDefault()
     setError('')
     setSuccess('')
-
     try {
       const response = await fetch(`/api/admin/courses/${params.courseId}/sections`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(sectionForm)
       })
-
       if (!response.ok) {
         throw new Error('Failed to create section')
       }
-
       setSuccess('Section created successfully!')
       setShowSectionForm(false)
       setSectionForm({ title: '', description: '' })
       await fetchCourse()
-
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to create section')
     }
@@ -254,13 +280,13 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
 
   const handleVideoFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target as HTMLInputElement
-    
+
     if (type === 'checkbox') {
       const { checked } = e.target as HTMLInputElement
       setVideoForm(prev => ({ ...prev, [name]: checked }))
     } else {
       setVideoForm(prev => ({ ...prev, [name]: value }))
-      
+
       if (name === 'aiPrompt') {
         analyzePromptQuality(value)
       }
@@ -272,7 +298,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
     const hasSpecificTerms = /\b(html|css|javascript|python|learn|concept|technique|method|function|element|property|tag|selector|variable|array|object)\b/i.test(prompt)
     const hasStructure = prompt.includes(':') || prompt.includes(',') || prompt.includes('.')
     const wordCount = prompt.trim().split(/\s+/).length
-
     if (length < 20 || wordCount < 10) {
       setPromptQuality('poor')
     } else if (length > 50 && hasSpecificTerms && hasStructure && wordCount > 15) {
@@ -326,7 +351,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
         setUploadState(prev => ({ ...prev, error: 'Please select a valid video file' }))
         return
       }
-      
+
       setVideoForm(prev => ({ ...prev, videoFile: file }))
       setUploadState(prev => ({ ...prev, error: '' }))
     }
@@ -336,40 +361,34 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         setUploadState(prev => ({ ...prev, retryCount: attempt - 1 }))
-        
+
         const formDataToSend = new FormData()
         formDataToSend.append('file', videoForm.videoFile!)
-
         const progressInterval = setInterval(() => {
           setUploadState(prev => ({
             ...prev,
             progress: Math.min(prev.progress + Math.random() * 15, 85)
           }))
         }, 2000)
-
         const response = await fetch('/api/upload', {
           method: 'POST',
           body: formDataToSend,
           signal: AbortSignal.timeout(600000)
         })
-
         clearInterval(progressInterval)
-
         if (!response.ok) {
           const errorData = await response.json()
           throw new Error(errorData.error || `HTTP ${response.status}`)
         }
-
         setUploadState(prev => ({ ...prev, progress: 90 }))
         return await response.json()
-
       } catch (error: any) {
         console.error(`Upload attempt ${attempt} failed:`, error)
-        
+
         if (attempt === maxRetries) {
           throw error
         }
-        
+
         const delay = Math.pow(2, attempt - 1) * 2000
         await new Promise(resolve => setTimeout(resolve, delay))
         setUploadState(prev => ({ ...prev, progress: 0 }))
@@ -383,7 +402,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
       setUploadState(prev => ({ ...prev, error: 'Please fill in all required fields' }))
       return
     }
-
     setUploadState({
       uploading: true,
       progress: 0,
@@ -391,24 +409,18 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
       error: '',
       retryCount: 0
     })
-
     try {
       // Step 1: Upload video
       setUploadState(prev => ({ ...prev, stage: 'uploading' }))
       const uploadData = await uploadWithRetry()
-      
+
       // Step 2: Create video record with AI test generation and transcript
-      setUploadState(prev => ({ 
-        ...prev, 
-        progress: 95, 
-        stage: videoForm.generateTranscript ? 'generating_transcript' : 'processing' 
+      setUploadState(prev => ({
+        ...prev,
+        progress: 95,
+        stage: videoForm.generateTranscript ? 'generating_transcript' : videoForm.generateQuiz ? 'generating_quiz' : 'processing'
       }))
-      
-      console.log('Creating video with transcript generation:', {
-        generateTranscript: videoForm.generateTranscript,
-        hasOpenAI
-      })
-      
+
       const videoResponse = await fetch(`/api/admin/videos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -420,31 +432,28 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
           aiPrompt: videoForm.aiPrompt,
           sectionId: videoForm.sectionId,
           courseId: params.courseId,
-          generateTranscript: videoForm.generateTranscript && hasOpenAI
+          generateTranscript: videoForm.generateTranscript && hasOpenAI,
+          generateQuiz: videoForm.generateQuiz && hasOpenAI
         })
       })
-
       if (!videoResponse.ok) {
         const errorData = await videoResponse.json()
         throw new Error(errorData.error || 'Failed to create video record')
       }
-
       const createdVideo = await videoResponse.json()
-      console.log('Video created with transcript status:', createdVideo)
-
-      setUploadState(prev => ({ 
-        ...prev, 
-        progress: 100, 
-        stage: 'success' 
+      setUploadState(prev => ({
+        ...prev,
+        progress: 100,
+        stage: 'success'
       }))
-
       // Show success message
       if (videoForm.generateTranscript && hasOpenAI) {
         setSuccess('Video uploaded successfully! Transcript generation started in background.')
+      } else if (videoForm.generateQuiz && hasOpenAI) {
+        setSuccess('Video uploaded successfully! Quiz generation started in background.')
       } else {
         setSuccess('Video uploaded successfully!')
       }
-
       // Reset form
       setTimeout(() => {
         setVideoForm({
@@ -453,7 +462,8 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
           aiPrompt: '',
           videoFile: null,
           sectionId: '',
-          generateTranscript: false
+          generateTranscript: false,
+          generateQuiz: false
         })
         setUploadState({
           uploading: false,
@@ -466,7 +476,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
         setPromptQuality(null)
         fetchCourse()
       }, 3000)
-
     } catch (error: any) {
       console.error('Upload failed:', error)
       setUploadState(prev => ({
@@ -504,12 +513,10 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
     if (!confirm('Are you sure you want to delete this section? All videos in this section will be moved to "Uncategorized".')) {
       return
     }
-
     try {
       const response = await fetch(`/api/admin/courses/${params.courseId}/sections/${sectionId}`, {
         method: 'DELETE'
       })
-
       if (response.ok) {
         await fetchCourse()
         setSuccess('Section deleted successfully')
@@ -523,12 +530,10 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
     if (!confirm('Are you sure you want to delete this video? This will also delete associated tests and transcripts.')) {
       return
     }
-
     try {
       const response = await fetch(`/api/admin/videos/${videoId}`, {
         method: 'DELETE'
       })
-
       if (response.ok) {
         await fetchCourse()
         setSuccess('Video deleted successfully')
@@ -572,14 +577,14 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-8">
-          <Link 
+          <Link
             href="/admin/courses"
             className="flex items-center text-primary-600 hover:text-primary-700 transition-colors mb-4"
           >
             <ArrowLeft className="w-5 h-5 mr-2" />
             Back to Courses
           </Link>
-          
+
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl md:text-4xl font-display font-bold text-dark-900 mb-2">
@@ -602,7 +607,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
             </button>
           </div>
         )}
-
         {success && (
           <div className="mb-6 flex items-center p-3 bg-green-50 border border-green-200 rounded-lg text-green-700">
             <CheckCircle className="w-5 h-5 mr-2 flex-shrink-0" />
@@ -620,7 +624,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
             <div className="flex-1">
               <p className="font-medium">OpenAI API Key Not Configured</p>
               <p className="text-sm mt-1">
-                Add your OpenAI API key to <code>OPENAI_API_KEY</code> in your environment variables to enable automatic transcript generation.
+                Add your OpenAI API key to <code>OPENAI_API_KEY</code> in your environment variables to enable automatic transcript and quiz generation.
               </p>
             </div>
           </div>
@@ -653,9 +657,17 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                   </p>
                 </div>
                 <div>
+                  <span className="text-sm font-medium text-dark-700">Quiz Questions:</span>
+                  <p className="text-dark-900">
+                    {course.sections?.reduce((acc, section) =>
+                      acc + section.videos.reduce((videoAcc, video) => videoAcc + video.tests.length, 0), 0
+                    ) || 0}
+                  </p>
+                </div>
+                <div>
                   <span className="text-sm font-medium text-dark-700">Transcripts:</span>
                   <p className="text-dark-900">
-                    {course.sections?.reduce((acc, section) => 
+                    {course.sections?.reduce((acc, section) =>
                       acc + section.videos.filter(video => video.transcript?.status === 'COMPLETED').length, 0
                     ) || 0}
                   </p>
@@ -677,7 +689,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                   <FolderPlus className="w-4 h-4 mr-2" />
                   Add Section
                 </Button>
-                
+
                 <Button
                   onClick={() => setShowVideoForm(!showVideoForm)}
                   className="w-full"
@@ -685,6 +697,25 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Add Video
+                </Button>
+
+                <Button
+                  onClick={generateAllQuizzes}
+                  variant="outline"
+                  className="w-full"
+                  disabled={bulkGenerating}
+                >
+                  {bulkGenerating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Generating Quizzes...
+                    </>
+                  ) : (
+                    <>
+                      <Brain className="w-4 h-4 mr-2" />
+                      Generate All Quizzes
+                    </>
+                  )}
                 </Button>
 
                 <Button
@@ -721,7 +752,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                         required
                       />
                     </div>
-
                     <div>
                       <label className="text-sm font-medium text-dark-700 block mb-2">
                         Description
@@ -735,7 +765,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                         className="flex w-full rounded-md border border-dark-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                       />
                     </div>
-
                     <div className="flex items-center space-x-4">
                       <Button type="submit">
                         Create Section
@@ -788,8 +817,9 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-blue-800 font-medium">
                             {uploadState.stage === 'uploading' ? 'Uploading video file...' :
-                             uploadState.stage === 'processing' ? 'AI is analyzing content and generating test questions...' :
+                             uploadState.stage === 'processing' ? 'AI is analyzing content...' :
                              uploadState.stage === 'generating_transcript' ? 'AI is generating transcript...' :
+                             uploadState.stage === 'generating_quiz' ? 'AI is generating quiz...' :
                              'Processing...'}
                           </span>
                           <span className="text-blue-600">{uploadState.progress.toFixed(0)}%</span>
@@ -810,6 +840,11 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                             AI is generating transcript from video audio...
                           </p>
                         )}
+                        {uploadState.stage === 'generating_quiz' && (
+                          <p className="text-xs text-blue-600">
+                            AI is generating quiz questions from video content...
+                          </p>
+                        )}
                       </div>
                     )}
 
@@ -818,7 +853,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                       <div className="flex items-center p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
                         <CheckCircle className="w-5 h-5 mr-2 flex-shrink-0" />
                         <span className="text-sm">
-                          Video uploaded successfully with AI-generated {videoForm.generateTranscript ? 'tests and transcript!' : 'tests!'}
+                          Video uploaded successfully with AI-generated {videoForm.generateTranscript ? 'tests and transcript!' : videoForm.generateQuiz ? 'tests!' : ''}
                         </span>
                       </div>
                     )}
@@ -837,7 +872,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                           disabled={uploadState.uploading}
                         />
                       </div>
-                      
+
                       <div>
                         <label className="text-sm font-medium text-dark-700 block mb-2">
                           Section *
@@ -913,7 +948,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                           AI Helper
                         </Button>
                       </div>
-                      
+
                       <textarea
                         name="aiPrompt"
                         rows={4}
@@ -939,7 +974,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                     {/* AI Features Section */}
                     <div className="space-y-4">
                       <h4 className="text-sm font-medium text-dark-700">AI Features</h4>
-                      
+
                       <div className="flex items-center">
                         <label className="flex items-center">
                           <input
@@ -959,18 +994,45 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                         )}
                       </div>
 
-                      {videoForm.generateTranscript && hasOpenAI && (
+                      <div className="flex items-center">
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            name="generateQuiz"
+                            checked={videoForm.generateQuiz}
+                            onChange={handleVideoFormChange}
+                            className="mr-2"
+                            disabled={uploadState.uploading || !hasOpenAI}
+                          />
+                          <span className="text-sm text-dark-700">
+                            Generate quiz questions automatically
+                          </span>
+                        </label>
+                        {!hasOpenAI && (
+                          <span className="ml-2 text-xs text-red-500">(OpenAI API key required)</span>
+                        )}
+                      </div>
+
+                      {(videoForm.generateTranscript || videoForm.generateQuiz) && hasOpenAI && (
                         <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
                           <div className="flex items-start">
-                            <FileText className="w-4 h-4 text-green-600 mr-2 mt-0.5 flex-shrink-0" />
+                            <Brain className="w-4 h-4 text-green-600 mr-2 mt-0.5 flex-shrink-0" />
                             <div className="text-xs text-green-800">
-                              <p className="font-medium mb-1">AI Transcript Features:</p>
+                              <p className="font-medium mb-1">AI Features Enabled:</p>
                               <ul className="space-y-1">
-                                <li>• High accuracy speech recognition with OpenAI Whisper</li>
-                                <li>• Automatic punctuation and formatting</li>
-                                <li>• Support for 50+ languages</li>
-                                <li>• Timestamp segments for navigation</li>
-                                <li>• Searchable and downloadable text</li>
+                                {videoForm.generateTranscript && (
+                                  <>
+                                    <li>• High accuracy speech recognition</li>
+                                    <li>• Automatic transcript generation</li>
+                                  </>
+                                )}
+                                {videoForm.generateQuiz && (
+                                  <>
+                                    <li>• Smart quiz generation from content</li>
+                                    <li>• 8 questions across difficulty levels</li>
+                                    <li>• Automatic grading and explanations</li>
+                                  </>
+                                )}
                               </ul>
                             </div>
                           </div>
@@ -1005,7 +1067,6 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                               ))}
                             </select>
                           </div>
-
                           {selectedCategory && (
                             <div className="space-y-4">
                               <div>
@@ -1040,17 +1101,18 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
 
                     {/* Action Buttons */}
                     <div className="flex items-center space-x-4">
-                      <Button 
-                        type="submit" 
+                      <Button
+                        type="submit"
                         disabled={uploadState.uploading || uploadState.stage === 'success'}
                         className="min-w-48"
                       >
                         {uploadState.uploading ? (
                           <>
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            {uploadState.stage === 'uploading' ? 'Uploading Video...' : 
+                            {uploadState.stage === 'uploading' ? 'Uploading Video...' :
                              uploadState.stage === 'processing' ? 'Generating AI Tests...' :
-                             uploadState.stage === 'generating_transcript' ? 'Generating Transcript...' : 'Processing...'}
+                             uploadState.stage === 'generating_transcript' ? 'Generating Transcript...' :
+                             uploadState.stage === 'generating_quiz' ? 'Generating Quiz...' : 'Processing...'}
                           </>
                         ) : uploadState.stage === 'success' ? (
                           <>
@@ -1064,7 +1126,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                           </>
                         )}
                       </Button>
-                      
+
                       <Button
                         type="button"
                         variant="outline"
@@ -1092,7 +1154,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                       .map((section, sectionIndex) => (
                       <div key={section.id} className="border border-dark-200 rounded-lg">
                         {/* Section Header */}
-                        <div 
+                        <div
                           className="flex items-center justify-between p-4 cursor-pointer hover:bg-dark-50"
                           onClick={() => toggleSection(section.id)}
                         >
@@ -1116,7 +1178,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                               </p>
                             </div>
                           </div>
-                          
+
                           <div className="flex items-center space-x-2">
                             <Button
                               variant="outline"
@@ -1149,7 +1211,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                                       </div>
                                       <Play className="w-4 h-4 text-primary-600" />
                                     </div>
-                                    
+
                                     <div className="flex-1 min-w-0">
                                       <h4 className="font-medium text-dark-900 mb-1 truncate">
                                         {video.title}
@@ -1166,7 +1228,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                                         </div>
                                         <div className="flex items-center">
                                           <Target className="w-3 h-3 mr-1" />
-                                          {video.tests.length} test{video.tests.length !== 1 ? 's' : ''}
+                                          {video.tests.length} quiz question{video.tests.length !== 1 ? 's' : ''}
                                         </div>
                                         {video.aiPrompt && (
                                           <div className="flex items-center">
@@ -1174,7 +1236,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                                             AI Enabled
                                           </div>
                                         )}
-                                        {/* Transcript indicator */}
+                                        {/* Enhanced transcript indicator */}
                                         {video.transcript && (
                                           <div className="flex items-center">
                                             <FileText className="w-3 h-3 mr-1" />
@@ -1193,8 +1255,20 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                                         )}
                                       </div>
                                     </div>
-                                    
+
                                     <div className="flex items-center space-x-2 ml-4">
+                                      {/* NEW: Quiz Management button */}
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => openQuizManager(video.id)}
+                                        className="flex items-center"
+                                        title="Manage quiz questions"
+                                      >
+                                        <Target className="w-3 h-3 mr-1" />
+                                        Quiz ({video.tests.length})
+                                      </Button>
+
                                       {/* Transcript button */}
                                       <Button
                                         variant="outline"
@@ -1206,11 +1280,11 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                                         <FileText className="w-3 h-3 mr-1" />
                                         Transcript
                                       </Button>
-                                      
+
                                       <Button variant="outline" size="sm">
                                         <Edit className="w-3 h-3" />
                                       </Button>
-                                      
+
                                       <Button
                                         variant="outline"
                                         size="sm"
@@ -1281,19 +1355,62 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                     <X className="w-6 h-6" />
                   </button>
                 </div>
-
                 {(() => {
                   const video = course.sections
                     ?.flatMap(s => s.videos)
                     ?.find(v => v.id === showTranscriptManager) ||
                     course.videos?.find(v => v.id === showTranscriptManager)
-                  
+
                   return video ? (
                     <TranscriptManager
                       videoId={video.id}
                       videoUrl={video.videoUrl}
                       videoTitle={video.title}
                       onTranscriptGenerated={(transcript) => {
+                        fetchCourse()
+                      }}
+                    />
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className="text-gray-500">Video not found</p>
+                    </div>
+                  )
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Quiz Management Dialog */}
+        {showQuizManager && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-bold text-gray-900 flex items-center">
+                    <Target className="w-6 h-6 mr-2 text-primary-600" />
+                    Quiz Management
+                  </h2>
+                  <button
+                    onClick={closeQuizManager}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+                {(() => {
+                  const video = course.sections
+                    ?.flatMap(s => s.videos)
+                    ?.find(v => v.id === showQuizManager) ||
+                    course.videos?.find(v => v.id === showQuizManager)
+
+                  return video ? (
+                    <QuizManager
+                      videoId={video.id}
+                      videoTitle={video.title}
+                      hasTranscript={!!video.transcript && video.transcript.status === 'COMPLETED'}
+                      transcriptStatus={video.transcript?.status}
+                      onQuizGenerated={() => {
                         fetchCourse()
                       }}
                     />

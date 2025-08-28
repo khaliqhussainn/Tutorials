@@ -1,6 +1,6 @@
-// lib/transcript-generator.ts - Fixed version
 import OpenAI from 'openai'
 import { prisma } from './prisma'
+import { QuizHooks } from '../hooks/quiz-hooks'
 
 interface TranscriptSegment {
   start: number
@@ -27,14 +27,14 @@ export class TranscriptGenerator {
 
   constructor(provider: Provider = 'assemblyai') {
     this.provider = provider
-    
+
     // Initialize OpenAI if available and requested
     if (provider === 'openai' && process.env.OPENAI_API_KEY) {
       this.openai = new OpenAI({
         apiKey: process.env.OPENAI_API_KEY
       })
     }
-    
+
     // Initialize AssemblyAI
     if (provider === 'assemblyai' && process.env.ASSEMBLYAI_API_KEY) {
       this.assemblyApiKey = process.env.ASSEMBLYAI_API_KEY
@@ -43,14 +43,14 @@ export class TranscriptGenerator {
 
   async generateTranscript(videoId: string, videoUrl: string): Promise<TranscriptResponse> {
     console.log(`🎬 Starting transcript generation for video: ${videoId} using ${this.provider}`)
-    
+
     try {
-      // Update status to processing - Fixed: Use uppercase enum
+      // Update status to processing
       await this.updateTranscriptStatus(videoId, 'PROCESSING')
 
       // Generate transcript based on provider
       let result: TranscriptResponse
-      
+
       switch (this.provider) {
         case 'assemblyai':
           result = await this.generateWithAssemblyAI(videoUrl)
@@ -62,23 +62,67 @@ export class TranscriptGenerator {
           throw new Error(`Provider ${this.provider} not supported`)
       }
 
-      // Save successful result - Fixed: Pass segments as JSON-compatible data
+      // Save successful result
       await this.saveTranscript(videoId, result)
-      
+
       console.log(`✅ Transcript generated successfully for video: ${videoId}`)
+
+      // INTEGRATION: Trigger quiz generation after transcript completion
+      this.triggerQuizGeneration(videoId).catch(error => {
+        console.error('Failed to trigger quiz generation after transcript:', error)
+      })
+
       return result
-      
+
     } catch (error) {
       console.error(`❌ Failed to generate transcript for video ${videoId}:`, error)
-      
-      // Save error status - Fixed: Use uppercase enum
+
+      // Save error status
       await this.updateTranscriptStatus(
-        videoId, 
-        'FAILED', 
+        videoId,
+        'FAILED',
         error instanceof Error ? error.message : 'Unknown error'
       )
-      
+
       throw error
+    }
+  }
+
+  // NEW: Trigger quiz generation after transcript completion
+  private async triggerQuizGeneration(videoId: string): Promise<void> {
+    try {
+      console.log(`📝 Transcript completed for video: ${videoId}, triggering quiz generation...`)
+
+      // Call the quiz generation API
+      const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/admin/videos/${videoId}/generate-quiz`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          regenerate: true, // Regenerate since we now have transcript
+          source: 'transcript_completion'
+        })
+      })
+      if (response.ok) {
+        const result = await response.json()
+        console.log(`✅ Quiz generated after transcript: ${result.count} questions created`)
+      } else {
+        const error = await response.json()
+        console.error('Quiz generation API error:', error)
+      }
+    } catch (error) {
+      console.error('Failed to call quiz generation API:', error)
+
+      // Fallback: Try direct generation if API call fails
+      try {
+        const { TranscriptQuizGenerator } = await import('./quiz-generator')
+        const generator = new TranscriptQuizGenerator()
+        await generator.generateQuizFromVideo(videoId)
+        console.log('✅ Quiz generated via direct call after API failure')
+      } catch (directError) {
+        console.error('Direct quiz generation also failed:', directError)
+      }
     }
   }
 
@@ -86,9 +130,7 @@ export class TranscriptGenerator {
     if (!this.assemblyApiKey) {
       throw new Error('AssemblyAI API key not configured')
     }
-
     console.log('🤖 Using AssemblyAI for transcription')
-
     try {
       // Step 1: Upload audio file to AssemblyAI
       console.log('📤 Uploading audio to AssemblyAI...')
@@ -99,11 +141,9 @@ export class TranscriptGenerator {
         },
         body: await this.fetchAudioAsBuffer(audioUrl)
       })
-
       if (!uploadResponse.ok) {
         throw new Error(`Upload failed: ${uploadResponse.statusText}`)
       }
-
       const { upload_url } = await uploadResponse.json()
       console.log('✅ Audio uploaded successfully')
 
@@ -129,11 +169,9 @@ export class TranscriptGenerator {
           dual_channel: false,
         }),
       })
-
       if (!transcriptResponse.ok) {
         throw new Error(`Transcription request failed: ${transcriptResponse.statusText}`)
       }
-
       const transcriptData = await transcriptResponse.json()
       const transcriptId = transcriptData.id
 
@@ -142,45 +180,42 @@ export class TranscriptGenerator {
       let transcript = null
       let attempts = 0
       const maxAttempts = 120 // 10 minutes max (5s intervals)
-
       while (attempts < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, 5000)) // Wait 5 seconds
-        
+
         const statusResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
           headers: {
             'Authorization': this.assemblyApiKey,
           },
         })
-        
+
         if (!statusResponse.ok) {
           throw new Error(`Status check failed: ${statusResponse.statusText}`)
         }
-        
+
         transcript = await statusResponse.json()
-        
+
         console.log(`📊 Transcription status: ${transcript.status} (attempt ${attempts + 1}/${maxAttempts})`)
-        
+
         if (transcript.status === 'completed') {
           break
         } else if (transcript.status === 'error') {
           throw new Error(`Transcription failed: ${transcript.error}`)
         }
-        
+
         attempts++
       }
-
       if (!transcript || transcript.status !== 'completed') {
         throw new Error('Transcription timed out')
       }
 
-      // Step 4: Process segments - Fixed: Better segment processing
+      // Step 4: Process segments
       const segments: TranscriptSegment[] = []
-      
+
       if (transcript.utterances && transcript.utterances.length > 0) {
-        // Use utterances for speaker-separated segments
         transcript.utterances.forEach((utterance: any) => {
           segments.push({
-            start: utterance.start / 1000, // Convert ms to seconds
+            start: utterance.start / 1000,
             end: utterance.end / 1000,
             text: utterance.text,
             confidence: utterance.confidence,
@@ -188,7 +223,6 @@ export class TranscriptGenerator {
           })
         })
       } else if (transcript.words && transcript.words.length > 0) {
-        // Fallback: Group words into segments
         segments.push(...this.groupWordsIntoSentences(transcript.words.map((word: any) => ({
           start: word.start / 1000,
           end: word.end / 1000,
@@ -196,9 +230,7 @@ export class TranscriptGenerator {
           confidence: word.confidence
         }))))
       }
-
       console.log(`✅ Transcription completed with ${segments.length} segments`)
-
       return {
         transcript: transcript.text || '',
         segments,
@@ -206,7 +238,6 @@ export class TranscriptGenerator {
         confidence: transcript.confidence || 0.95,
         provider: 'assemblyai'
       }
-
     } catch (error) {
       console.error('AssemblyAI transcription error:', error)
       throw new Error(`AssemblyAI transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -217,28 +248,19 @@ export class TranscriptGenerator {
     if (!this.openai) {
       throw new Error('OpenAI not configured')
     }
-
     console.log('🤖 Using OpenAI Whisper for transcription')
-
     try {
-      // Download audio file
       const audioResponse = await fetch(audioUrl)
       if (!audioResponse.ok) {
         throw new Error(`Failed to download audio: ${audioResponse.statusText}`)
       }
-
       const audioBuffer = await audioResponse.arrayBuffer()
       const audioFile = new File([audioBuffer], 'audio.mp3', { type: 'audio/mpeg' })
-
-      // Check file size (OpenAI limit is 25MB)
-      const maxSize = 25 * 1024 * 1024 // 25MB
+      const maxSize = 25 * 1024 * 1024
       if (audioFile.size > maxSize) {
         throw new Error(`Audio file too large: ${(audioFile.size / 1024 / 1024).toFixed(1)}MB (max 25MB)`)
       }
-
       console.log(`🎵 Audio file size: ${(audioFile.size / 1024 / 1024).toFixed(1)}MB`)
-
-      // Create transcription
       const transcription = await this.openai.audio.transcriptions.create({
         file: audioFile,
         model: 'whisper-1',
@@ -246,15 +268,12 @@ export class TranscriptGenerator {
         response_format: 'verbose_json',
         timestamp_granularities: ['segment']
       })
-
-      // Process the response
       const segments: TranscriptSegment[] = (transcription.segments || []).map((segment: any) => ({
         start: segment.start,
         end: segment.end,
         text: segment.text.trim(),
         confidence: segment.avg_logprob ? Math.exp(segment.avg_logprob) : undefined
       }))
-
       return {
         transcript: transcription.text,
         segments,
@@ -262,11 +281,9 @@ export class TranscriptGenerator {
         confidence: 0.9,
         provider: 'openai'
       }
-
     } catch (error: any) {
       console.error('OpenAI transcription error:', error)
-      
-      // Enhanced error handling
+
       if (error.status === 429 || error.code === 'insufficient_quota') {
         throw new Error('OpenAI API quota exceeded. Please check your billing and usage limits.')
       } else if (error.status === 401) {
@@ -274,7 +291,7 @@ export class TranscriptGenerator {
       } else if (error.status === 413) {
         throw new Error('Audio file too large for OpenAI API (max 25MB).')
       }
-      
+
       throw new Error(`OpenAI transcription failed: ${error.message || 'Unknown error'}`)
     }
   }
@@ -289,7 +306,6 @@ export class TranscriptGenerator {
 
   private groupWordsIntoSentences(words: TranscriptSegment[]): TranscriptSegment[] {
     if (words.length === 0) return []
-
     const sentences: TranscriptSegment[] = []
     let currentSentence: TranscriptSegment = {
       start: words[0].start,
@@ -298,18 +314,14 @@ export class TranscriptGenerator {
       confidence: words[0].confidence,
       speaker: words[0].speaker
     }
-
     for (let i = 1; i < words.length; i++) {
       const word = words[i]
       const prevWord = words[i - 1]
-
-      // Check if this should start a new sentence
-      const shouldStartNewSentence = 
-        word.start - prevWord.end > 2 || // Long pause
-        prevWord.text.match(/[.!?]$/) || // Previous word ends with punctuation
-        (word.speaker && word.speaker !== currentSentence.speaker) || // Speaker change
-        currentSentence.text.split(' ').length >= 20 // Max words per segment
-
+      const shouldStartNewSentence =
+        word.start - prevWord.end > 2 ||
+        prevWord.text.match(/[.!?]$/) ||
+        (word.speaker && word.speaker !== currentSentence.speaker) ||
+        currentSentence.text.split(' ').length >= 20
       if (shouldStartNewSentence) {
         sentences.push(currentSentence)
         currentSentence = {
@@ -320,33 +332,27 @@ export class TranscriptGenerator {
           speaker: word.speaker
         }
       } else {
-        // Add to current sentence
         currentSentence.end = word.end
         currentSentence.text += ' ' + word.text
-        // Average confidence
         if (currentSentence.confidence && word.confidence) {
           currentSentence.confidence = (currentSentence.confidence + word.confidence) / 2
         }
       }
     }
-
-    // Add the last sentence
     sentences.push(currentSentence)
-
     return sentences
   }
 
-  // Fixed: Use uppercase enum values
   private async updateTranscriptStatus(
-    videoId: string, 
+    videoId: string,
     status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED',
     error?: string
   ): Promise<void> {
     try {
       await prisma.transcript.upsert({
         where: { videoId },
-        update: { 
-          status, 
+        update: {
+          status,
           error: error || null,
           updatedAt: new Date()
         },
@@ -362,7 +368,6 @@ export class TranscriptGenerator {
     }
   }
 
-  // Fixed: Properly handle JSON segments
   private async saveTranscript(videoId: string, result: TranscriptResponse): Promise<void> {
     try {
       await prisma.transcript.upsert({
@@ -370,7 +375,7 @@ export class TranscriptGenerator {
         update: {
           content: result.transcript,
           language: result.language,
-          segments: result.segments as any, // Cast to any to satisfy Prisma JSON type
+          segments: result.segments as any,
           status: 'COMPLETED',
           confidence: result.confidence,
           provider: result.provider,
@@ -381,22 +386,24 @@ export class TranscriptGenerator {
           videoId,
           content: result.transcript,
           language: result.language,
-          segments: result.segments as any, // Cast to any to satisfy Prisma JSON type
+          segments: result.segments as any,
           status: 'COMPLETED',
           confidence: result.confidence,
           provider: result.provider,
           generatedAt: new Date()
         }
       })
-
       console.log(`💾 Transcript saved successfully for video: ${videoId}`)
+
+      // INTEGRATION: Add quiz generation hook
+      console.log(`📝 Transcript saved, triggering quiz generation...`)
+      QuizHooks.onTranscriptCompleted(videoId).catch(console.error)
     } catch (error) {
       console.error('Failed to save transcript:', error)
       throw error
     }
   }
 
-  // Auto-detect best provider
   static getBestProvider(): Provider {
     if (process.env.ASSEMBLYAI_API_KEY) {
       return 'assemblyai'
@@ -406,14 +413,13 @@ export class TranscriptGenerator {
     throw new Error('No transcript provider configured')
   }
 
-  // Static method for bulk processing
   static async generateTranscriptsForAllVideos(): Promise<void> {
     console.log('🚀 Starting bulk transcript generation...')
-    
+
     try {
       const provider = TranscriptGenerator.getBestProvider()
       console.log(`Using provider: ${provider}`)
-      
+
       const videos = await prisma.video.findMany({
         where: {
           AND: [
@@ -436,25 +442,19 @@ export class TranscriptGenerator {
         },
         take: 50
       })
-
       console.log(`📹 Found ${videos.length} videos needing transcripts`)
-
       const generator = new TranscriptGenerator(provider)
-
       for (const video of videos) {
         try {
           console.log(`Processing: ${video.title}`)
           await generator.generateTranscript(video.id, video.videoUrl)
-          
-          // Add delay to avoid rate limiting
+
           await new Promise(resolve => setTimeout(resolve, 3000))
-          
+
         } catch (error) {
           console.error(`Failed to process video ${video.title}:`, error)
-          // Continue with next video
         }
       }
-
       console.log('✅ Bulk transcript generation completed')
     } catch (error) {
       console.error('Bulk transcript generation failed:', error)
