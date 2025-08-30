@@ -97,3 +97,69 @@ export async function POST(
     }, { status: statusCode })
   }
 }
+
+export async function GET(
+  request: Request,
+  { params }: { params: { videoId: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || session.user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const transcript = await prisma.transcript.findUnique({
+      where: { videoId: params.videoId },
+    });
+
+    if (!transcript) {
+      return NextResponse.json(
+        { hasTranscript: false, message: "No transcript found" },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      hasTranscript: true,
+      transcript: transcript.content,
+      language: transcript.language,
+      status: transcript.status,
+      segments: transcript.segments,
+      confidence: transcript.confidence,
+      provider: transcript.provider,
+    });
+  } catch (error) {
+    console.error("Error fetching transcript:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch transcript" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: { videoId: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || session.user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    await prisma.transcript.deleteMany({
+      where: { videoId: params.videoId },
+    });
+
+    return NextResponse.json(
+      { success: true, message: "Transcript deleted" },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("Error deleting transcript:", error);
+    return NextResponse.json(
+      { error: "Failed to delete transcript" },
+      { status: 500 }
+    );
+  }
+}

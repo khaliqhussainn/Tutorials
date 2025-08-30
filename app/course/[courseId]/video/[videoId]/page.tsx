@@ -1,11 +1,13 @@
+// app/course/[courseId]/video/[videoId]/page.tsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
-import { Card, CardContent } from "@/components/ui/Card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
 import {
   VideoPlayerWithTranscript,
   VideoPlayerRef,
@@ -16,26 +18,24 @@ import {
   CheckCircle, 
   Clock, 
   Target, 
-  Award 
+  Award,
+  XCircle,
+  ChevronRight,
+  ChevronLeft,
+  Brain,
+  HelpCircle,
+  RefreshCw
 } from "lucide-react";
 
-// Import new components
+// Import existing components
 import { VideoPageHeader } from "@/components/video/VideoPageHeader";
-import { CourseSidebar } from "@/components/video/CourseSidebar";
 import { TabNavigation } from "@/components/video/TabNavigation";
 import { QATab } from "@/components/video/QATab";
 import { ReviewsTab } from "@/components/video/ReviewsTab";
 import { AnnouncementsTab } from "@/components/video/AnnouncementsTab";
 import { AboutTab } from "@/components/video/AboutTab";
 import { LearningToolsTab } from "@/components/video/LearningToolsTab";
-
-// Updated interfaces for quiz system
-interface TranscriptSegment {
-  start: number;
-  end: number;
-  text: string;
-  confidence?: number;
-}
+import { EnhancedCourseSidebar } from "@/components/video/CourseSidebar";
 
 interface Test {
   id: string;
@@ -43,19 +43,9 @@ interface Test {
   options: string[];
   correct: number;
   explanation: string;
-  difficulty: 'easy' | 'medium' | 'hard';
-  points: number;
-  order: number;
-}
-
-interface QuizAttempt {
-  id: string;
-  score: number;
-  passed: boolean;
-  answers: number[];
-  timeSpent: number;
-  completedAt: string;
-  attemptNumber: number;
+  difficulty?: 'easy' | 'medium' | 'hard';
+  points?: number;
+  order?: number;
 }
 
 interface Video {
@@ -72,7 +62,7 @@ interface Video {
     content: string;
     status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
     language: string;
-    segments?: TranscriptSegment[];
+    segments?: any[];
     confidence?: number;
     provider?: string;
   };
@@ -82,7 +72,13 @@ interface CourseSection {
   id: string;
   title: string;
   order: number;
-  videos: { id: string; order: number; title: string; duration?: number; tests?: Test[] }[];
+  videos: { 
+    id: string; 
+    order: number; 
+    title: string; 
+    duration?: number; 
+    tests?: Test[] 
+  }[];
 }
 
 interface Course {
@@ -93,7 +89,13 @@ interface Course {
   category: string;
   level: string;
   sections: CourseSection[];
-  videos: { id: string; order: number; title: string; duration?: number; tests?: Test[] }[];
+  videos: { 
+    id: string; 
+    order: number; 
+    title: string; 
+    duration?: number; 
+    tests?: Test[] 
+  }[];
   _count: { enrollments: number };
   rating?: number;
 }
@@ -108,6 +110,16 @@ interface VideoProgress {
   hasAccess: boolean;
 }
 
+interface QuizAttempt {
+  id?: string;
+  score: number;
+  passed: boolean;
+  answers: number[];
+  timeSpent: number;
+  completedAt: string;
+  attemptNumber?: number;
+}
+
 interface CourseQuestion {
   id: string;
   title: string;
@@ -119,22 +131,9 @@ interface CourseQuestion {
     name: string;
     image?: string;
   };
-  answers: CourseAnswer[];
+  answers: any[];
   _count: {
     answers: number;
-  };
-}
-
-interface CourseAnswer {
-  id: string;
-  content: string;
-  isCorrect: boolean;
-  upvotes: number;
-  createdAt: string;
-  user: {
-    name: string;
-    image?: string;
-    role: string;
   };
 }
 
@@ -181,9 +180,12 @@ export default function VideoPage({
 }) {
   const { data: session } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const playerRef = useRef<VideoPlayerRef>(null);
 
-  // Existing state
+  // Check if we're in quiz mode
+  const isQuizMode = searchParams?.get('mode') === 'quiz';
+
   const [video, setVideo] = useState<Video | null>(null);
   const [course, setCourse] = useState<Course | null>(null);
   const [videoProgress, setVideoProgress] = useState<VideoProgress[]>([]);
@@ -199,31 +201,39 @@ export default function VideoPage({
   const [currentVideoTime, setCurrentVideoTime] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // Dynamic content state
+  // Quiz state
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [answers, setAnswers] = useState<number[]>([]);
+  const [selectedAnswer, setSelectedAnswer] = useState<number>(-1);
+  const [showResults, setShowResults] = useState(false);
+  const [quizStarted, setQuizStarted] = useState(false);
+  const [startTime, setStartTime] = useState<Date | null>(null);
+  const [timeSpent, setTimeSpent] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [showExplanation, setShowExplanation] = useState(false);
+  const [previousAttempts, setPreviousAttempts] = useState<QuizAttempt[]>([]);
+
+  // Content state
   const [questions, setQuestions] = useState<CourseQuestion[]>([]);
   const [announcements, setAnnouncements] = useState<CourseAnnouncement[]>([]);
   const [reviews, setReviews] = useState<CourseReviewData[]>([]);
   const [reviewStats, setReviewStats] = useState<ReviewStats | null>(null);
   const [userReview, setUserReview] = useState<CourseReviewData | null>(null);
 
-  // NEW: Quiz-related state
-  const [quizAttempts, setQuizAttempts] = useState<QuizAttempt[]>([]);
-  const [showQuizPrompt, setShowQuizPrompt] = useState(false);
-  const [quizRequired, setQuizRequired] = useState(false);
-
-  // Updated useEffect hooks
   useEffect(() => {
     if (session) {
       fetchVideoData();
       fetchVideoProgress();
       checkVideoAccess();
-      checkQuizRequirement();
-      fetchQuizAttempts();
       fetchQuestions();
       fetchAnnouncements();
       fetchReviews();
+      
+      if (isQuizMode) {
+        fetchPreviousAttempts();
+      }
     }
-  }, [params.videoId, session]);
+  }, [params.videoId, session, isQuizMode]);
 
   useEffect(() => {
     if (course?.sections) {
@@ -232,33 +242,29 @@ export default function VideoPage({
     }
   }, [course]);
 
-  // NEW: Quiz-related fetch functions
-  const fetchQuizAttempts = async () => {
+  // Quiz timer
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (quizStarted && startTime && !showResults && isQuizMode) {
+      interval = setInterval(() => {
+        setTimeSpent(Math.floor((Date.now() - startTime.getTime()) / 1000));
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [quizStarted, startTime, showResults, isQuizMode]);
+
+  const fetchPreviousAttempts = async () => {
     try {
       const response = await fetch(`/api/videos/${params.videoId}/quiz-attempts`);
       if (response.ok) {
         const attempts = await response.json();
-        setQuizAttempts(attempts);
+        setPreviousAttempts(attempts);
       }
     } catch (error) {
-      console.error("Error fetching quiz attempts:", error);
+      console.error("Error fetching previous attempts:", error);
     }
   };
 
-  const checkQuizRequirement = async () => {
-    try {
-      const response = await fetch(`/api/videos/${params.videoId}/quiz-requirement`);
-      if (response.ok) {
-        const data = await response.json();
-        setQuizRequired(data.needsQuiz);
-        setShowQuizPrompt(data.needsQuiz);
-      }
-    } catch (error) {
-      console.error("Error checking quiz requirement:", error);
-    }
-  };
-
-  // Existing fetch functions
   const fetchQuestions = async () => {
     try {
       const response = await fetch(`/api/courses/${params.courseId}/questions`);
@@ -309,6 +315,11 @@ export default function VideoPage({
         setVideo(videoData);
         setCourse(courseData);
 
+        // Initialize quiz answers if in quiz mode
+        if (isQuizMode && videoData.tests) {
+          setAnswers(new Array(videoData.tests.length).fill(-1));
+        }
+
         if (videoData.sectionId) {
           const section = courseData.sections?.find(
             (s: CourseSection) => s.id === videoData.sectionId
@@ -355,11 +366,13 @@ export default function VideoPage({
     }
   };
 
-  // Event handlers
+  // Video handlers
   const handleVideoProgress = async (progress: {
     played: number;
     playedSeconds: number;
   }) => {
+    if (isQuizMode) return;
+    
     setCurrentVideoTime(progress.playedSeconds);
 
     if (progress.playedSeconds > watchTime) {
@@ -382,42 +395,132 @@ export default function VideoPage({
     }
   };
 
-  // UPDATED: handleVideoEnd with quiz checking
   const handleVideoEnd = async () => {
-    if (!videoCompleted) {
-      setVideoCompleted(true);
+    if (isQuizMode || videoCompleted) return;
+    
+    setVideoCompleted(true);
 
-      try {
-        await fetch(`/api/progress/video`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            videoId: params.videoId,
-            completed: true,
-            watchTime: video?.duration || 0,
-          }),
-        });
+    try {
+      await fetch(`/api/progress/video`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoId: params.videoId,
+          completed: true,
+          watchTime: video?.duration || 0,
+        }),
+      });
 
-        await fetchVideoProgress();
-        
-        // Check if quiz is required after completion
-        if (video?.tests && video.tests.length > 0) {
-          await checkQuizRequirement();
-        }
-      } catch (error) {
-        console.error("Error marking video complete:", error);
-      }
+      await fetchVideoProgress();
+    } catch (error) {
+      console.error("Error marking video complete:", error);
     }
   };
 
+  // Quiz handlers
+  const startQuiz = () => {
+    if (!video?.tests) return;
+    
+    setQuizStarted(true);
+    setStartTime(new Date());
+    setCurrentQuestionIndex(0);
+    setAnswers(new Array(video.tests.length).fill(-1));
+    setSelectedAnswer(-1);
+    setShowResults(false);
+    setShowExplanation(false);
+  };
+
+  const handleAnswerSelect = (optionIndex: number) => {
+    setSelectedAnswer(optionIndex);
+    const newAnswers = [...answers];
+    newAnswers[currentQuestionIndex] = optionIndex;
+    setAnswers(newAnswers);
+  };
+
+  const handleNext = () => {
+    if (!video?.tests) return;
+    
+    if (currentQuestionIndex < video.tests.length - 1) {
+      setCurrentQuestionIndex(currentQuestionIndex + 1);
+      setSelectedAnswer(answers[currentQuestionIndex + 1]);
+      setShowExplanation(false);
+    } else {
+      submitQuiz();
+    }
+  };
+
+  const handlePrevious = () => {
+    setCurrentQuestionIndex(currentQuestionIndex - 1);
+    setSelectedAnswer(answers[currentQuestionIndex - 1]);
+    setShowExplanation(false);
+  };
+
+  const submitQuiz = async () => {
+    if (!video?.tests) return;
+    
+    setSubmitting(true);
+    
+    try {
+      const correctAnswers = answers.filter((answer, index) => 
+        answer === video.tests[index].correct
+      ).length;
+      
+      const score = Math.round((correctAnswers / video.tests.length) * 100);
+      const passed = score >= 70;
+
+      const response = await fetch(`/api/progress/quiz`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoId: params.videoId,
+          answers: answers,
+          score,
+          passed,
+          timeSpent
+        })
+      });
+
+      if (response.ok) {
+        setShowResults(true);
+        await fetchVideoProgress();
+        await fetchPreviousAttempts();
+      }
+    } catch (error) {
+      console.error('Error submitting quiz:', error);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const calculateResults = () => {
+    if (!video?.tests) return { correct: 0, total: 0, score: 0, passed: false };
+    
+    const correctAnswers = answers.filter((answer, index) => 
+      answer === video.tests[index].correct
+    ).length;
+    
+    return {
+      correct: correctAnswers,
+      total: video.tests.length,
+      score: Math.round((correctAnswers / video.tests.length) * 100),
+      passed: (correctAnswers / video.tests.length) * 100 >= 70
+    };
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const handleSeekTo = (timeInSeconds: number) => {
-    if (playerRef.current) {
+    if (playerRef.current && !isQuizMode) {
       playerRef.current.seekTo(timeInSeconds, "seconds");
       setCurrentVideoTime(timeInSeconds);
     }
   };
 
-  // UPDATED: Helper function with quiz logic
+  // Helper functions for sidebar
   const getVideoStatus = (
     videoItem: any,
     sectionVideos: any[],
@@ -426,12 +529,10 @@ export default function VideoPage({
   ): string => {
     const progress = videoProgress.find((p) => p.videoId === videoItem.id);
 
-    // If video has quiz questions
     if (videoItem.tests && videoItem.tests.length > 0) {
       if (progress?.completed && progress?.testPassed) return "completed";
       if (progress?.completed && !progress?.testPassed) return "quiz-required";
     } else {
-      // No quiz, just check completion
       if (progress?.completed) return "completed";
     }
 
@@ -481,7 +582,7 @@ export default function VideoPage({
   const getTotalVideos = (): number => {
     const sectionVideos =
       course?.sections?.reduce(
-        (acc, section) => acc + section.videos.length,
+        (acc, section) => acc + (section.videos?.length || 0),
         0
       ) || 0;
     const legacyVideos = course?.videos?.length || 0;
@@ -504,7 +605,9 @@ export default function VideoPage({
     const allVideos: any[] = [];
     if (course?.sections) {
       for (const section of course.sections) {
-        allVideos.push(...section.videos);
+        if (section.videos) {
+          allVideos.push(...section.videos);
+        }
       }
     }
     if (course?.videos) {
@@ -524,76 +627,6 @@ export default function VideoPage({
     return allVideos.reduce((total, video) => total + (video.duration || 0), 0);
   };
 
-  // NEW: Quiz Prompt Modal Component
-  const QuizPromptModal = () => {
-    if (!showQuizPrompt || !video?.tests || video.tests.length === 0) return null;
-
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-lg max-w-md w-full p-6">
-          <div className="text-center">
-            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Target className="w-8 h-8 text-blue-600" />
-            </div>
-            
-            <h2 className="text-xl font-bold text-gray-900 mb-2">
-              Quiz Time!
-            </h2>
-            
-            <p className="text-gray-600 mb-6">
-              You've completed the video. Test your knowledge with a {video.tests.length}-question quiz 
-              to continue to the next lesson.
-            </p>
-
-            <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
-                <div className="font-semibold text-gray-900">{video.tests.length}</div>
-                <div className="text-gray-600">Questions</div>
-              </div>
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
-                <div className="font-semibold text-gray-900">70%</div>
-                <div className="text-gray-600">Passing Score</div>
-              </div>
-            </div>
-
-            {quizAttempts.length > 0 && (
-              <div className="mb-6 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-sm text-yellow-800">
-                  Previous attempts: {quizAttempts.length} 
-                  {quizAttempts.length > 0 && (
-                    <span className="block">
-                      Best score: {Math.max(...quizAttempts.map(a => a.score))}%
-                    </span>
-                  )}
-                </p>
-              </div>
-            )}
-
-            <div className="flex space-x-3">
-              <Button
-                variant="outline"
-                onClick={() => setShowQuizPrompt(false)}
-                className="flex-1"
-              >
-                Review Video
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowQuizPrompt(false);
-                  router.push(`/course/${params.courseId}/video/${params.videoId}/quiz`);
-                }}
-                className="flex-1 bg-blue-600 hover:bg-blue-700"
-              >
-                Take Quiz
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // NEW: Enhanced VideoInfoSection with quiz status
   const formatDuration = (seconds: number | null | undefined): string => {
     if (!seconds || seconds === 0) return "0:00";
     const hours = Math.floor(seconds / 3600);
@@ -606,98 +639,346 @@ export default function VideoPage({
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
-  const EnhancedVideoInfoSection = () => {
-    const hasQuiz = !!(video?.tests && video.tests.length > 0);
-    const currentProgress = videoProgress.find(p => p.videoId === params.videoId);
-    const quizPassed = currentProgress?.testPassed || false;
-    const quizScore = currentProgress?.testScore;
+  // Render functions
+  const renderVideoPlayer = () => {
+    if (isQuizMode) return null;
 
+    return (
+      <div className="bg-black p-6">
+        <VideoPlayerWithTranscript
+          ref={playerRef}
+          videoUrl={video!.videoUrl}
+          title={video!.title}
+          videoId={video!.id}
+          onProgress={handleVideoProgress}
+          onEnded={handleVideoEnd}
+          canWatch={canWatch}
+          initialTime={watchTime}
+        />
+      </div>
+    );
+  };
+
+  const renderQuizInterface = () => {
+    if (!isQuizMode || !video?.tests?.length) return null;
+
+    if (!quizStarted && !showResults) {
+      return (
+        <div className="bg-gray-50 p-6">
+          <Card className="max-w-2xl mx-auto border-0 shadow-lg">
+            <CardContent className="p-8 text-center">
+              <div className="w-20 h-20 bg-[#001e62]/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Brain className="w-10 h-10 text-[#001e62]" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">
+                Ready to test your knowledge?
+              </h2>
+              <p className="text-gray-600 leading-relaxed mb-8">
+                This quiz contains {video.tests.length} questions and should take about {Math.ceil(video.tests.length * 1.5)} minutes to complete.
+                You need a score of 70% or higher to pass.
+              </p>
+
+              <div className="grid md:grid-cols-3 gap-6 mb-8">
+                <div className="text-center p-4 bg-[#001e62]/5 rounded-lg border border-[#001e62]/20">
+                  <div className="text-2xl font-bold text-[#001e62] mb-1">
+                    {video.tests.length}
+                  </div>
+                  <div className="text-sm text-[#001e62]">Questions</div>
+                </div>
+                <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
+                  <div className="text-2xl font-bold text-green-600 mb-1">70%</div>
+                  <div className="text-sm text-green-800">Passing Score</div>
+                </div>
+                <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="text-2xl font-bold text-blue-600 mb-1">
+                    {previousAttempts.length}
+                  </div>
+                  <div className="text-sm text-blue-800">Previous Attempts</div>
+                </div>
+              </div>
+
+              <Button
+                size="lg"
+                onClick={startQuiz}
+                className="min-w-48 bg-[#001e62] hover:bg-[#001e62]/90"
+              >
+                <Target className="w-5 h-5 mr-2" />
+                Start Quiz
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    if (quizStarted && !showResults) {
+      const currentQuestion = video.tests[currentQuestionIndex];
+      const isLastQuestion = currentQuestionIndex === video.tests.length - 1;
+      const isFirstQuestion = currentQuestionIndex === 0;
+
+      return (
+        <div className="bg-gray-50 p-6">
+          <div className="max-w-3xl mx-auto">
+            <div className="mb-8">
+              <div className="flex justify-between text-sm text-gray-600 mb-3">
+                <span>Question {currentQuestionIndex + 1} of {video.tests.length}</span>
+                <div className="flex items-center space-x-4">
+                  <div className="flex items-center">
+                    <Clock className="w-4 h-4 mr-1" />
+                    <span>{formatTime(timeSpent)}</span>
+                  </div>
+                  <span>{Math.round(((currentQuestionIndex + 1) / video.tests.length) * 100)}% Complete</span>
+                </div>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3">
+                <div 
+                  className="bg-[#001e62] h-3 rounded-full transition-all duration-300"
+                  style={{ width: `${((currentQuestionIndex + 1) / video.tests.length) * 100}%` }}
+                />
+              </div>
+            </div>
+
+            <Card className="border-0 shadow-lg">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-xl">
+                  {currentQuestion.question}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-3">
+                  {currentQuestion.options.map((option, index) => (
+                    <button
+                      key={index}
+                      onClick={() => handleAnswerSelect(index)}
+                      className={`w-full p-4 text-left rounded-lg border-2 transition-all duration-200 ${
+                        selectedAnswer === index
+                          ? 'border-[#001e62] bg-[#001e62]/5 shadow-md'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center">
+                        <div className={`w-6 h-6 rounded-full border-2 mr-4 flex items-center justify-center ${
+                          selectedAnswer === index
+                            ? 'border-[#001e62] bg-[#001e62]'
+                            : 'border-gray-300'
+                        }`}>
+                          {selectedAnswer === index && (
+                            <div className="w-2 h-2 rounded-full bg-white"></div>
+                          )}
+                        </div>
+                        <span className="text-gray-900">{option}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {selectedAnswer !== -1 && currentQuestion.explanation && (
+                  <div className="mt-4">
+                    <button
+                      onClick={() => setShowExplanation(!showExplanation)}
+                      className="flex items-center text-[#001e62] hover:text-[#001e62]/80 text-sm"
+                    >
+                      <HelpCircle className="w-4 h-4 mr-1" />
+                      {showExplanation ? 'Hide' : 'Show'} explanation
+                    </button>
+                    
+                    {showExplanation && (
+                      <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p className="text-blue-800 text-sm">{currentQuestion.explanation}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center pt-6 border-t">
+                  <Button
+                    variant="outline"
+                    onClick={handlePrevious}
+                    disabled={isFirstQuestion}
+                    className="flex items-center"
+                  >
+                    <ChevronLeft className="w-4 h-4 mr-1" />
+                    Previous
+                  </Button>
+
+                  <div className="text-center">
+                    {selectedAnswer === -1 ? (
+                      <p className="text-sm text-gray-500">Select an answer to continue</p>
+                    ) : (
+                      <div className="flex items-center justify-center text-[#001e62]">
+                        <CheckCircle className="w-4 h-4 mr-1" />
+                        <span className="text-sm">Answer selected</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <Button
+                    onClick={handleNext}
+                    disabled={selectedAnswer === -1 || submitting}
+                    className="flex items-center min-w-32 bg-[#001e62] hover:bg-[#001e62]/90"
+                  >
+                    {submitting ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                        Submitting...
+                      </>
+                    ) : isLastQuestion ? (
+                      <>
+                        Submit Quiz
+                        <Target className="w-4 h-4 ml-2" />
+                      </>
+                    ) : (
+                      <>
+                        Next
+                        <ChevronRight className="w-4 h-4 ml-1" />
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      );
+    }
+
+    if (showResults) {
+      const results = calculateResults();
+      
+      return (
+        <div className="bg-gray-50 p-6">
+          <div className="max-w-2xl mx-auto">
+            <Card className={`border-2 shadow-lg ${
+              results.passed ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
+            }`}>
+              <CardContent className="p-8 text-center">
+                <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${
+                  results.passed ? 'bg-green-100' : 'bg-red-100'
+                }`}>
+                  {results.passed ? (
+                    <Award className="w-10 h-10 text-green-600" />
+                  ) : (
+                    <XCircle className="w-10 h-10 text-red-600" />
+                  )}
+                </div>
+                
+                <h2 className={`text-3xl font-bold mb-4 ${
+                  results.passed ? 'text-green-800' : 'text-red-800'
+                }`}>
+                  {results.passed ? 'Congratulations!' : 'Keep Learning!'}
+                </h2>
+                
+                <div className="mb-6">
+                  <div className={`text-4xl font-bold mb-2 ${
+                    results.passed ? 'text-green-700' : 'text-red-700'
+                  }`}>
+                    {results.score}%
+                  </div>
+                  <p className={`text-lg ${
+                    results.passed ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {results.correct} out of {results.total} questions correct
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-center space-x-4">
+                  {results.passed ? (
+                    <Button 
+                      onClick={() => router.push(`/course/${params.courseId}/video/${params.videoId}`)}
+                      className="bg-[#001e62] hover:bg-[#001e62]/90"
+                    >
+                      Continue Learning
+                    </Button>
+                  ) : (
+                    <>
+                      <Button 
+                        onClick={startQuiz}
+                        className="bg-[#001e62] hover:bg-[#001e62]/90"
+                      >
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Retake Quiz
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        onClick={() => router.push(`/course/${params.courseId}/video/${params.videoId}`)}
+                      >
+                        Review Video
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  const renderInfoSection = () => {
     return (
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-start justify-between mb-4">
           <div className="flex-1">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">{video?.title}</h1>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+              {isQuizMode ? `Quiz: ${video?.title}` : video?.title}
+            </h1>
             {video?.description && (
               <p className="text-gray-600 leading-relaxed">{video.description}</p>
             )}
           </div>
           
-          <div className="flex items-center space-x-4 ml-6">
-            {/* Video completion status */}
-            <div className="text-center">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-1 ${
-                videoCompleted ? 'bg-green-100' : 'bg-gray-100'
-              }`}>
-                {videoCompleted ? (
-                  <CheckCircle className="w-6 h-6 text-green-600" />
-                ) : (
-                  <PlayCircle className="w-6 h-6 text-gray-400" />
-                )}
-              </div>
-              <div className="text-xs text-gray-600">
-                {videoCompleted ? 'Completed' : 'In Progress'}
-              </div>
-            </div>
-
-            {/* Quiz status */}
-            {hasQuiz && (
+          {!isQuizMode && (
+            <div className="flex items-center space-x-4 ml-6">
               <div className="text-center">
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-1 ${
-                  quizPassed ? 'bg-green-100' : 
-                  videoCompleted ? 'bg-yellow-100' : 'bg-gray-100'
+                  videoCompleted ? 'bg-green-100' : 'bg-gray-100'
                 }`}>
-                  {quizPassed ? (
-                    <Award className="w-6 h-6 text-green-600" />
-                  ) : videoCompleted ? (
-                    <Target className="w-6 h-6 text-yellow-600" />
+                  {videoCompleted ? (
+                    <CheckCircle className="w-6 h-6 text-green-600" />
                   ) : (
-                    <Target className="w-6 h-6 text-gray-400" />
+                    <PlayCircle className="w-6 h-6 text-gray-400" />
                   )}
                 </div>
                 <div className="text-xs text-gray-600">
-                  {quizPassed ? `${quizScore}%` : 'Quiz Required'}
+                  {videoCompleted ? 'Completed' : 'In Progress'}
                 </div>
               </div>
-            )}
 
-            {/* Progress info */}
-            <div className="text-right text-sm text-gray-600">
-              <div className="flex items-center mb-1">
-                <Clock className="w-4 h-4 mr-1" />
-                <span>
-                  {formatDuration(watchTime)} / {formatDuration(video?.duration || 0)}
-                </span>
-              </div>
-              <div className="text-xs">
-                Progress: {video?.duration ? Math.round((watchTime / video.duration) * 100) : 0}%
+              <div className="text-right text-sm text-gray-600">
+                <div className="flex items-center mb-1">
+                  <Clock className="w-4 h-4 mr-1" />
+                  <span>
+                    {formatDuration(watchTime)} / {formatDuration(video?.duration || 0)}
+                  </span>
+                </div>
+                <div className="text-xs">
+                  Progress: {video?.duration ? Math.round((watchTime / video.duration) * 100) : 0}%
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Quiz action button */}
-        {hasQuiz && videoCompleted && (
+        {/* Quiz availability banner */}
+        {!isQuizMode && video?.tests && video.tests.length > 0 && videoCompleted && (
           <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
             <div className="flex items-center">
               <Target className="w-5 h-5 text-blue-600 mr-3" />
               <div>
-                <div className="font-medium text-blue-900">
-                  {quizPassed ? 'Quiz Completed' : 'Quiz Available'}
-                </div>
+                <div className="font-medium text-blue-900">Quiz Available</div>
                 <div className="text-sm text-blue-700">
-                  {quizPassed 
-                    ? `You scored ${quizScore}% - You can retake to improve your score`
-                    : 'Complete the quiz to continue to the next lesson'
-                  }
+                  Test your knowledge with {video.tests.length} questions to continue
                 </div>
               </div>
             </div>
             <Button
-              onClick={() => router.push(`/course/${params.courseId}/video/${params.videoId}/quiz`)}
-              variant={quizPassed ? "outline" : "primary"}
-              className={!quizPassed ? "bg-blue-600 hover:bg-blue-700" : ""}
+              onClick={() => router.push(`/course/${params.courseId}/video/${params.videoId}?mode=quiz`)}
+              className="bg-blue-600 hover:bg-blue-700"
             >
-              {quizPassed ? 'Retake Quiz' : 'Take Quiz'}
+              Take Quiz
             </Button>
           </div>
         )}
@@ -705,7 +986,6 @@ export default function VideoPage({
     );
   };
 
-  // Render tab content
   const renderTabContent = () => {
     switch (activeTab) {
       case "about":
@@ -727,7 +1007,7 @@ export default function VideoPage({
           />
         );
       case "notes":
-        return (
+        return !isQuizMode ? (
           <div className="max-w-4xl">
             <NotesTab
               videoId={params.videoId}
@@ -735,6 +1015,10 @@ export default function VideoPage({
               videoDuration={video?.duration || 0}
               onSeekTo={handleSeekTo}
             />
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-gray-500">Notes are only available for video content.</p>
           </div>
         );
       case "announcements":
@@ -763,7 +1047,6 @@ export default function VideoPage({
     }
   };
 
-  // Loading and error states
   if (!session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -774,7 +1057,7 @@ export default function VideoPage({
             </div>
             <h2 className="text-xl font-semibold mb-4">Sign In Required</h2>
             <p className="text-gray-600 mb-6">
-              You need to sign in to access course videos and track your progress.
+              You need to sign in to access course content and track your progress.
             </p>
             <Link href="/auth/signin">
               <Button size="lg" className="bg-[#001e62] hover:bg-[#001e62]/90">
@@ -792,7 +1075,7 @@ export default function VideoPage({
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-[#001e62] mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading video...</p>
+          <p className="text-gray-600">Loading content...</p>
         </div>
       </div>
     );
@@ -803,10 +1086,10 @@ export default function VideoPage({
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">
-            Video Not Found
+            Content Not Found
           </h1>
           <p className="text-gray-600 mb-6">
-            The video you're looking for doesn't exist.
+            The content you're looking for doesn't exist.
           </p>
           <Link href={`/course/${params.courseId}`}>
             <Button className="bg-[#001e62] hover:bg-[#001e62]/90">
@@ -816,6 +1099,12 @@ export default function VideoPage({
         </div>
       </div>
     );
+  }
+
+  // Redirect if trying to access quiz mode but no quiz available
+  if (isQuizMode && (!video.tests || video.tests.length === 0)) {
+    router.push(`/course/${params.courseId}/video/${params.videoId}`);
+    return null;
   }
 
   return (
@@ -828,31 +1117,24 @@ export default function VideoPage({
 
       <div className="flex min-h-[calc(100vh-80px)]">
         <div className="flex-1 bg-white flex flex-col min-w-0">
-          <div className="bg-black p-6">
-            <VideoPlayerWithTranscript
-              ref={playerRef}
-              videoUrl={video.videoUrl}
-              title={video.title}
-              videoId={video.id}
-              onProgress={handleVideoProgress}
-              onEnded={handleVideoEnd}
-              canWatch={canWatch}
-              initialTime={watchTime}
-            />
-          </div>
+          {/* Video Player or Quiz Interface */}
+          {isQuizMode ? renderQuizInterface() : renderVideoPlayer()}
 
-          <EnhancedVideoInfoSection />
+          {/* Info Section */}
+          {renderInfoSection()}
 
-          <div className="flex-1 bg-white">
-            <TabNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
-
-            <div className="p-6 flex-1 overflow-y-auto">
-              {renderTabContent()}
+          {/* Tabs - Only show for video mode */}
+          {!isQuizMode && (
+            <div className="flex-1 bg-white">
+              <TabNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
+              <div className="p-6 flex-1 overflow-y-auto">
+                {renderTabContent()}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
-        <CourseSidebar
+        <EnhancedCourseSidebar
           sidebarOpen={sidebarOpen}
           setSidebarOpen={setSidebarOpen}
           course={course}
@@ -864,11 +1146,9 @@ export default function VideoPage({
           getCompletedVideos={getCompletedVideos}
           getTotalVideos={getTotalVideos}
           getVideoStatus={getVideoStatus}
+          isQuizMode={isQuizMode}
         />
       </div>
-
-      {/* Quiz Prompt Modal */}
-      <QuizPromptModal />
     </div>
   );
 }

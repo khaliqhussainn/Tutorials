@@ -1,4 +1,4 @@
-// lib/quiz-generator.ts - Generate quizzes from transcripts with fallback
+// lib/quiz-generator.ts - COMPLETELY FIXED quiz generation logic
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { prisma } from './prisma'
 
@@ -13,14 +13,6 @@ interface QuizQuestion {
   points: number
 }
 
-interface TranscriptSegment {
-  start: number
-  end: number
-  text: string
-  confidence?: number
-  speaker?: string
-}
-
 export class TranscriptQuizGenerator {
   private model: any
 
@@ -29,7 +21,7 @@ export class TranscriptQuizGenerator {
       this.model = genAI.getGenerativeModel({ 
         model: 'gemini-pro',
         generationConfig: {
-          temperature: 0.8,
+          temperature: 0.7,
           topK: 40,
           topP: 0.95,
         }
@@ -38,10 +30,10 @@ export class TranscriptQuizGenerator {
   }
 
   async generateQuizFromVideo(videoId: string): Promise<QuizQuestion[]> {
-    console.log(`🧠 Starting quiz generation for video: ${videoId}`)
+    console.log(`Starting quiz generation for video: ${videoId}`)
     
     try {
-      // Get video with transcript
+      // Get video with complete data
       const video = await prisma.video.findUnique({
         where: { id: videoId },
         include: {
@@ -61,31 +53,35 @@ export class TranscriptQuizGenerator {
       }
 
       let questions: QuizQuestion[] = []
+      let generationMethod = ''
 
-      // Method 1: Generate from transcript (preferred)
-      if (video.transcript?.status === 'COMPLETED' && video.transcript.content) {
-        console.log('📝 Generating questions from transcript...')
+      // METHOD 1: Generate from transcript (HIGHEST PRIORITY)
+      if (this.shouldUseTranscript(video.transcript)) {
+        console.log(`Using transcript for quiz generation (${video.transcript!.content!.length} chars)`)
         try {
           questions = await this.generateFromTranscript(
-            video.transcript.content,
+            video.transcript!.content!,
             video.title,
             video.description || '',
             video.course?.category || '',
             video.course?.level || 'INTERMEDIATE'
           )
+          generationMethod = 'transcript'
           
           if (questions.length >= 5) {
-            console.log(`✅ Generated ${questions.length} questions from transcript`)
-            await this.saveQuestionsToDatabase(videoId, questions)
+            console.log(`Generated ${questions.length} questions from transcript`)
+            await this.saveQuestionsToDatabase(videoId, questions, generationMethod)
             return questions
+          } else {
+            console.warn(`Transcript generation produced only ${questions.length} questions, falling back`)
           }
         } catch (error) {
-          console.warn('Failed to generate from transcript, falling back to video topic:', error)
+          console.warn('Transcript generation failed, falling back to topic method:', error)
         }
       }
 
-      // Method 2: Fallback to video topic generation
-      console.log('🎯 Falling back to topic-based question generation...')
+      // METHOD 2: Generate from video topic (FALLBACK)
+      console.log('Using topic-based generation as fallback')
       questions = await this.generateFromVideoTopic(
         video.title,
         video.description || '',
@@ -93,19 +89,31 @@ export class TranscriptQuizGenerator {
         video.course?.category || '',
         video.course?.level || 'INTERMEDIATE'
       )
+      generationMethod = 'topic'
 
       if (questions.length > 0) {
-        console.log(`✅ Generated ${questions.length} questions from video topic`)
-        await this.saveQuestionsToDatabase(videoId, questions)
+        console.log(`Generated ${questions.length} questions from topic`)
+        await this.saveQuestionsToDatabase(videoId, questions, generationMethod)
         return questions
       }
 
-      throw new Error('Failed to generate questions using both methods')
+      throw new Error('Failed to generate questions using all available methods')
 
     } catch (error) {
       console.error('Quiz generation error:', error)
       throw error
     }
+  }
+
+  private shouldUseTranscript(transcript: any): boolean {
+    return !!(
+      transcript &&
+      transcript.status === 'COMPLETED' &&
+      transcript.content &&
+      transcript.content.trim().length > 100 &&
+      transcript.confidence &&
+      transcript.confidence > 0.5
+    )
   }
 
   private async generateFromTranscript(
@@ -119,33 +127,10 @@ export class TranscriptQuizGenerator {
       throw new Error('Gemini API not configured')
     }
 
-    const prompt = this.buildTranscriptPrompt(
-      transcript,
-      videoTitle,
-      videoDescription,
-      category,
-      level
-    )
-
-    const result = await this.model.generateContent(prompt)
-    const response = await result.response
-    const text = response.text()
-
-    return this.parseAIResponse(text)
-  }
-
-  private buildTranscriptPrompt(
-    transcript: string,
-    videoTitle: string,
-    videoDescription: string,
-    category: string,
-    level: string
-  ): string {
-    // Truncate transcript if too long (keep most important parts)
     const processedTranscript = this.preprocessTranscript(transcript)
     
-    return `
-You are an expert educational content creator. Create a comprehensive quiz based on the video transcript provided.
+    const prompt = `
+You are an expert educational content creator. Create a comprehensive quiz based EXCLUSIVELY on the video transcript provided.
 
 VIDEO DETAILS:
 - Title: "${videoTitle}"
@@ -158,54 +143,38 @@ ${processedTranscript}
 
 QUIZ REQUIREMENTS:
 1. Generate exactly 8 multiple-choice questions
-2. Base ALL questions directly on the transcript content
-3. Question difficulty distribution:
-   - 2 Easy questions (basic concepts and definitions)
-   - 4 Medium questions (application and understanding)
-   - 2 Hard questions (analysis, evaluation, and complex scenarios)
-4. Each question must have exactly 4 options (A, B, C, D)
-5. Make distractors plausible but clearly incorrect for someone who understood the content
-6. Include detailed explanations for correct answers
+2. Base ALL questions DIRECTLY on content from the transcript
+3. Difficulty distribution: 2 easy, 4 medium, 2 hard questions
+4. Each question has exactly 4 options (A, B, C, D)
+5. Reference specific transcript content in questions
+6. Make distractors plausible but clearly wrong
 
-QUESTION TYPES TO INCLUDE:
-- Key concepts and definitions mentioned in the transcript
-- Specific examples or case studies discussed
-- Step-by-step processes or methodologies explained
-- Important details and facts presented
-- Applications and practical uses mentioned
-- Cause-and-effect relationships explained
-- Comparisons made in the content
-- Problem-solving approaches demonstrated
+CRITICAL: Only use information explicitly mentioned in the transcript. Quote specific phrases when possible.
 
-RESPONSE FORMAT:
-Return ONLY a valid JSON array with this structure:
-
+Return ONLY valid JSON in this format:
 [
   {
-    "question": "Based on the transcript, what is [specific concept mentioned]?",
+    "question": "According to the transcript, what is [specific concept mentioned]?",
     "options": [
-      "Correct answer based on transcript content",
+      "Correct answer from transcript",
       "Plausible but incorrect option",
-      "Another plausible but incorrect option",
-      "Third plausible but incorrect option"
+      "Another plausible distractor",
+      "Third plausible distractor"
     ],
     "correct": 0,
-    "explanation": "According to the transcript, this is correct because [specific reference to transcript content]",
-    "difficulty": "easy|medium|hard",
+    "explanation": "The transcript states: '[brief quote]', which explains why this is correct.",
+    "difficulty": "easy",
     "points": 10
   }
 ]
 
-IMPORTANT GUIDELINES:
-- Quote or reference specific parts of the transcript in questions when possible
-- Ensure questions test comprehension of the actual content presented
-- Avoid questions that require external knowledge not in the transcript
-- Make explanations educational and reference the transcript content
-- Vary question complexity within each difficulty level
-- Focus on the most important and emphasized points in the transcript
+Generate the quiz now:`
 
-Generate the quiz now:
-`.trim()
+    const result = await this.model.generateContent(prompt)
+    const response = await result.response
+    const text = response.text()
+
+    return this.parseAIResponse(text)
   }
 
   private async generateFromVideoTopic(
@@ -219,13 +188,41 @@ Generate the quiz now:
       throw new Error('Gemini API not configured')
     }
 
-    const prompt = this.buildTopicPrompt(
-      videoTitle,
-      videoDescription,
-      aiPrompt,
-      category,
-      level
-    )
+    const prompt = `
+You are an expert educational content creator. Create a quiz for this educational video.
+
+VIDEO DETAILS:
+- Title: "${videoTitle}"
+- Description: "${videoDescription}"
+- AI Context: "${aiPrompt}"
+- Category: ${category}
+- Level: ${level}
+
+REQUIREMENTS:
+1. Generate exactly 8 multiple-choice questions
+2. Difficulty: 2 easy, 4 medium, 2 hard questions
+3. Each question has exactly 4 options
+4. Focus on practical application and understanding
+5. Include real-world scenarios relevant to the topic
+
+Return ONLY valid JSON:
+[
+  {
+    "question": "What is the primary purpose of [topic concept]?",
+    "options": [
+      "Correct answer",
+      "Plausible incorrect option",
+      "Another incorrect option",
+      "Third incorrect option"
+    ],
+    "correct": 0,
+    "explanation": "Detailed explanation of correct answer",
+    "difficulty": "easy",
+    "points": 10
+  }
+]
+
+Generate the quiz now:`
 
     const result = await this.model.generateContent(prompt)
     const response = await result.response
@@ -234,90 +231,17 @@ Generate the quiz now:
     return this.parseAIResponse(text)
   }
 
-  private buildTopicPrompt(
-    videoTitle: string,
-    videoDescription: string,
-    aiPrompt: string,
-    category: string,
-    level: string
-  ): string {
-    return `
-You are an expert educational content creator. Create a comprehensive quiz for an educational video.
-
-VIDEO DETAILS:
-- Title: "${videoTitle}"
-- Description: "${videoDescription}"
-- AI Prompt Context: "${aiPrompt}"
-- Category: ${category}
-- Level: ${level}
-
-QUIZ REQUIREMENTS:
-1. Generate exactly 8 multiple-choice questions
-2. Question difficulty distribution:
-   - 2 Easy questions (basic concepts, definitions)
-   - 4 Medium questions (application, understanding, examples)
-   - 2 Hard questions (analysis, evaluation, complex problem-solving)
-3. Each question must have exactly 4 options (A, B, C, D)
-4. Create questions that would naturally arise from this topic
-5. Include practical applications and real-world scenarios
-6. Test both theoretical understanding and practical application
-
-QUESTION CATEGORIES TO COVER:
-- Fundamental concepts and definitions
-- Key principles and rules
-- Practical applications and use cases
-- Common mistakes and misconceptions
-- Best practices and recommendations
-- Problem-solving scenarios
-- Comparative analysis
-- Advanced techniques and optimizations
-
-RESPONSE FORMAT:
-Return ONLY a valid JSON array:
-
-[
-  {
-    "question": "Clear, specific question about the topic?",
-    "options": [
-      "Correct answer demonstrating understanding",
-      "Plausible but incorrect option",
-      "Another plausible but incorrect option",
-      "Third plausible but incorrect option"
-    ],
-    "correct": 0,
-    "explanation": "Comprehensive explanation of why this is correct and why others are wrong",
-    "difficulty": "easy|medium|hard",
-    "points": 10
-  }
-]
-
-GUIDELINES:
-- Make questions progressively challenging
-- Include scenario-based questions for practical application
-- Ensure all questions are relevant to the specified topic and level
-- Create educational explanations that reinforce learning
-- Test understanding rather than memorization
-- Include current best practices and industry standards where applicable
-
-Generate the quiz now:
-`.trim()
-  }
-
   private preprocessTranscript(transcript: string): string {
-    // Remove excessive whitespace and normalize
     let processed = transcript.replace(/\s+/g, ' ').trim()
     
-    // If transcript is too long (>8000 chars), intelligently truncate
+    // Intelligent truncation for long transcripts
     if (processed.length > 8000) {
-      // Try to keep the first 2000 chars, middle 4000 chars, and last 2000 chars
-      const start = processed.substring(0, 2000)
-      const middle = processed.substring(
-        Math.floor((processed.length - 4000) / 2), 
-        Math.floor((processed.length + 4000) / 2)
-      )
-      const end = processed.substring(processed.length - 2000)
-      
-      processed = `${start}...\n\n[MIDDLE SECTION]\n${middle}\n\n[FINAL SECTION]\n${end}`
+      const sections = [
+        processed.substring(0, 2500),
+        processed.substring(Math.floor(processed.length * 0.4), Math.floor(processed.length * 0.6)),
+        processed.substring(processed.length - 2500)
+      ]
+      processed = sections.join('\n\n[...continuing...]\n\n')
     }
     
     return processed
@@ -325,8 +249,17 @@ Generate the quiz now:
 
   private parseAIResponse(text: string): QuizQuestion[] {
     try {
-      // Find JSON array in the response
-      const jsonMatch = text.match(/\[[\s\S]*\]/)
+      let jsonText = text.trim()
+      
+      // Clean response
+      if (jsonText.startsWith('```json')) {
+        jsonText = jsonText.replace(/```json\s*/, '').replace(/\s*```$/, '')
+      } else if (jsonText.startsWith('```')) {
+        jsonText = jsonText.replace(/```\s*/, '').replace(/\s*```$/, '')
+      }
+      
+      // Extract JSON array
+      const jsonMatch = jsonText.match(/\[[\s\S]*\]/)
       if (!jsonMatch) {
         throw new Error('No JSON array found in AI response')
       }
@@ -334,16 +267,25 @@ Generate the quiz now:
       const questions = JSON.parse(jsonMatch[0])
       
       // Validate and clean questions
-      return questions
+      const validQuestions = questions
         .filter((q: any) => this.validateQuestion(q))
-        .map((q: any) => ({
+        .map((q: any, index: number) => ({
           question: q.question.trim(),
           options: q.options.map((opt: string) => opt.trim()),
           correct: Math.max(0, Math.min(3, parseInt(q.correct) || 0)),
           explanation: q.explanation?.trim() || 'No explanation provided.',
           difficulty: ['easy', 'medium', 'hard'].includes(q.difficulty) ? q.difficulty : 'medium',
-          points: q.points || 10
+          points: q.points || 10,
+          order: index + 1
         }))
+
+      if (validQuestions.length === 0) {
+        throw new Error('No valid questions generated from AI response')
+      }
+
+      console.log(`Validated ${validQuestions.length} questions`)
+      return validQuestions
+      
     } catch (error) {
       console.error('Failed to parse AI response:', error)
       throw new Error('Failed to parse quiz questions from AI response')
@@ -351,30 +293,53 @@ Generate the quiz now:
   }
 
   private validateQuestion(question: any): boolean {
-    return (
+    const isValid = (
       question &&
       typeof question.question === 'string' &&
       question.question.length > 10 &&
       Array.isArray(question.options) &&
       question.options.length === 4 &&
-      question.options.every((opt: any) => typeof opt === 'string' && opt.length > 0) &&
+      question.options.every((opt: any) => typeof opt === 'string' && opt.trim().length > 0) &&
       typeof question.correct === 'number' &&
       question.correct >= 0 &&
-      question.correct <= 3
+      question.correct <= 3 &&
+      question.explanation &&
+      typeof question.explanation === 'string' &&
+      question.explanation.length > 10
     )
+
+    if (!isValid) {
+      console.warn('Invalid question detected:', {
+        hasQuestion: !!question?.question,
+        questionLength: question?.question?.length || 0,
+        hasOptions: Array.isArray(question?.options),
+        optionsCount: question?.options?.length || 0,
+        hasCorrect: typeof question?.correct === 'number',
+        correctValue: question?.correct
+      })
+    }
+
+    return isValid
   }
 
-  private async saveQuestionsToDatabase(videoId: string, questions: QuizQuestion[]): Promise<void> {
+  private async saveQuestionsToDatabase(
+    videoId: string, 
+    questions: QuizQuestion[], 
+    method: string
+  ): Promise<void> {
     try {
-      // Delete existing questions for this video
-      await prisma.test.deleteMany({
+      // Delete existing questions
+      const deletedCount = await prisma.test.deleteMany({
         where: { videoId }
       })
 
-      // Create new questions
+      console.log(`Deleted ${deletedCount.count} existing questions for video ${videoId}`)
+
+      // Create new questions with proper ordering
+      const createdQuestions = []
       for (let i = 0; i < questions.length; i++) {
         const question = questions[i]
-        await prisma.test.create({
+        const created = await prisma.test.create({
           data: {
             videoId,
             question: question.question,
@@ -386,21 +351,55 @@ Generate the quiz now:
             order: i + 1
           }
         })
+        createdQuestions.push(created)
       }
 
-      console.log(`💾 Saved ${questions.length} questions to database for video ${videoId}`)
+      console.log(`Saved ${createdQuestions.length} questions using ${method} method`)
     } catch (error) {
       console.error('Failed to save questions to database:', error)
       throw error
     }
   }
 
-  // Public method to regenerate quiz for a video
-  async regenerateQuiz(videoId: string): Promise<QuizQuestion[]> {
-    return this.generateQuizFromVideo(videoId)
+  // Static methods for hooks
+  static async onVideoUpload(videoId: string, hasTranscript = false): Promise<void> {
+    console.log(`Video uploaded: ${videoId}, transcript available: ${hasTranscript}`)
+    const generator = new TranscriptQuizGenerator()
+    
+    if (hasTranscript) {
+      try {
+        await generator.generateQuizFromVideo(videoId)
+      } catch (error) {
+        console.error('Failed to generate quiz on upload:', error)
+      }
+    } else {
+      // Delayed generation to allow for transcript processing
+      setTimeout(async () => {
+        try {
+          await generator.generateQuizFromVideo(videoId)
+        } catch (error) {
+          console.error('Failed to generate delayed quiz:', error)
+        }
+      }, 45000) // 45 seconds delay
+    }
   }
 
-  // Generate quiz for all videos that don't have questions
+  static async onTranscriptCompleted(videoId: string): Promise<void> {
+    console.log(`Transcript completed for video ${videoId}, regenerating quiz...`)
+    
+    // Add delay to ensure transcript is fully saved
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    
+    const generator = new TranscriptQuizGenerator()
+    
+    try {
+      await generator.generateQuizFromVideo(videoId)
+      console.log(`Quiz successfully regenerated from transcript`)
+    } catch (error) {
+      console.error('Failed to regenerate quiz after transcript:', error)
+    }
+  }
+
   async generateQuizForAllVideos(): Promise<void> {
     try {
       const videos = await prisma.video.findMany({
@@ -410,73 +409,35 @@ Generate the quiz now:
           }
         },
         include: {
-          transcript: true,
+          transcript: {
+            select: { status: true, content: true }
+          },
           course: {
-            select: {
-              title: true,
-              category: true,
-              level: true
-            }
+            select: { title: true, category: true, level: true }
           }
         },
-        take: 50 // Process in batches
+        take: 50
       })
 
-      console.log(`🎯 Found ${videos.length} videos without quizzes`)
+      console.log(`Found ${videos.length} videos without quizzes`)
 
       for (const video of videos) {
         try {
-          console.log(`Processing video: ${video.title}`)
+          console.log(`Processing: ${video.title}`)
           await this.generateQuizFromVideo(video.id)
           
-          // Add delay to avoid rate limiting
-          await new Promise(resolve => setTimeout(resolve, 3000))
+          // Rate limiting delay
+          await new Promise(resolve => setTimeout(resolve, 5000))
           
         } catch (error) {
-          console.error(`Failed to generate quiz for video ${video.title}:`, error)
-          // Continue with next video
+          console.error(`Failed to generate quiz for ${video.title}:`, error)
         }
       }
 
-      console.log('✅ Completed batch quiz generation')
+      console.log('Completed batch quiz generation')
     } catch (error) {
       console.error('Batch quiz generation failed:', error)
       throw error
-    }
-  }
-
-  // Hook to automatically generate quiz when video is uploaded
-  static async onVideoUpload(videoId: string, hasTranscript = false): Promise<void> {
-    const generator = new TranscriptQuizGenerator()
-    
-    if (hasTranscript) {
-      // Generate immediately if transcript exists
-      try {
-        await generator.generateQuizFromVideo(videoId)
-      } catch (error) {
-        console.error('Failed to generate quiz on video upload:', error)
-      }
-    } else {
-      // Wait a bit for transcript to potentially be generated, then create topic-based quiz
-      setTimeout(async () => {
-        try {
-          await generator.generateQuizFromVideo(videoId)
-        } catch (error) {
-          console.error('Failed to generate delayed quiz:', error)
-        }
-      }, 30000) // Wait 30 seconds
-    }
-  }
-
-  // Hook to regenerate quiz when transcript is completed
-  static async onTranscriptCompleted(videoId: string): Promise<void> {
-    const generator = new TranscriptQuizGenerator()
-    
-    try {
-      console.log(`📝 Transcript completed for video ${videoId}, regenerating quiz...`)
-      await generator.generateQuizFromVideo(videoId)
-    } catch (error) {
-      console.error('Failed to regenerate quiz after transcript completion:', error)
     }
   }
 }

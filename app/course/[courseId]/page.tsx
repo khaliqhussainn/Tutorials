@@ -1,4 +1,4 @@
-// app/course/[courseId]/page.tsx - PRODUCTION OPTIMIZED
+// app/course/[courseId]/page.tsx
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";

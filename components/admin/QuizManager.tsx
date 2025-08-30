@@ -1,399 +1,396 @@
 // components/admin/QuizManager.tsx
-'use client'
-
-import { useState, useEffect } from 'react'
-import { Button } from '@/components/ui/Button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Badge } from '@/components/ui/Badge'
-import { 
-  Brain, 
-  RefreshCw, 
-  CheckCircle, 
-  AlertCircle, 
-  FileText, 
-  Target, 
-  Clock,
-  TrendingUp,
+"use client";
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/Button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
+import {
+  Target,
+  RefreshCw,
+  CheckCircle,
+  AlertCircle,
+  FileText,
+  Brain,
+  Loader2,
   Eye,
-  EyeOff,
-  Loader2
-} from 'lucide-react'
-
-interface QuizQuestion {
-  id: string
-  question: string
-  options: string[]
-  correct: number
-  explanation: string
-  difficulty: 'easy' | 'medium' | 'hard'
-  points: number
-  order: number
-}
+  Settings,
+} from "lucide-react";
 
 interface QuizManagerProps {
-  videoId: string
-  videoTitle: string
-  hasTranscript: boolean
-  transcriptStatus?: string
-  onQuizGenerated?: () => void
+  videoId: string;
+  videoTitle: string;
+  hasTranscript: boolean;
+  transcriptStatus?: string;
+  onQuizGenerated?: () => void;
 }
 
-export default function QuizManager({ 
-  videoId, 
-  videoTitle, 
-  hasTranscript, 
+interface QuizQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  correct: number;
+  explanation: string;
+  difficulty: string;
+  points: number;
+  order: number;
+}
+
+interface DebugInfo {
+  video: {
+    id: string;
+    title: string;
+    hasAiPrompt: boolean;
+  };
+  transcript: {
+    id: string;
+    length: number;
+    confidence: number;
+    status: string;
+  } | null;
+  quiz: {
+    count: number;
+    hasExplanations: number;
+  };
+  recommendations: {
+    canGenerateFromTranscript: boolean;
+    shouldRegenerateFromTranscript: boolean;
+    needsQuizGeneration: boolean;
+  };
+}
+
+export default function QuizManager({
+  videoId,
+  videoTitle,
+  hasTranscript,
   transcriptStatus,
-  onQuizGenerated 
+  onQuizGenerated,
 }: QuizManagerProps) {
-  const [questions, setQuestions] = useState<QuizQuestion[]>([])
-  const [loading, setLoading] = useState(false)
-  const [generating, setGenerating] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-  const [showQuestions, setShowQuestions] = useState(false)
-  const [expandedQuestion, setExpandedQuestion] = useState<string | null>(null)
+  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
+  const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
-    fetchQuestions()
-  }, [videoId])
+    fetchQuestions();
+    fetchDebugInfo();
+  }, [videoId]);
 
   const fetchQuestions = async () => {
-    setLoading(true)
-    setError('')
-    
     try {
-      const response = await fetch(`/api/videos/${videoId}/quiz`)
+      const response = await fetch(`/api/videos/${videoId}/quiz`);
       if (response.ok) {
-        const data = await response.json()
-        setQuestions(data.questions || [])
+        const data = await response.json();
+        setQuestions(data.questions || []);
       }
     } catch (error) {
-      console.error('Error fetching questions:', error)
-      setError('Failed to load quiz questions')
+      console.error("Error fetching questions:", error);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
+
+  const fetchDebugInfo = async () => {
+    try {
+      const response = await fetch(`/api/admin/debug/quiz-status/${videoId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setDebugInfo(data);
+      }
+    } catch (error) {
+      console.error("Error fetching debug info:", error);
+    }
+  };
 
   const generateQuiz = async (regenerate = false) => {
-    setGenerating(true)
-    setError('')
-    setSuccess('')
-
+    setGenerating(true);
+    setError("");
+    setSuccess("");
     try {
-      const response = await fetch(`/api/admin/videos/${videoId}/generate-quiz`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ regenerate })
-      })
-
+      const response = await fetch(
+        `/api/admin/videos/${videoId}/generate-quiz`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            regenerate,
+            source: "admin_manual",
+          }),
+        }
+      );
       if (response.ok) {
-        const data = await response.json()
-        setQuestions(data.questions)
-        setSuccess(`Successfully ${regenerate ? 'regenerated' : 'generated'} ${data.count} quiz questions`)
-        onQuizGenerated?.()
+        const result = await response.json();
+        setSuccess(
+          `Generated ${result.count} questions from ${result.source}`
+        );
+        await fetchQuestions();
+        await fetchDebugInfo();
+        onQuizGenerated?.();
       } else {
-        const errorData = await response.json()
-        setError(errorData.error || 'Failed to generate quiz')
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to generate quiz");
       }
     } catch (error) {
-      setError('Network error while generating quiz')
+      setError("Network error while generating quiz");
     } finally {
-      setGenerating(false)
+      setGenerating(false);
     }
-  }
+  };
 
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case 'easy': return 'bg-green-100 text-green-800 border-green-200'
-      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
-      case 'hard': return 'bg-red-100 text-red-800 border-red-200'
-      default: return 'bg-gray-100 text-gray-800 border-gray-200'
-    }
-  }
-
-  const getQuizStatus = () => {
-    if (questions.length === 0) return 'No quiz generated'
-    if (hasTranscript && transcriptStatus === 'COMPLETED') return 'Generated from transcript'
-    return 'Generated from video topic'
-  }
-
-  const getQuizStatusColor = () => {
-    if (questions.length === 0) return 'text-gray-500'
-    if (hasTranscript && transcriptStatus === 'COMPLETED') return 'text-green-600'
-    return 'text-blue-600'
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-6 h-6 animate-spin" />
+      </div>
+    );
   }
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between">
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h3 className="text-lg font-semibold mb-2">{videoTitle}</h3>
+        <div className="flex items-center space-x-4 text-sm text-gray-600">
           <div className="flex items-center">
-            <Target className="w-5 h-5 mr-2 text-blue-600" />
-            Quiz Management
+            <Target className="w-4 h-4 mr-1" />
+            {questions.length} questions
           </div>
-          <Badge variant="outline" className={getQuizStatusColor()}>
-            {getQuizStatus()}
+          {hasTranscript && (
+            <div className="flex items-center">
+              <FileText className="w-4 h-4 mr-1" />
+              Transcript available
+            </div>
+          )}
+          <Badge
+            variant={transcriptStatus === "COMPLETED" ? "default" : "secondary"}
+          >
+            {transcriptStatus || "No transcript"}
           </Badge>
-        </CardTitle>
-      </CardHeader>
-      
-      <CardContent className="space-y-6">
-        {/* Status Messages */}
-        {error && (
-          <div className="flex items-center p-3 bg-red-50 border border-red-200 rounded-lg text-red-700">
-            <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
-            <span className="text-sm">{error}</span>
-          </div>
-        )}
-
-        {success && (
-          <div className="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg text-green-700">
-            <CheckCircle className="w-5 h-5 mr-2 flex-shrink-0" />
-            <span className="text-sm">{success}</span>
-          </div>
-        )}
-
-        {/* Quiz Overview */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <div className="text-2xl font-bold text-blue-600 mb-1">
-              {questions.length}
-            </div>
-            <div className="text-sm text-blue-800">Questions</div>
-          </div>
-          
-          <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
-            <div className="text-2xl font-bold text-green-600 mb-1">
-              {questions.filter(q => q.difficulty === 'easy').length}
-            </div>
-            <div className="text-sm text-green-800">Easy</div>
-          </div>
-          
-          <div className="text-center p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-            <div className="text-2xl font-bold text-yellow-600 mb-1">
-              {questions.filter(q => q.difficulty === 'medium').length}
-            </div>
-            <div className="text-sm text-yellow-800">Medium</div>
-          </div>
-          
-          <div className="text-center p-4 bg-red-50 rounded-lg border border-red-200">
-            <div className="text-2xl font-bold text-red-600 mb-1">
-              {questions.filter(q => q.difficulty === 'hard').length}
-            </div>
-            <div className="text-sm text-red-800">Hard</div>
-          </div>
         </div>
+      </div>
 
-        {/* Generation Info */}
-        <div className="p-4 bg-gray-50 rounded-lg border">
-          <h4 className="font-medium text-gray-900 mb-2 flex items-center">
-            <Brain className="w-4 h-4 mr-2" />
-            AI Quiz Generation
-          </h4>
-          <div className="space-y-2 text-sm text-gray-600">
-            <div className="flex items-center justify-between">
-              <span>Video:</span>
-              <span className="font-medium">{videoTitle}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Transcript Available:</span>
-              <div className="flex items-center">
-                {hasTranscript ? (
-                  <>
-                    <FileText className="w-4 h-4 mr-1 text-green-600" />
-                    <span className="text-green-600">Yes</span>
-                    {transcriptStatus && (
-                      <Badge variant="outline" className="ml-2 text-xs">
-                        {transcriptStatus}
-                      </Badge>
-                    )}
-                  </>
-                ) : (
-                  <span className="text-gray-500">No</span>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Generation Method:</span>
-              <span className="font-medium">
-                {hasTranscript && transcriptStatus === 'COMPLETED' 
-                  ? 'Transcript-based (Preferred)' 
-                  : 'Topic-based (Fallback)'}
-              </span>
-            </div>
-          </div>
+      {/* Status Messages */}
+      {error && (
+        <div className="flex items-center p-3 bg-red-50 border border-red-200 rounded-lg text-red-700">
+          <AlertCircle className="w-5 h-5 mr-2" />
+          <span className="text-sm">{error}</span>
         </div>
+      )}
+      {success && (
+        <div className="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg text-green-700">
+          <CheckCircle className="w-5 h-5 mr-2" />
+          <span className="text-sm">{success}</span>
+        </div>
+      )}
 
-        {/* Action Buttons */}
-        <div className="flex flex-wrap gap-3">
+      {/* Actions */}
+      <div className="flex items-center space-x-3">
+        <Button
+          onClick={() => generateQuiz(false)}
+          disabled={generating || questions.length > 0}
+          className="bg-blue-600 hover:bg-blue-700"
+        >
+          {generating ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Generating...
+            </>
+          ) : (
+            <>
+              <Brain className="w-4 h-4 mr-2" />
+              Generate Quiz
+            </>
+          )}
+        </Button>
+        {questions.length > 0 && (
           <Button
-            onClick={() => generateQuiz(false)}
-            disabled={generating || loading}
-            className="flex items-center"
+            onClick={() => generateQuiz(true)}
+            disabled={generating}
+            variant="outline"
           >
             {generating ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Generating Quiz...
+                Regenerating...
               </>
             ) : (
               <>
-                <Brain className="w-4 h-4 mr-2" />
-                {questions.length > 0 ? 'Regenerate Quiz' : 'Generate Quiz'}
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Regenerate Quiz
               </>
             )}
           </Button>
+        )}
+        <Button
+          onClick={() => setShowDebug(!showDebug)}
+          variant="outline"
+          size="sm"
+        >
+          <Settings className="w-4 h-4 mr-2" />
+          Debug Info
+        </Button>
+      </div>
 
-          {questions.length > 0 && (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => setShowQuestions(!showQuestions)}
-                disabled={loading}
+      {/* Debug Information */}
+      {showDebug && debugInfo && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardHeader>
+            <CardTitle className="text-sm">Debug Information</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div>
+              <strong>Generation Method:</strong>
+              <span
+                className={`ml-2 px-2 py-1 rounded text-xs ${
+                  debugInfo.recommendations.canGenerateFromTranscript
+                    ? "bg-green-100 text-green-800"
+                    : "bg-orange-100 text-orange-800"
+                }`}
               >
-                {showQuestions ? (
-                  <>
-                    <EyeOff className="w-4 h-4 mr-2" />
-                    Hide Questions
-                  </>
-                ) : (
-                  <>
-                    <Eye className="w-4 h-4 mr-2" />
-                    Preview Questions
-                  </>
+                {debugInfo.recommendations.canGenerateFromTranscript
+                  ? "Transcript"
+                  : "Topic-based"}
+              </span>
+            </div>
+
+            {debugInfo.transcript && (
+              <div>
+                <strong>Transcript:</strong> {debugInfo.transcript.length}{" "}
+                chars, confidence: {(debugInfo.transcript.confidence * 100).toFixed(1)}%
+              </div>
+            )}
+
+            <div>
+              <strong>Quiz Quality:</strong> {debugInfo.quiz.count} questions,{" "}
+              {debugInfo.quiz.hasExplanations}/{debugInfo.quiz.count} have
+              explanations
+            </div>
+            <div>
+              <strong>Recommendations:</strong>
+              <ul className="mt-1 ml-4 list-disc text-xs">
+                {debugInfo.recommendations.needsQuizGeneration && (
+                  <li>Generate initial quiz</li>
                 )}
-              </Button>
+                {debugInfo.recommendations.shouldRegenerateFromTranscript && (
+                  <li>Regenerate using transcript for better quality</li>
+                )}
+                {!debugInfo.video.hasAiPrompt && (
+                  <li>Add AI prompt for better topic-based generation</li>
+                )}
+              </ul>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-              <Button
-                variant="outline"
-                onClick={fetchQuestions}
-                disabled={loading}
+      {/* Current Questions */}
+      {questions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Eye className="w-5 h-5 mr-2" />
+              Current Quiz Questions ({questions.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {questions.map((question, index) => (
+              <div
+                key={question.id}
+                className="border border-gray-200 rounded-lg p-4"
               >
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Refresh
-              </Button>
-            </>
-          )}
-        </div>
-
-        {/* Questions Preview */}
-        {showQuestions && questions.length > 0 && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="font-medium text-gray-900">Quiz Questions Preview</h4>
-              <Badge variant="secondary">
-                {questions.length} Questions
-              </Badge>
-            </div>
-            
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {questions
-                .sort((a, b) => a.order - b.order)
-                .map((question, index) => (
-                <div key={question.id} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex-1">
-                      <div className="flex items-center mb-2">
-                        <span className="text-sm font-medium text-gray-500 mr-2">
-                          Q{index + 1}
-                        </span>
-                        <Badge 
-                          variant="outline" 
-                          className={`text-xs ${getDifficultyColor(question.difficulty)}`}
-                        >
-                          {question.difficulty}
-                        </Badge>
-                        <Badge variant="outline" className="ml-2 text-xs">
-                          {question.points} pts
-                        </Badge>
-                      </div>
-                      <h5 className="font-medium text-gray-900 mb-2">
-                        {question.question}
-                      </h5>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setExpandedQuestion(
-                        expandedQuestion === question.id ? null : question.id
-                      )}
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-medium text-sm text-gray-500">
+                      Q{index + 1}
+                    </span>
+                    <Badge
+                      variant={
+                        question.difficulty === "easy"
+                          ? "primary"
+                          : question.difficulty === "medium"
+                          ? "secondary"
+                          : "destructive"
+                      }
                     >
-                      {expandedQuestion === question.id ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
-                    </Button>
+                      {question.difficulty}
+                    </Badge>
+                    <span className="text-xs text-gray-500">
+                      {question.points} pts
+                    </span>
                   </div>
+                </div>
 
-                  {expandedQuestion === question.id && (
-                    <div className="space-y-3 mt-3 pt-3 border-t border-gray-100">
-                      <div className="space-y-2">
-                        {question.options.map((option, optionIndex) => (
-                          <div 
-                            key={optionIndex}
-                            className={`p-2 rounded text-sm ${
-                              optionIndex === question.correct
-                                ? 'bg-green-50 border border-green-200 text-green-800'
-                                : 'bg-gray-50 border border-gray-200'
-                            }`}
-                          >
-                            <div className="flex items-center">
-                              <span className="font-medium mr-2">
-                                {String.fromCharCode(65 + optionIndex)}.
-                              </span>
-                              <span>{option}</span>
-                              {optionIndex === question.correct && (
-                                <CheckCircle className="w-4 h-4 ml-2 text-green-600" />
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                <h4 className="font-medium text-gray-900 mb-3">
+                  {question.question}
+                </h4>
 
-                      {question.explanation && (
-                        <div className="p-3 bg-blue-50 border border-blue-200 rounded">
-                          <div className="flex items-start">
-                            <TrendingUp className="w-4 h-4 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
-                            <div>
-                              <div className="font-medium text-blue-900 text-sm mb-1">
-                                Explanation:
-                              </div>
-                              <div className="text-blue-800 text-sm">
-                                {question.explanation}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                <div className="space-y-2 mb-3">
+                  {question.options.map((option, optIndex) => (
+                    <div
+                      key={optIndex}
+                      className={`p-2 rounded text-sm ${
+                        optIndex === question.correct
+                          ? "bg-green-50 border border-green-200 text-green-800"
+                          : "bg-gray-50 border border-gray-200"
+                      }`}
+                    >
+                      <span className="font-medium mr-2">
+                        {String.fromCharCode(65 + optIndex)}.
+                      </span>
+                      {option}
+                      {optIndex === question.correct && (
+                        <CheckCircle className="w-4 h-4 inline ml-2 text-green-600" />
                       )}
                     </div>
-                  )}
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
 
-        {/* No Questions State */}
-        {!loading && questions.length === 0 && (
-          <div className="text-center py-8">
-            <Target className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Quiz Yet</h3>
-            <p className="text-gray-600 mb-4">
-              Generate an AI-powered quiz for this video. Questions will be based on{' '}
-              {hasTranscript && transcriptStatus === 'COMPLETED' 
-                ? 'the video transcript for maximum accuracy'
-                : 'the video topic and description'
-              }.
+                {question.explanation && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded text-sm">
+                    <strong>Explanation:</strong> {question.explanation}
+                  </div>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* No Quiz State */}
+      {questions.length === 0 && (
+        <Card>
+          <CardContent className="text-center py-12">
+            <Target className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-700 mb-2">
+              No Quiz Questions
+            </h3>
+            <p className="text-gray-500 mb-6">
+              {hasTranscript
+                ? "Generate quiz questions from the video transcript for best quality."
+                : "Generate quiz questions from the video topic and description."}
             </p>
-            <Button onClick={() => generateQuiz(false)} disabled={generating}>
-              <Brain className="w-4 h-4 mr-2" />
-              Generate Quiz
+            <Button
+              onClick={() => generateQuiz(false)}
+              disabled={generating}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {generating ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Generating Quiz...
+                </>
+              ) : (
+                <>
+                  <Brain className="w-4 h-4 mr-2" />
+                  Generate Quiz {hasTranscript ? "from Transcript" : "from Topic"}
+                </>
+              )}
             </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
 }
