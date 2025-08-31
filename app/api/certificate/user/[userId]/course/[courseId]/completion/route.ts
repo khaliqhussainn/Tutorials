@@ -1,23 +1,24 @@
-import { NextApiRequest, NextApiResponse } from 'next'
-import { prisma } from '@/lib/prisma' // Your existing prisma instance
-import bcrypt from 'bcryptjs'
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { userId, courseId } = req.query
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 
-  // Verify authorization
-  const authHeader = req.headers.authorization
+export async function GET(
+  request: Request,
+  { params }: { params: { userId: string; courseId: string } }
+) {
+  const { userId, courseId } = params;
+  const authHeader = request.headers.get('authorization');
+
   if (authHeader !== `Bearer ${process.env.COURSE_WEBSITE_API_SECRET}`) {
-    return res.status(401).json({ message: 'Unauthorized' })
+    return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    // Check if user completed the specific course
     const enrollment = await prisma.enrollment.findUnique({
       where: {
         userId_courseId: {
-          userId: userId as string,
-          courseId: courseId as string
-        }
+          userId,
+          courseId,
+        },
       },
       include: {
         course: true,
@@ -25,56 +26,59 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           select: {
             id: true,
             name: true,
-            email: true
-          }
-        }
-      }
-    })
+            email: true,
+          },
+        },
+      },
+    });
 
     if (!enrollment || !enrollment.completedAt) {
-      return res.status(404).json({ message: 'Course not completed' })
+      return NextResponse.json(
+        { message: 'Course not completed' },
+        { status: 404 }
+      );
     }
 
-    // Get additional completion data
     const videoProgress = await prisma.videoProgress.findMany({
       where: {
-        userId: userId as string,
+        userId,
         video: {
-          courseId: courseId as string
-        }
+          courseId,
+        },
       },
       include: {
-        video: true
-      }
-    })
+        video: true,
+      },
+    });
 
     const completionProof = {
       user: enrollment.user,
       course: {
         id: enrollment.course.id,
         title: enrollment.course.title,
-        category: enrollment.course.category
+        category: enrollment.course.category,
       },
       enrollment: {
         enrolledAt: enrollment.enrolledAt,
         completedAt: enrollment.completedAt,
-        progress: enrollment.progress
+        progress: enrollment.progress,
       },
-      videoProgress: videoProgress.map(vp => ({
+      videoProgress: videoProgress.map((vp) => ({
         videoTitle: vp.video.title,
         completed: vp.completed,
         completedAt: vp.completedAt,
-        watchTime: vp.watchTime
+        watchTime: vp.watchTime,
       })),
       totalVideos: videoProgress.length,
-      completedVideos: videoProgress.filter(vp => vp.completed).length
-    }
+      completedVideos: videoProgress.filter((vp) => vp.completed).length,
+    };
 
-    res.status(200).json(completionProof)
-
+    return NextResponse.json(completionProof);
   } catch (error) {
-    console.error('Get course completion error:', error)
-    res.status(500).json({ message: 'Internal server error' })
+    console.error('Get course completion error:', error);
+    return NextResponse.json(
+      { message: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }
-
