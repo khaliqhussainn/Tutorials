@@ -1,4 +1,4 @@
-// app/auth/signin/page.tsx - FIXED PRODUCTION VERSION
+// app/auth/signin/page.tsx - PRODUCTION ROBUST VERSION
 'use client'
 
 import { useState, Suspense, useEffect } from 'react'
@@ -16,19 +16,64 @@ function SignInForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [redirecting, setRedirecting] = useState(false)
   
   const router = useRouter()
-  const { data: session, status } = useSession()
+  const { data: session, status, update } = useSession()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/'
 
-  // Redirect if already authenticated
+  // Enhanced redirect logic for authenticated users
   useEffect(() => {
-    if (status === 'authenticated' && session) {
-      console.log('Already authenticated, redirecting to:', callbackUrl)
-      router.push(callbackUrl)
+    console.log('SignIn Page - Session Check:', {
+      status,
+      hasSession: !!session,
+      userId: session?.user?.id,
+      userRole: session?.user?.role,
+      callbackUrl
+    })
+
+    if (status === 'authenticated' && session?.user?.id) {
+      console.log('User is authenticated, initiating redirect...')
+      setRedirecting(true)
+      
+      // For admin routes, use window.location for hard redirect
+      if (callbackUrl.includes('/admin')) {
+        console.log('Admin route detected, using hard redirect')
+        window.location.replace(callbackUrl)
+      } else {
+        console.log('Regular route, using router push')
+        router.replace(callbackUrl)
+      }
     }
   }, [status, session, callbackUrl, router])
+
+  // Additional check for existing session on mount
+  useEffect(() => {
+    const checkExistingSession = async () => {
+      try {
+        const existingSession = await getSession()
+        console.log('Existing session check:', existingSession)
+        
+        if (existingSession?.user?.id) {
+          console.log('Found existing session, redirecting...')
+          setRedirecting(true)
+          
+          if (callbackUrl.includes('/admin')) {
+            window.location.replace(callbackUrl)
+          } else {
+            router.replace(callbackUrl)
+          }
+        }
+      } catch (error) {
+        console.error('Error checking existing session:', error)
+      }
+    }
+
+    if (status === 'unauthenticated') {
+      checkExistingSession()
+    }
+  }, [status, callbackUrl, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -53,57 +98,63 @@ function SignInForm() {
       }
 
       if (result?.ok) {
-        console.log('Sign in successful, fetching session...')
+        console.log('Sign in successful, establishing session...')
+        setRedirecting(true)
         
-        // Wait for session to be available
-        let attempts = 0
-        const maxAttempts = 10
+        // Force session refresh
+        await update()
         
-        while (attempts < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 500))
-          const freshSession = await getSession()
+        // Multiple attempts to establish session
+        let sessionEstablished = false
+        for (let i = 0; i < 10; i++) {
+          await new Promise(resolve => setTimeout(resolve, 300))
           
-          console.log(`Session attempt ${attempts + 1}:`, {
+          const freshSession = await getSession()
+          console.log(`Session establishment attempt ${i + 1}:`, {
             hasSession: !!freshSession,
             userId: freshSession?.user?.id,
-            userRole: freshSession?.user?.role,
-            userEmail: freshSession?.user?.email
+            userRole: freshSession?.user?.role
           })
           
           if (freshSession?.user?.id) {
-            console.log('Session established, redirecting to:', callbackUrl)
+            sessionEstablished = true
+            console.log('Session established successfully')
             
-            // Force a hard navigation for admin routes to ensure middleware runs
-            if (callbackUrl.includes('/admin')) {
-              window.location.href = callbackUrl
-              return
+            // For admin routes or any issues, force hard redirect
+            if (callbackUrl.includes('/admin') || i > 5) {
+              console.log('Using hard redirect for reliability')
+              window.location.replace(callbackUrl)
+            } else {
+              router.replace(callbackUrl)
             }
-            
-            router.push(callbackUrl)
-            router.refresh()
             return
           }
-          
-          attempts++
         }
         
-        // If we get here, session wasn't established properly
-        console.error('Failed to establish session after sign in')
-        setError('Sign in successful but session not established. Please try again.')
+        if (!sessionEstablished) {
+          console.error('Failed to establish session, using fallback redirect')
+          // Fallback to hard redirect
+          window.location.replace(callbackUrl)
+        }
       }
     } catch (error) {
       console.error('Sign in error:', error)
       setError('An error occurred. Please try again.')
-    } finally {
       setLoading(false)
+      setRedirecting(false)
     }
   }
 
-  // Show loading if checking authentication status
+  // Show loading states
   if (status === 'loading') {
-    return <LoadingFallback />
+    return <LoadingState message="Checking authentication..." />
   }
 
+  if (redirecting) {
+    return <LoadingState message="Redirecting..." />
+  }
+
+  // Show signin form only if definitely not authenticated
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
@@ -200,7 +251,22 @@ function SignInForm() {
             </Link>
           </div>
 
-          {/* Debug info in development */}
+          {/* Emergency admin access button for production debugging */}
+          {process.env.NODE_ENV === 'production' && (
+            <div className="mt-4 text-center">
+              <button
+                onClick={() => {
+                  console.log('Emergency redirect to admin')
+                  window.location.replace('/admin')
+                }}
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >
+                Emergency Admin Access
+              </button>
+            </div>
+          )}
+
+          {/* Debug info */}
           {process.env.NODE_ENV === 'development' && (
             <div className="mt-4 p-3 bg-gray-50 rounded text-xs">
               <p>Debug Info:</p>
@@ -209,6 +275,7 @@ function SignInForm() {
               <p>Has Session: {!!session}</p>
               <p>User ID: {session?.user?.id}</p>
               <p>User Role: {session?.user?.role}</p>
+              <p>Redirecting: {redirecting.toString()}</p>
             </div>
           )}
         </CardContent>
@@ -217,13 +284,13 @@ function SignInForm() {
   )
 }
 
-function LoadingFallback() {
+function LoadingState({ message }: { message: string }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardContent className="p-8 text-center">
           <Loader2 className="w-8 h-8 animate-spin text-primary-600 mx-auto" />
-          <p className="mt-4 text-dark-600">Loading...</p>
+          <p className="mt-4 text-dark-600">{message}</p>
         </CardContent>
       </Card>
     </div>
@@ -232,7 +299,7 @@ function LoadingFallback() {
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={<LoadingFallback />}>
+    <Suspense fallback={<LoadingState message="Loading..." />}>
       <SignInForm />
     </Suspense>
   )
