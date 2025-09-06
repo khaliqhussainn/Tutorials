@@ -1,14 +1,14 @@
-// app/auth/signin/page.tsx - SIMPLE NO-LOOP VERSION
+// app/auth/signin/page.tsx - TARGETED FIX FOR CALLBACK ISSUES
 'use client'
 
-import { useState, Suspense, useEffect, useRef } from 'react'
+import { useState, Suspense, useEffect } from 'react'
 import { signIn, useSession } from 'next-auth/react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Eye, EyeOff, AlertCircle, Loader2, ExternalLink } from 'lucide-react'
+import { Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react'
 
 function SignInForm() {
   const [email, setEmail] = useState('')
@@ -16,21 +16,40 @@ function SignInForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [showRedirectOptions, setShowRedirectOptions] = useState(false)
+  const [isRedirecting, setIsRedirecting] = useState(false)
   
   const { data: session, status } = useSession()
+  const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/'
-  const hasTriedRedirect = useRef(false)
 
-  // Simple one-time redirect check
+  // Debug session data
   useEffect(() => {
-    if (status === 'authenticated' && session?.user?.id && !hasTriedRedirect.current) {
-      hasTriedRedirect.current = true
-      console.log('User authenticated, showing redirect options')
-      setShowRedirectOptions(true)
+    console.log('Signin Page Debug:', {
+      status,
+      hasSession: !!session,
+      userId: session?.user?.id,
+      userRole: session?.user?.role,
+      userEmail: session?.user?.email,
+      callbackUrl: decodeURIComponent(callbackUrl)
+    })
+  }, [status, session, callbackUrl])
+
+  // Handle redirect for authenticated users
+  useEffect(() => {
+    if (status === 'authenticated' && session?.user?.id && !isRedirecting) {
+      console.log('User is authenticated, initiating redirect...')
+      setIsRedirecting(true)
+      
+      const targetUrl = decodeURIComponent(callbackUrl)
+      console.log('Redirecting to:', targetUrl)
+      
+      // Use timeout to ensure session is fully established
+      setTimeout(() => {
+        router.replace(targetUrl)
+      }, 500)
     }
-  }, [status, session])
+  }, [status, session, callbackUrl, router, isRedirecting])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -38,42 +57,40 @@ function SignInForm() {
     setLoading(true)
 
     try {
-      console.log('🔐 Attempting credentials sign in for:', email)
+      console.log('Attempting sign in...')
       
       const result = await signIn('credentials', {
         email,
         password,
-        redirect: false,
+        redirect: false, // Handle redirect manually
       })
 
-      console.log('🔐 Sign in result:', { ok: result?.ok, error: result?.error })
+      console.log('Sign in result:', result)
 
       if (result?.error) {
         setError('Invalid email or password')
+        setLoading(false)
       } else if (result?.ok) {
-        console.log('✅ Sign in successful, redirect will happen via useEffect')
-        // Don't set loading to false - let the redirect happen
-        return
+        console.log('Sign in successful, waiting for session...')
+        // Don't set loading to false, let redirect happen
+        setIsRedirecting(true)
       }
     } catch (error) {
-      console.error('❌ Sign in error:', error)
+      console.error('Sign in error:', error)
       setError('An error occurred. Please try again.')
-    } finally {
       setLoading(false)
     }
   }
 
-  // Show loading while checking auth status
+  // Show loading states
   if (status === 'loading') {
     return <LoadingState message="Checking authentication..." />
   }
 
-  // Show redirecting state if user is authenticated
-  if (status === 'authenticated' && session?.user?.id) {
+  if (isRedirecting || (status === 'authenticated' && session?.user?.id)) {
     return <LoadingState message={`Redirecting to ${decodeURIComponent(callbackUrl)}...`} />
   }
 
-  // Show normal signin form for unauthenticated users
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
@@ -82,6 +99,11 @@ function SignInForm() {
             Welcome Back
           </CardTitle>
           <p className="text-dark-600">Sign in to continue your learning journey</p>
+          {callbackUrl !== '/' && (
+            <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
+              Redirecting to: {decodeURIComponent(callbackUrl)}
+            </div>
+          )}
         </CardHeader>
 
         <CardContent>
@@ -104,7 +126,7 @@ function SignInForm() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                disabled={loading}
+                disabled={loading || isRedirecting}
               />
             </div>
 
@@ -120,13 +142,13 @@ function SignInForm() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  disabled={loading}
+                  disabled={loading || isRedirecting}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-dark-500 hover:text-dark-700"
-                  disabled={loading}
+                  disabled={loading || isRedirecting}
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
@@ -136,12 +158,12 @@ function SignInForm() {
             <Button
               type="submit"
               className="w-full"
-              disabled={loading}
+              disabled={loading || isRedirecting}
             >
-              {loading ? (
+              {loading || isRedirecting ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Signing In...
+                  {loading ? 'Signing In...' : 'Redirecting...'}
                 </>
               ) : (
                 'Sign In'
@@ -169,6 +191,19 @@ function SignInForm() {
               Continue as guest
             </Link>
           </div>
+
+          {/* Debug info in development */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 p-3 bg-gray-50 rounded text-xs">
+              <p className="font-medium">Debug Info:</p>
+              <p>Status: {status}</p>
+              <p>Has Session: {!!session}</p>
+              <p>User ID: {session?.user?.id}</p>
+              <p>User Role: {session?.user?.role}</p>
+              <p>Callback: {decodeURIComponent(callbackUrl)}</p>
+              <p>Redirecting: {isRedirecting.toString()}</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
