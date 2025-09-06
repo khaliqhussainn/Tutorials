@@ -1,4 +1,4 @@
-// middleware.ts - PRODUCTION ROBUST VERSION
+// middleware.ts - FIXED PRODUCTION VERSION
 import { withAuth } from "next-auth/middleware"
 import { NextResponse } from "next/server"
 
@@ -7,24 +7,30 @@ export default withAuth(
     const { pathname } = req.nextUrl
     const token = req.nextauth.token
     
-    // More detailed logging for production debugging
-    if (process.env.NODE_ENV === 'production') {
-      console.log("🔒 Middleware Check:", {
-        pathname,
-        hasToken: !!token,
-        tokenEmail: token?.email,
-        tokenId: token?.id,
-        tokenSub: token?.sub,
-        cookies: req.cookies.getAll().map(c => c.name),
-      })
-    }
+    console.log("🔒 Middleware Check:", {
+      pathname,
+      hasToken: !!token,
+      tokenEmail: token?.email,
+      tokenId: token?.id,
+      tokenRole: token?.role,
+      userAgent: req.headers.get('user-agent')?.slice(0, 50)
+    })
 
-    // Admin routes protection
+    // Admin routes protection - FIXED: More robust check
     if (pathname.startsWith('/admin')) {
-      if (!token || token.role !== 'ADMIN') {
-        console.log("❌ Admin access denied")
-        return NextResponse.redirect(new URL('/auth/signin', req.url))
+      if (!token) {
+        console.log("❌ Admin access denied - No token")
+        const signInUrl = new URL('/auth/signin', req.url)
+        signInUrl.searchParams.set('callbackUrl', req.url)
+        return NextResponse.redirect(signInUrl)
       }
+      
+      if (token.role !== 'ADMIN') {
+        console.log("❌ Admin access denied - Role:", token.role, "Required: ADMIN")
+        return NextResponse.redirect(new URL('/', req.url))
+      }
+      
+      console.log("✅ Admin access granted")
     }
 
     return NextResponse.next()
@@ -34,41 +40,43 @@ export default withAuth(
       authorized: ({ token, req }) => {
         const { pathname } = req.nextUrl
         
-        // More permissive approach - let most requests through
-        // and handle auth at the page level for better reliability
+        console.log("Authorization check:", { 
+          pathname, 
+          hasToken: !!token,
+          tokenId: token?.id,
+          tokenRole: token?.role
+        })
         
-        // Only block admin routes at middleware level
+        // Admin routes - strict check
         if (pathname.startsWith('/admin')) {
           const isAuthorized = !!token && token.role === 'ADMIN'
-          console.log("Admin auth check:", { hasToken: !!token, role: token?.role, authorized: isAuthorized })
+          console.log("Admin authorization:", { 
+            hasToken: !!token, 
+            role: token?.role, 
+            authorized: isAuthorized 
+          })
           return isAuthorized
         }
 
-        // For all other protected routes, be more permissive
-        // Let the page components handle the detailed auth checks
-        if (
-          pathname.startsWith('/dashboard') ||
-          pathname.startsWith('/profile') ||
-          pathname.startsWith('/favorites') ||
-          (pathname.includes('/course/') && pathname.includes('/video/'))
-        ) {
-          // Check if we have any form of authentication indicator
-          const hasAuth = !!(
-            token?.email || 
-            token?.id || 
-            token?.sub ||
-            req.cookies.get('next-auth.session-token') ||
-            req.cookies.get('__Secure-next-auth.session-token')
-          )
-          
-          console.log("Protected route auth check:", { 
-            pathname, 
-            hasAuth, 
+        // Other protected routes - more lenient
+        const protectedRoutes = [
+          '/dashboard',
+          '/profile',
+          '/favorites'
+        ]
+        
+        const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route))
+        
+        if (isProtectedRoute) {
+          const isAuthorized = !!token && !!(token.email || token.id)
+          console.log("Protected route authorization:", { 
+            pathname,
             hasToken: !!token,
-            hasCookie: !!(req.cookies.get('next-auth.session-token') || req.cookies.get('__Secure-next-auth.session-token'))
+            hasEmail: !!token?.email,
+            hasId: !!token?.id,
+            authorized: isAuthorized 
           })
-          
-          return hasAuth
+          return isAuthorized
         }
 
         // Allow all other requests
@@ -81,12 +89,12 @@ export default withAuth(
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
+     * Match all request paths except:
      * - api/auth (NextAuth API routes)
      * - _next/static (static files)
      * - _next/image (image optimization files)  
      * - favicon.ico (favicon file)
-     * - public folder files
+     * - public assets
      */
     '/((?!api/auth|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|css|js)$).*)',
   ],

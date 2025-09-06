@@ -1,14 +1,14 @@
-// app/auth/signin/page.tsx
+// app/auth/signin/page.tsx - FIXED PRODUCTION VERSION
 'use client'
 
-import { useState, Suspense } from 'react'
-import { signIn, getSession } from 'next-auth/react'
+import { useState, Suspense, useEffect } from 'react'
+import { signIn, getSession, useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react'
 
 function SignInForm() {
   const [email, setEmail] = useState('')
@@ -18,8 +18,17 @@ function SignInForm() {
   const [loading, setLoading] = useState(false)
   
   const router = useRouter()
+  const { data: session, status } = useSession()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/'
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (status === 'authenticated' && session) {
+      console.log('Already authenticated, redirecting to:', callbackUrl)
+      router.push(callbackUrl)
+    }
+  }, [status, session, callbackUrl, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -27,25 +36,72 @@ function SignInForm() {
     setLoading(true)
 
     try {
+      console.log('Attempting sign in for:', email)
+      
       const result = await signIn('credentials', {
         email,
         password,
         redirect: false,
       })
 
+      console.log('Sign in result:', result)
+
       if (result?.error) {
         setError('Invalid email or password')
-      } else {
-        // Get fresh session to ensure user data is available
-        await getSession()
-        router.push(callbackUrl)
-        router.refresh()
+        setLoading(false)
+        return
+      }
+
+      if (result?.ok) {
+        console.log('Sign in successful, fetching session...')
+        
+        // Wait for session to be available
+        let attempts = 0
+        const maxAttempts = 10
+        
+        while (attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 500))
+          const freshSession = await getSession()
+          
+          console.log(`Session attempt ${attempts + 1}:`, {
+            hasSession: !!freshSession,
+            userId: freshSession?.user?.id,
+            userRole: freshSession?.user?.role,
+            userEmail: freshSession?.user?.email
+          })
+          
+          if (freshSession?.user?.id) {
+            console.log('Session established, redirecting to:', callbackUrl)
+            
+            // Force a hard navigation for admin routes to ensure middleware runs
+            if (callbackUrl.includes('/admin')) {
+              window.location.href = callbackUrl
+              return
+            }
+            
+            router.push(callbackUrl)
+            router.refresh()
+            return
+          }
+          
+          attempts++
+        }
+        
+        // If we get here, session wasn't established properly
+        console.error('Failed to establish session after sign in')
+        setError('Sign in successful but session not established. Please try again.')
       }
     } catch (error) {
+      console.error('Sign in error:', error)
       setError('An error occurred. Please try again.')
     } finally {
       setLoading(false)
     }
+  }
+
+  // Show loading if checking authentication status
+  if (status === 'loading') {
+    return <LoadingFallback />
   }
 
   return (
@@ -112,7 +168,14 @@ function SignInForm() {
               className="w-full"
               disabled={loading}
             >
-              {loading ? 'Signing In...' : 'Sign In'}
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Signing In...
+                </>
+              ) : (
+                'Sign In'
+              )}
             </Button>
           </form>
 
@@ -136,6 +199,18 @@ function SignInForm() {
               Continue as guest
             </Link>
           </div>
+
+          {/* Debug info in development */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 p-3 bg-gray-50 rounded text-xs">
+              <p>Debug Info:</p>
+              <p>Status: {status}</p>
+              <p>Callback URL: {callbackUrl}</p>
+              <p>Has Session: {!!session}</p>
+              <p>User ID: {session?.user?.id}</p>
+              <p>User Role: {session?.user?.role}</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -147,7 +222,7 @@ function LoadingFallback() {
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardContent className="p-8 text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
+          <Loader2 className="w-8 h-8 animate-spin text-primary-600 mx-auto" />
           <p className="mt-4 text-dark-600">Loading...</p>
         </CardContent>
       </Card>

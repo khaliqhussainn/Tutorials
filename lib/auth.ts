@@ -1,4 +1,4 @@
-// lib/auth.ts - PRODUCTION OPTIMIZED VERSION
+// lib/auth.ts - FIXED PRODUCTION VERSION
 import { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import GoogleProvider from "next-auth/providers/google"
@@ -50,9 +50,9 @@ export const authOptions: NextAuthOptions = {
             return null
           }
 
-          // Return user data for NextAuth
+          // Return user data for NextAuth - CRITICAL: ensure ID is string
           return {
-            id: user.id,
+            id: user.id.toString(), // Ensure string ID
             email: user.email!,
             name: user.name,
             role: user.role,
@@ -70,164 +70,76 @@ export const authOptions: NextAuthOptions = {
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   callbacks: {
-    async jwt({ token, user, account, trigger }) {
-      const isProduction = process.env.NODE_ENV === 'production'
-      
-      if (!isProduction) {
-        console.log("=== JWT Callback ===")
-        console.log("Token before:", { id: token.id, email: token.email, sub: token.sub })
-        console.log("User:", user ? { id: user.id, email: user.email } : null)
-        console.log("Account provider:", account?.provider)
-        console.log("Trigger:", trigger)
-      }
-
-      // Initial sign in - user object is available
+    async jwt({ token, user, account }) {
+      // SIMPLIFIED: Only set token data on initial sign in
       if (user) {
-        if (!isProduction) console.log("Setting token from user object")
         token.id = user.id
         token.role = user.role
         token.email = user.email
+        console.log("JWT: Setting initial token data", { id: token.id, role: token.role, email: token.email })
         return token
       }
 
-      // Subsequent requests - ensure we have user ID
-      if (!token.id && token.email) {
-        if (!isProduction) console.log("Token missing ID, looking up by email:", token.email)
-        
+      // For existing tokens, only fetch from DB if we're missing critical data
+      if (!token.id || !token.role) {
         try {
-          // Add timeout and retry logic for production
-          const dbUser = await Promise.race([
-            prisma.user.findUnique({
-              where: { email: token.email },
-              select: { id: true, role: true, email: true }
-            }),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Database timeout')), 8000)
-            )
-          ]) as any
+          console.log("JWT: Missing data, fetching from DB for email:", token.email)
+          const dbUser = await prisma.user.findUnique({
+            where: { email: token.email as string },
+            select: { id: true, role: true }
+          })
           
           if (dbUser) {
-            if (!isProduction) console.log("Found user in DB:", dbUser.id)
-            token.id = dbUser.id
+            token.id = dbUser.id.toString()
             token.role = dbUser.role
-          } else {
-            console.warn("User not found in DB for email:", token.email)
+            console.log("JWT: Updated token from DB", { id: token.id, role: token.role })
           }
         } catch (error) {
-          console.error("Error fetching user by email:", error)
-          // In production, don't throw - continue with limited token
+          console.error("JWT: Error fetching user data:", error)
         }
-      }
-
-      // Final fallback: use sub as ID for OAuth providers
-      if (!token.id && token.sub) {
-        if (!isProduction) console.log("Using sub as fallback ID:", token.sub)
-        token.id = token.sub
-      }
-
-      if (!isProduction) {
-        console.log("Token after:", { id: token.id, email: token.email, role: token.role })
       }
       
       return token
     },
     
     async session({ session, token }) {
-      const isProduction = process.env.NODE_ENV === 'production'
-      
-      if (!isProduction) {
-        console.log("=== Session Callback ===")
-        console.log("Token:", { id: token.id, email: token.email, role: token.role, sub: token.sub })
-      }
-      
-      if (session.user) {
-        // Ensure we have a user ID
-        let userId = token.id as string
+      // SIMPLIFIED: Direct assignment from token
+      if (session.user && token) {
+        session.user.id = token.id as string
+        session.user.role = token.role as string || 'USER'
+        session.user.email = token.email as string
         
-        // Fallback to sub if no ID
-        if (!userId && token.sub) {
-          userId = token.sub as string
-        }
-        
-        // Last resort: lookup by email (with caching)
-        if (!userId && token.email && session.user.email) {
-          try {
-            // Add shorter timeout for session callback
-            const dbUser = await Promise.race([
-              prisma.user.findUnique({
-                where: { email: session.user.email },
-                select: { id: true, role: true }
-              }),
-              new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Database timeout')), 5000)
-              )
-            ]) as any
-            
-            if (dbUser) {
-              userId = dbUser.id
-              // Update token for future requests
-              token.id = dbUser.id
-              token.role = dbUser.role
-            }
-          } catch (error) {
-            console.error("Session: Error fetching user:", error)
-            // Continue with whatever we have
-          }
-        }
-
-        // Set session data
-        session.user.id = userId
-        session.user.role = (token.role as string) || 'USER'
-        session.user.email = token.email as string || session.user.email
-        
-        if (!isProduction) {
-          console.log("Final session user:", {
-            id: session.user.id,
-            email: session.user.email,
-            role: session.user.role
-          })
-        }
+        console.log("Session: Final user data", {
+          id: session.user.id,
+          email: session.user.email,
+          role: session.user.role
+        })
       }
       
       return session
     },
 
-    async signIn({ user, account, profile }) {
-      const isProduction = process.env.NODE_ENV === 'production'
+    async signIn({ user, account }) {
+      console.log("SignIn: User attempting to sign in", { 
+        email: user.email, 
+        provider: account?.provider,
+        userId: user.id
+      })
       
-      if (!isProduction) {
-        console.log("=== SignIn Callback ===")
-        console.log("User:", { id: user.id, email: user.email })
-        console.log("Account:", account?.provider)
-      }
-      
-      // Enhanced OAuth handling
+      // For Google OAuth, ensure user exists and update ID
       if (account?.provider === "google" && user.email) {
         try {
-          // Check if user exists
           const existingUser = await prisma.user.findUnique({
             where: { email: user.email },
             select: { id: true, name: true, image: true }
           })
           
           if (existingUser) {
-            // Update user ID to ensure consistency
-            user.id = existingUser.id
-            
-            // Update profile information if needed
-            if (!existingUser.name && user.name) {
-              await prisma.user.update({
-                where: { id: existingUser.id },
-                data: { 
-                  name: user.name,
-                  image: user.image 
-                }
-              })
-            }
+            user.id = existingUser.id.toString()
+            console.log("SignIn: Updated Google user ID", { id: user.id })
           }
         } catch (error) {
-          console.error("SignIn callback error:", error)
-          // Don't prevent signin, just log the error
+          console.error("SignIn: Error updating Google user:", error)
         }
       }
       
@@ -241,7 +153,7 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
   debug: process.env.NODE_ENV === "development",
   
-  // Production-specific configurations
+  // FIXED: Simplified cookie configuration
   useSecureCookies: process.env.NODE_ENV === "production",
   cookies: {
     sessionToken: {
@@ -253,51 +165,30 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: process.env.NODE_ENV === "production",
-        maxAge: 30 * 24 * 60 * 60, // 30 days
-      },
-    },
-    callbackUrl: {
-      name: process.env.NODE_ENV === "production" 
-        ? "__Secure-next-auth.callback-url" 
-        : "next-auth.callback-url",
-      options: {
-        sameSite: "lax",
-        path: "/",
-        secure: process.env.NODE_ENV === "production",
-      },
-    },
-    csrfToken: {
-      name: process.env.NODE_ENV === "production" 
-        ? "__Host-next-auth.csrf-token" 
-        : "next-auth.csrf-token",
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: process.env.NODE_ENV === "production",
+        maxAge: 30 * 24 * 60 * 60,
       },
     },
   },
   
-  // Add production events for debugging
+  // Enhanced production events
   events: {
     async signIn(message) {
-      if (process.env.NODE_ENV === 'production') {
-        console.log("✅ SignIn event:", {
-          user: message.user.email,
-          account: message.account?.provider
-        })
-      }
+      console.log("✅ SignIn event:", {
+        user: message.user.email,
+        account: message.account?.provider,
+        isSignIn: message.isNewUser === false ? 'returning' : 'new'
+      })
     },
     async signOut(message) {
-      if (process.env.NODE_ENV === 'production') {
-        console.log("👋 SignOut event:", message.token?.email)
-      }
+      console.log("👋 SignOut event:", message.token?.email)
     },
     async session(message) {
-      // Only log errors in production to avoid spam
-      if (process.env.NODE_ENV === 'production' && !message.session?.user?.id) {
-        console.error("⚠️ Session missing user ID:", message.session?.user?.email)
+      if (!message.session?.user?.id) {
+        console.error("⚠️ Session missing user ID:", {
+          email: message.session?.user?.email,
+          hasToken: !!message.token,
+          tokenId: message.token?.id
+        })
       }
     }
   }
