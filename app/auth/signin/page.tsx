@@ -1,14 +1,14 @@
-// app/auth/signin/page.tsx - REDIRECT LOOP FIX
+// app/auth/signin/page.tsx - SIMPLE NO-LOOP VERSION
 'use client'
 
-import { useState, Suspense, useEffect } from 'react'
-import { signIn, getSession, useSession } from 'next-auth/react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useState, Suspense, useEffect, useRef } from 'react'
+import { signIn, useSession } from 'next-auth/react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react'
+import { Eye, EyeOff, AlertCircle, Loader2, ExternalLink } from 'lucide-react'
 
 function SignInForm() {
   const [email, setEmail] = useState('')
@@ -16,61 +16,21 @@ function SignInForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [redirecting, setRedirecting] = useState(false)
-  const [redirectAttempts, setRedirectAttempts] = useState(0)
+  const [showRedirectOptions, setShowRedirectOptions] = useState(false)
   
-  const router = useRouter()
   const { data: session, status } = useSession()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/'
+  const hasTriedRedirect = useRef(false)
 
-  // FIXED: Prevent redirect loops
+  // Simple one-time redirect check
   useEffect(() => {
-    // Don't redirect if we're already redirecting or have tried too many times
-    if (redirecting || redirectAttempts >= 3) {
-      console.log('Skipping redirect due to loop prevention')
-      return
+    if (status === 'authenticated' && session?.user?.id && !hasTriedRedirect.current) {
+      hasTriedRedirect.current = true
+      console.log('User authenticated, showing redirect options')
+      setShowRedirectOptions(true)
     }
-
-    console.log('SignIn Page - Session Check:', {
-      status,
-      hasSession: !!session,
-      userId: session?.user?.id,
-      userRole: session?.user?.role,
-      callbackUrl,
-      redirectAttempts
-    })
-
-    if (status === 'authenticated' && session?.user?.id) {
-      console.log('User is authenticated, setting up redirect...')
-      setRedirecting(true)
-      setRedirectAttempts(prev => prev + 1)
-      
-      // Add a delay to prevent immediate redirect loops
-      setTimeout(() => {
-        console.log('Executing redirect after delay')
-        
-        // Decode the callback URL properly
-        const decodedUrl = decodeURIComponent(callbackUrl)
-        console.log('Decoded callback URL:', decodedUrl)
-        
-        // Use router.push instead of window.location for better control
-        router.push(decodedUrl)
-        
-        // If it doesn't work after 2 seconds, try a different approach
-        setTimeout(() => {
-          if (window.location.pathname === '/auth/signin') {
-            console.log('Still on signin page, trying alternative redirect')
-            
-            // Try just the path without query params
-            const urlPath = decodedUrl.split('?')[0]
-            router.push(urlPath)
-          }
-        }, 2000)
-        
-      }, 500) // 500ms delay
-    }
-  }, [status, session, callbackUrl, redirecting, redirectAttempts, router])
+  }, [status, session])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -78,86 +38,116 @@ function SignInForm() {
     setLoading(true)
 
     try {
-      console.log('Attempting sign in for:', email)
-      
       const result = await signIn('credentials', {
         email,
         password,
         redirect: false,
       })
 
-      console.log('Sign in result:', result)
-
       if (result?.error) {
         setError('Invalid email or password')
-        setLoading(false)
-        return
-      }
-
-      if (result?.ok) {
-        console.log('Sign in successful, will redirect via useEffect')
-        // Let the useEffect handle the redirect
-        setLoading(false)
+      } else if (result?.ok) {
+        console.log('Sign in successful')
+        // Don't redirect automatically - let user choose
+        setShowRedirectOptions(true)
       }
     } catch (error) {
       console.error('Sign in error:', error)
       setError('An error occurred. Please try again.')
+    } finally {
       setLoading(false)
     }
   }
 
-  // Show different states
+  const handleDirectNavigation = (path: string) => {
+    console.log('Direct navigation to:', path)
+    // Use the most reliable method - full page navigation
+    window.location.href = path
+  }
+
+  // Show loading while checking auth status
   if (status === 'loading') {
     return <LoadingState message="Checking authentication..." />
   }
 
-  if (redirecting) {
-    return (
-      <LoadingState 
-        message={`Redirecting to ${decodeURIComponent(callbackUrl)}...`} 
-        showRetry={redirectAttempts >= 2}
-        onRetry={() => {
-          setRedirecting(false)
-          setRedirectAttempts(0)
-        }}
-      />
-    )
-  }
-
-  // Emergency escape for infinite loops
-  if (redirectAttempts >= 3) {
+  // Show redirect options if user is authenticated
+  if ((status === 'authenticated' && session?.user?.id) || showRedirectOptions) {
+    const decodedUrl = decodeURIComponent(callbackUrl)
+    
     return (
       <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
-          <CardContent className="p-8 text-center">
-            <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
-            <h2 className="text-lg font-semibold mb-2">Redirect Issue Detected</h2>
-            <p className="text-gray-600 mb-4">
-              You're authenticated but there's a redirect loop. Try these options:
+          <CardHeader className="text-center">
+            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <CardTitle className="text-xl font-bold text-dark-900">
+              Welcome Back!
+            </CardTitle>
+            <p className="text-dark-600">
+              Signed in as <strong>{session?.user?.name || session?.user?.email}</strong>
             </p>
-            <div className="space-y-2">
+          </CardHeader>
+          
+          <CardContent className="space-y-4">
+            <div className="bg-blue-50 p-3 rounded-lg text-sm">
+              <p className="font-medium text-blue-900">Your Role: {session?.user?.role}</p>
+              <p className="text-blue-700">Choose where to go:</p>
+            </div>
+            
+            <div className="space-y-3">
+              {session?.user?.role === 'ADMIN' && (
+                <Button
+                  onClick={() => handleDirectNavigation('/admin')}
+                  className="w-full"
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  Admin Panel
+                </Button>
+              )}
+              
               <Button
-                onClick={() => router.push('/admin')}
-                className="w-full"
-              >
-                Go to Admin Panel
-              </Button>
-              <Button
-                onClick={() => router.push('/dashboard')}
+                onClick={() => handleDirectNavigation('/dashboard')}
                 variant="outline"
                 className="w-full"
               >
-                Go to Dashboard
+                <ExternalLink className="w-4 h-4 mr-2" />
+                My Dashboard
               </Button>
+              
               <Button
-                onClick={() => {
-                  setRedirecting(false)
-                  setRedirectAttempts(0)
-                }}
+                onClick={() => handleDirectNavigation('/courses')}
+                variant="outline"
+                className="w-full"
+              >
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Browse Courses
+              </Button>
+              
+              <Button
+                onClick={() => handleDirectNavigation('/')}
                 variant="ghost"
                 className="w-full"
               >
-                Try Again
+                Homepage
+              </Button>
+            </div>
+            
+            <hr className="my-4" />
+            
+            <div className="text-center">
+              <p className="text-xs text-gray-500 mb-2">
+                Target URL: {decodedUrl}
+              </p>
+              <Button
+                onClick={() => handleDirectNavigation(decodedUrl)}
+                variant="outline"
+                size="sm"
+                className="text-xs"
+              >
+                Go to Original Destination
               </Button>
             </div>
           </CardContent>
@@ -166,6 +156,7 @@ function SignInForm() {
     )
   }
 
+  // Show normal signin form for unauthenticated users
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
@@ -261,45 +252,19 @@ function SignInForm() {
               Continue as guest
             </Link>
           </div>
-
-          {/* Debug section */}
-          <div className="mt-4 p-2 bg-gray-50 rounded text-xs text-gray-600">
-            <p>Status: {status}</p>
-            <p>Authenticated: {!!session}</p>
-            <p>Redirect attempts: {redirectAttempts}</p>
-            <p>Callback: {decodeURIComponent(callbackUrl)}</p>
-          </div>
         </CardContent>
       </Card>
     </div>
   )
 }
 
-function LoadingState({ 
-  message, 
-  showRetry = false, 
-  onRetry 
-}: { 
-  message: string
-  showRetry?: boolean
-  onRetry?: () => void
-}) {
+function LoadingState({ message }: { message: string }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardContent className="p-8 text-center">
           <Loader2 className="w-8 h-8 animate-spin text-primary-600 mx-auto" />
           <p className="mt-4 text-dark-600">{message}</p>
-          {showRetry && onRetry && (
-            <Button 
-              onClick={onRetry}
-              variant="outline"
-              size="sm"
-              className="mt-4"
-            >
-              Cancel Redirect
-            </Button>
-          )}
         </CardContent>
       </Card>
     </div>
