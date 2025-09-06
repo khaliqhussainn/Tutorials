@@ -38,31 +38,29 @@ function SignInForm() {
     setLoading(true)
 
     try {
+      console.log('🔐 Attempting credentials sign in for:', email)
+      
       const result = await signIn('credentials', {
         email,
         password,
         redirect: false,
       })
 
+      console.log('🔐 Sign in result:', { ok: result?.ok, error: result?.error })
+
       if (result?.error) {
         setError('Invalid email or password')
       } else if (result?.ok) {
-        console.log('Sign in successful')
-        // Don't redirect automatically - let user choose
-        setShowRedirectOptions(true)
+        console.log('✅ Sign in successful, redirect will happen via useEffect')
+        // Don't set loading to false - let the redirect happen
+        return
       }
     } catch (error) {
-      console.error('Sign in error:', error)
+      console.error('❌ Sign in error:', error)
       setError('An error occurred. Please try again.')
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleDirectNavigation = (path: string) => {
-    console.log('Direct navigation to:', path)
-    // Use the most reliable method - full page navigation
-    window.location.href = path
   }
 
   // Show loading while checking auth status
@@ -70,90 +68,9 @@ function SignInForm() {
     return <LoadingState message="Checking authentication..." />
   }
 
-  // Show redirect options if user is authenticated
-  if ((status === 'authenticated' && session?.user?.id) || showRedirectOptions) {
-    const decodedUrl = decodeURIComponent(callbackUrl)
-    
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <CardTitle className="text-xl font-bold text-dark-900">
-              Welcome Back!
-            </CardTitle>
-            <p className="text-dark-600">
-              Signed in as <strong>{session?.user?.name || session?.user?.email}</strong>
-            </p>
-          </CardHeader>
-          
-          <CardContent className="space-y-4">
-            <div className="bg-blue-50 p-3 rounded-lg text-sm">
-              <p className="font-medium text-blue-900">Your Role: {session?.user?.role}</p>
-              <p className="text-blue-700">Choose where to go:</p>
-            </div>
-            
-            <div className="space-y-3">
-              {session?.user?.role === 'ADMIN' && (
-                <Button
-                  onClick={() => handleDirectNavigation('/admin')}
-                  className="w-full"
-                >
-                  <ExternalLink className="w-4 h-4 mr-2" />
-                  Admin Panel
-                </Button>
-              )}
-              
-              <Button
-                onClick={() => handleDirectNavigation('/dashboard')}
-                variant="outline"
-                className="w-full"
-              >
-                <ExternalLink className="w-4 h-4 mr-2" />
-                My Dashboard
-              </Button>
-              
-              <Button
-                onClick={() => handleDirectNavigation('/courses')}
-                variant="outline"
-                className="w-full"
-              >
-                <ExternalLink className="w-4 h-4 mr-2" />
-                Browse Courses
-              </Button>
-              
-              <Button
-                onClick={() => handleDirectNavigation('/')}
-                variant="ghost"
-                className="w-full"
-              >
-                Homepage
-              </Button>
-            </div>
-            
-            <hr className="my-4" />
-            
-            <div className="text-center">
-              <p className="text-xs text-gray-500 mb-2">
-                Target URL: {decodedUrl}
-              </p>
-              <Button
-                onClick={() => handleDirectNavigation(decodedUrl)}
-                variant="outline"
-                size="sm"
-                className="text-xs"
-              >
-                Go to Original Destination
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
+  // Show redirecting state if user is authenticated
+  if (status === 'authenticated' && session?.user?.id) {
+    return <LoadingState message={`Redirecting to ${decodeURIComponent(callbackUrl)}...`} />
   }
 
   // Show normal signin form for unauthenticated users
