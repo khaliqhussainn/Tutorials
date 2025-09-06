@@ -1,4 +1,4 @@
-// Course Website: app/api/auth/verify/route.ts (Final Version)
+// app/api/external/auth/verify/route.ts (MOVED TO AVOID CONFLICTS)
 import { NextRequest, NextResponse } from "next/server"
 import { authenticateUser, getUserEnrollments, validateApiKey } from "@/lib/authUtils"
 
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Email and password required' }, { status: 400 })
     }
 
-    // Authenticate user
+    // Authenticate user using the separate auth system
     const user = await authenticateUser(email, password)
     
     if (!user) {
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Course website auth error:', error)
+    console.error('External auth verification error:', error)
     return NextResponse.json(
       { error: 'Internal server error' }, 
       { status: 500 }
