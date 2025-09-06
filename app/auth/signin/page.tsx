@@ -1,4 +1,4 @@
-// app/auth/signin/page.tsx - ASTRO THEMED DESIGN
+// app/auth/signin/page.tsx - Course Website
 'use client'
 
 import { useState, Suspense, useEffect, useRef } from 'react'

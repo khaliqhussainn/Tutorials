@@ -1,3 +1,5 @@
+// app/auth/signup/page.tsx - Course Website
+
 'use client'
 import { useState } from 'react'
 import { signIn } from 'next-auth/react'
