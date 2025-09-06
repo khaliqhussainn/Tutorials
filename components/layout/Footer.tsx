@@ -1,5 +1,7 @@
 // components/Footer.tsx - Mobile-optimized footer component for learning platform
+"use client";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   Facebook,
   Twitter,
@@ -18,7 +20,17 @@ import {
 } from "lucide-react";
 
 const Footer = () => {
+  const pathname = usePathname();
   const currentYear = new Date().getFullYear();
+
+  // Hide footer on specific pages
+  const hideFooterOnPages = ['/auth/signin', '/auth/signup', '/auth/forgot-password'];
+  const shouldHideFooter = hideFooterOnPages.some(page => pathname.startsWith(page));
+
+  // Early return if footer should be hidden
+  if (shouldHideFooter) {
+    return null;
+  }
 
   const footerLinks = {
     courses: [

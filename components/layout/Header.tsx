@@ -426,9 +426,18 @@ export default function Header() {
     return `${Math.floor(diffInSeconds / 86400)}d ago`;
   };
 
+  // Hide header on specific pages
+  const hideHeaderOnPages = ['/auth/signin', '/auth/signup', '/auth/forgot-password'];
+  const shouldHideHeader = hideHeaderOnPages.some(page => pathname.startsWith(page));
+
   // Show search bar on all pages except auth pages
   const hideSearchOnPages = ['/auth/signin', '/auth/signup'];
   const showSearchBar = !hideSearchOnPages.some(page => pathname.startsWith(page));
+
+  // Conditional rendering - return null if header should be hidden
+  if (shouldHideHeader) {
+    return null;
+  }
 
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
