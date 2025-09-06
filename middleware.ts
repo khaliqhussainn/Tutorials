@@ -1,4 +1,4 @@
-// middleware.ts - SIMPLIFIED PERMISSIVE VERSION
+// middleware.ts - MINIMAL VERSION TO STOP REDIRECT LOOPS
 import { withAuth } from "next-auth/middleware"
 import { NextResponse } from "next/server"
 
@@ -7,34 +7,29 @@ export default withAuth(
     const { pathname } = req.nextUrl
     const token = req.nextauth.token
     
-    console.log("🔍 Middleware:", {
-      pathname,
-      hasToken: !!token,
-      email: token?.email,
-      role: token?.role,
-      cookies: Object.keys(req.cookies.getAll().reduce((acc, cookie) => {
-        acc[cookie.name] = cookie.value
-        return acc
-      }, {} as Record<string, string>))
-    })
+    // Only log in production for debugging
+    if (process.env.NODE_ENV === 'production') {
+      console.log("🔍 Middleware:", {
+        pathname,
+        hasToken: !!token,
+        role: token?.role,
+        isAdmin: token?.role === 'ADMIN'
+      })
+    }
 
-    // Only protect admin routes - be very specific
+    // ONLY protect admin routes - nothing else
     if (pathname.startsWith('/admin')) {
-      if (!token) {
-        console.log("❌ No token for admin route")
-        const url = new URL('/auth/signin', req.url)
-        url.searchParams.set('callbackUrl', req.url)
-        return NextResponse.redirect(url)
+      if (!token || token.role !== 'ADMIN') {
+        console.log("❌ Admin access denied")
+        // Use absolute URL to prevent redirect loops
+        const signInUrl = new URL('/auth/signin', req.url)
+        signInUrl.searchParams.set('callbackUrl', req.url)
+        return NextResponse.redirect(signInUrl)
       }
-      
-      if (token.role !== 'ADMIN') {
-        console.log("❌ Non-admin role for admin route:", token.role)
-        return NextResponse.redirect(new URL('/', req.url))
-      }
-      
       console.log("✅ Admin access granted")
     }
 
+    // Allow everything else
     return NextResponse.next()
   },
   {
@@ -42,30 +37,21 @@ export default withAuth(
       authorized: ({ token, req }) => {
         const { pathname } = req.nextUrl
         
-        // Be very permissive - only check admin routes strictly
+        // CRITICAL: Only block admin routes, allow everything else
         if (pathname.startsWith('/admin')) {
           return !!token && token.role === 'ADMIN'
         }
         
-        // Allow everything else through
-        // Let the pages handle their own auth checks
+        // Allow all other requests - no authentication required
         return true
       },
     },
-    // Add pages configuration to avoid redirect loops
-    pages: {
-      signIn: '/auth/signin',
-      error: '/auth/error',
-    }
   }
 )
 
+// CRITICAL: Only match admin routes to prevent interference
 export const config = {
-  // Be more specific about what to match
   matcher: [
-    '/admin/:path*',
-    '/dashboard/:path*',
-    '/profile/:path*',
-    '/favorites/:path*'
+    '/admin/:path*'
   ],
 }

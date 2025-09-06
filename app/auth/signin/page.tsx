@@ -1,4 +1,4 @@
-// app/auth/signin/page.tsx - PRODUCTION ROBUST VERSION
+// app/auth/signin/page.tsx - REDIRECT LOOP FIX
 'use client'
 
 import { useState, Suspense, useEffect } from 'react'
@@ -17,63 +17,60 @@ function SignInForm() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [redirecting, setRedirecting] = useState(false)
+  const [redirectAttempts, setRedirectAttempts] = useState(0)
   
   const router = useRouter()
-  const { data: session, status, update } = useSession()
+  const { data: session, status } = useSession()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/'
 
-  // Enhanced redirect logic for authenticated users
+  // FIXED: Prevent redirect loops
   useEffect(() => {
+    // Don't redirect if we're already redirecting or have tried too many times
+    if (redirecting || redirectAttempts >= 3) {
+      console.log('Skipping redirect due to loop prevention')
+      return
+    }
+
     console.log('SignIn Page - Session Check:', {
       status,
       hasSession: !!session,
       userId: session?.user?.id,
       userRole: session?.user?.role,
-      callbackUrl
+      callbackUrl,
+      redirectAttempts
     })
 
     if (status === 'authenticated' && session?.user?.id) {
-      console.log('User is authenticated, initiating redirect...')
+      console.log('User is authenticated, setting up redirect...')
       setRedirecting(true)
+      setRedirectAttempts(prev => prev + 1)
       
-      // For admin routes, use window.location for hard redirect
-      if (callbackUrl.includes('/admin')) {
-        console.log('Admin route detected, using hard redirect')
-        window.location.replace(callbackUrl)
-      } else {
-        console.log('Regular route, using router push')
-        router.replace(callbackUrl)
-      }
-    }
-  }, [status, session, callbackUrl, router])
-
-  // Additional check for existing session on mount
-  useEffect(() => {
-    const checkExistingSession = async () => {
-      try {
-        const existingSession = await getSession()
-        console.log('Existing session check:', existingSession)
+      // Add a delay to prevent immediate redirect loops
+      setTimeout(() => {
+        console.log('Executing redirect after delay')
         
-        if (existingSession?.user?.id) {
-          console.log('Found existing session, redirecting...')
-          setRedirecting(true)
-          
-          if (callbackUrl.includes('/admin')) {
-            window.location.replace(callbackUrl)
-          } else {
-            router.replace(callbackUrl)
+        // Decode the callback URL properly
+        const decodedUrl = decodeURIComponent(callbackUrl)
+        console.log('Decoded callback URL:', decodedUrl)
+        
+        // Use router.push instead of window.location for better control
+        router.push(decodedUrl)
+        
+        // If it doesn't work after 2 seconds, try a different approach
+        setTimeout(() => {
+          if (window.location.pathname === '/auth/signin') {
+            console.log('Still on signin page, trying alternative redirect')
+            
+            // Try just the path without query params
+            const urlPath = decodedUrl.split('?')[0]
+            router.push(urlPath)
           }
-        }
-      } catch (error) {
-        console.error('Error checking existing session:', error)
-      }
+        }, 2000)
+        
+      }, 500) // 500ms delay
     }
-
-    if (status === 'unauthenticated') {
-      checkExistingSession()
-    }
-  }, [status, callbackUrl, router])
+  }, [status, session, callbackUrl, redirecting, redirectAttempts, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -98,63 +95,77 @@ function SignInForm() {
       }
 
       if (result?.ok) {
-        console.log('Sign in successful, establishing session...')
-        setRedirecting(true)
-        
-        // Force session refresh
-        await update()
-        
-        // Multiple attempts to establish session
-        let sessionEstablished = false
-        for (let i = 0; i < 10; i++) {
-          await new Promise(resolve => setTimeout(resolve, 300))
-          
-          const freshSession = await getSession()
-          console.log(`Session establishment attempt ${i + 1}:`, {
-            hasSession: !!freshSession,
-            userId: freshSession?.user?.id,
-            userRole: freshSession?.user?.role
-          })
-          
-          if (freshSession?.user?.id) {
-            sessionEstablished = true
-            console.log('Session established successfully')
-            
-            // For admin routes or any issues, force hard redirect
-            if (callbackUrl.includes('/admin') || i > 5) {
-              console.log('Using hard redirect for reliability')
-              window.location.replace(callbackUrl)
-            } else {
-              router.replace(callbackUrl)
-            }
-            return
-          }
-        }
-        
-        if (!sessionEstablished) {
-          console.error('Failed to establish session, using fallback redirect')
-          // Fallback to hard redirect
-          window.location.replace(callbackUrl)
-        }
+        console.log('Sign in successful, will redirect via useEffect')
+        // Let the useEffect handle the redirect
+        setLoading(false)
       }
     } catch (error) {
       console.error('Sign in error:', error)
       setError('An error occurred. Please try again.')
       setLoading(false)
-      setRedirecting(false)
     }
   }
 
-  // Show loading states
+  // Show different states
   if (status === 'loading') {
     return <LoadingState message="Checking authentication..." />
   }
 
   if (redirecting) {
-    return <LoadingState message="Redirecting..." />
+    return (
+      <LoadingState 
+        message={`Redirecting to ${decodeURIComponent(callbackUrl)}...`} 
+        showRetry={redirectAttempts >= 2}
+        onRetry={() => {
+          setRedirecting(false)
+          setRedirectAttempts(0)
+        }}
+      />
+    )
   }
 
-  // Show signin form only if definitely not authenticated
+  // Emergency escape for infinite loops
+  if (redirectAttempts >= 3) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="p-8 text-center">
+            <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+            <h2 className="text-lg font-semibold mb-2">Redirect Issue Detected</h2>
+            <p className="text-gray-600 mb-4">
+              You're authenticated but there's a redirect loop. Try these options:
+            </p>
+            <div className="space-y-2">
+              <Button
+                onClick={() => router.push('/admin')}
+                className="w-full"
+              >
+                Go to Admin Panel
+              </Button>
+              <Button
+                onClick={() => router.push('/dashboard')}
+                variant="outline"
+                className="w-full"
+              >
+                Go to Dashboard
+              </Button>
+              <Button
+                onClick={() => {
+                  setRedirecting(false)
+                  setRedirectAttempts(0)
+                }}
+                variant="ghost"
+                className="w-full"
+              >
+                Try Again
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
@@ -251,46 +262,44 @@ function SignInForm() {
             </Link>
           </div>
 
-          {/* Emergency admin access button for production debugging */}
-          {process.env.NODE_ENV === 'production' && (
-            <div className="mt-4 text-center">
-              <button
-                onClick={() => {
-                  console.log('Emergency redirect to admin')
-                  window.location.replace('/admin')
-                }}
-                className="text-xs text-gray-400 hover:text-gray-600"
-              >
-                Emergency Admin Access
-              </button>
-            </div>
-          )}
-
-          {/* Debug info */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mt-4 p-3 bg-gray-50 rounded text-xs">
-              <p>Debug Info:</p>
-              <p>Status: {status}</p>
-              <p>Callback URL: {callbackUrl}</p>
-              <p>Has Session: {!!session}</p>
-              <p>User ID: {session?.user?.id}</p>
-              <p>User Role: {session?.user?.role}</p>
-              <p>Redirecting: {redirecting.toString()}</p>
-            </div>
-          )}
+          {/* Debug section */}
+          <div className="mt-4 p-2 bg-gray-50 rounded text-xs text-gray-600">
+            <p>Status: {status}</p>
+            <p>Authenticated: {!!session}</p>
+            <p>Redirect attempts: {redirectAttempts}</p>
+            <p>Callback: {decodeURIComponent(callbackUrl)}</p>
+          </div>
         </CardContent>
       </Card>
     </div>
   )
 }
 
-function LoadingState({ message }: { message: string }) {
+function LoadingState({ 
+  message, 
+  showRetry = false, 
+  onRetry 
+}: { 
+  message: string
+  showRetry?: boolean
+  onRetry?: () => void
+}) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardContent className="p-8 text-center">
           <Loader2 className="w-8 h-8 animate-spin text-primary-600 mx-auto" />
           <p className="mt-4 text-dark-600">{message}</p>
+          {showRetry && onRetry && (
+            <Button 
+              onClick={onRetry}
+              variant="outline"
+              size="sm"
+              className="mt-4"
+            >
+              Cancel Redirect
+            </Button>
+          )}
         </CardContent>
       </Card>
     </div>
