@@ -1,14 +1,14 @@
-// app/auth/signin/page.tsx - TARGETED FIX FOR CALLBACK ISSUES
+// app/auth/signin/page.tsx - FIX FOR ACCOUNT SWITCHING ISSUES
 'use client'
 
-import { useState, Suspense, useEffect } from 'react'
-import { signIn, useSession } from 'next-auth/react'
+import { useState, Suspense, useEffect, useRef } from 'react'
+import { signIn, signOut, useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react'
+import { Eye, EyeOff, AlertCircle, Loader2, RefreshCw } from 'lucide-react'
 
 function SignInForm() {
   const [email, setEmail] = useState('')
@@ -17,11 +17,28 @@ function SignInForm() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [isRedirecting, setIsRedirecting] = useState(false)
+  const [sessionConflict, setSessionConflict] = useState(false)
   
-  const { data: session, status } = useSession()
+  const { data: session, status, update } = useSession()
   const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/'
+  const redirectAttempted = useRef(false)
+  const lastEmail = useRef<string>('')
+
+  // Check for session conflicts when switching accounts
+  useEffect(() => {
+    if (session?.user?.email && lastEmail.current && 
+        session.user.email !== lastEmail.current && 
+        lastEmail.current !== '') {
+      console.log('Session conflict detected - different user signed in')
+      setSessionConflict(true)
+      setError(`You're signed in as ${session.user.email}, but trying to access a different account.`)
+    } else if (session?.user?.email) {
+      lastEmail.current = session.user.email
+      setSessionConflict(false)
+    }
+  }, [session])
 
   // Debug session data
   useEffect(() => {
@@ -31,38 +48,63 @@ function SignInForm() {
       userId: session?.user?.id,
       userRole: session?.user?.role,
       userEmail: session?.user?.email,
-      callbackUrl: decodeURIComponent(callbackUrl)
+      callbackUrl: decodeURIComponent(callbackUrl),
+      redirectAttempted: redirectAttempted.current,
+      sessionConflict
     })
-  }, [status, session, callbackUrl])
+  }, [status, session, callbackUrl, sessionConflict])
 
   // Handle redirect for authenticated users
   useEffect(() => {
-    if (status === 'authenticated' && session?.user?.id && !isRedirecting) {
-      console.log('User is authenticated, initiating redirect...')
+    if (status === 'authenticated' && 
+        session?.user?.id && 
+        !redirectAttempted.current && 
+        !sessionConflict && 
+        !loading) {
+      
+      console.log('Starting redirect process...')
+      redirectAttempted.current = true
       setIsRedirecting(true)
       
       const targetUrl = decodeURIComponent(callbackUrl)
       console.log('Redirecting to:', targetUrl)
       
-      // Use timeout to ensure session is fully established
-      setTimeout(() => {
-        router.replace(targetUrl)
-      }, 500)
+      // Force session refresh before redirect
+      update().then(() => {
+        setTimeout(() => {
+          router.replace(targetUrl)
+        }, 200)
+      }).catch(() => {
+        // If update fails, try redirect anyway
+        setTimeout(() => {
+          router.replace(targetUrl)
+        }, 200)
+      })
     }
-  }, [status, session, callbackUrl, router, isRedirecting])
+  }, [status, session, callbackUrl, router, sessionConflict, loading, update])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
+    setSessionConflict(false)
+    redirectAttempted.current = false
+
+    // Clear any existing session if email is different
+    if (session?.user?.email && session.user.email !== email) {
+      console.log('Signing out previous user before new signin')
+      await signOut({ redirect: false })
+      // Small delay to ensure signout completes
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
 
     try {
-      console.log('Attempting sign in...')
+      console.log('Attempting sign in for:', email)
       
       const result = await signIn('credentials', {
         email,
         password,
-        redirect: false, // Handle redirect manually
+        redirect: false,
       })
 
       console.log('Sign in result:', result)
@@ -72,8 +114,11 @@ function SignInForm() {
         setLoading(false)
       } else if (result?.ok) {
         console.log('Sign in successful, waiting for session...')
+        lastEmail.current = email
         // Don't set loading to false, let redirect happen
-        setIsRedirecting(true)
+      } else {
+        setError('Sign in failed. Please try again.')
+        setLoading(false)
       }
     } catch (error) {
       console.error('Sign in error:', error)
@@ -82,13 +127,87 @@ function SignInForm() {
     }
   }
 
+  const handleClearSession = async () => {
+    console.log('Clearing session manually')
+    setLoading(true)
+    setSessionConflict(false)
+    redirectAttempted.current = false
+    lastEmail.current = ''
+    
+    await signOut({ redirect: false })
+    
+    // Clear browser cache/reload
+    setTimeout(() => {
+      window.location.reload()
+    }, 500)
+  }
+
+  const handleForceRedirect = () => {
+    const targetUrl = decodeURIComponent(callbackUrl)
+    console.log('Force redirecting to:', targetUrl)
+    window.location.href = targetUrl
+  }
+
   // Show loading states
   if (status === 'loading') {
     return <LoadingState message="Checking authentication..." />
   }
 
-  if (isRedirecting || (status === 'authenticated' && session?.user?.id)) {
-    return <LoadingState message={`Redirecting to ${decodeURIComponent(callbackUrl)}...`} />
+  if (isRedirecting && !sessionConflict) {
+    return (
+      <LoadingState 
+        message={`Redirecting to ${decodeURIComponent(callbackUrl)}...`}
+        showForceButton={true}
+        onForceRedirect={handleForceRedirect}
+      />
+    )
+  }
+
+  // Show session conflict resolution
+  if (sessionConflict) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+            <CardTitle className="text-xl font-bold text-dark-900">
+              Account Conflict Detected
+            </CardTitle>
+            <p className="text-dark-600">
+              You're currently signed in as a different user.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-amber-50 p-3 rounded-lg text-sm">
+              <p className="text-amber-800">
+                Current session: <strong>{session?.user?.email}</strong>
+              </p>
+              <p className="text-amber-600 mt-1">
+                Clear this session to sign in with a different account.
+              </p>
+            </div>
+            
+            <div className="space-y-3">
+              <Button
+                onClick={handleForceRedirect}
+                className="w-full"
+              >
+                Continue as {session?.user?.email}
+              </Button>
+              
+              <Button
+                onClick={handleClearSession}
+                variant="outline"
+                className="w-full"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Sign Out & Try Again
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -171,6 +290,20 @@ function SignInForm() {
             </Button>
           </form>
 
+          {/* Clear session option */}
+          {session && (
+            <div className="mt-4 text-center">
+              <Button
+                onClick={handleClearSession}
+                variant="ghost"
+                size="sm"
+                className="text-xs"
+              >
+                Sign out current user ({session.user?.email})
+              </Button>
+            </div>
+          )}
+
           <div className="mt-6 text-center">
             <p className="text-sm text-dark-600">
               Don't have an account?{' '}
@@ -191,32 +324,37 @@ function SignInForm() {
               Continue as guest
             </Link>
           </div>
-
-          {/* Debug info in development */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mt-4 p-3 bg-gray-50 rounded text-xs">
-              <p className="font-medium">Debug Info:</p>
-              <p>Status: {status}</p>
-              <p>Has Session: {!!session}</p>
-              <p>User ID: {session?.user?.id}</p>
-              <p>User Role: {session?.user?.role}</p>
-              <p>Callback: {decodeURIComponent(callbackUrl)}</p>
-              <p>Redirecting: {isRedirecting.toString()}</p>
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>
   )
 }
 
-function LoadingState({ message }: { message: string }) {
+function LoadingState({ 
+  message, 
+  showForceButton = false, 
+  onForceRedirect 
+}: { 
+  message: string
+  showForceButton?: boolean
+  onForceRedirect?: () => void
+}) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardContent className="p-8 text-center">
           <Loader2 className="w-8 h-8 animate-spin text-primary-600 mx-auto" />
           <p className="mt-4 text-dark-600">{message}</p>
+          {showForceButton && onForceRedirect && (
+            <Button
+              onClick={onForceRedirect}
+              variant="outline"
+              size="sm"
+              className="mt-4"
+            >
+              Force Redirect
+            </Button>
+          )}
         </CardContent>
       </Card>
     </div>
