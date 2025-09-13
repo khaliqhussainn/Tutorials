@@ -1,6 +1,6 @@
 import { Search } from "lucide-react";
 
-type TabId = "about" | "qa" | "notes" | "announcements" | "reviews" | "learning-tools";
+type TabId = "about" | "qa" | "notes" | "announcements" | "reviews" | "compiler" |  "learning-tools";
 
 interface TabNavigationProps {
   activeTab: TabId;
@@ -27,6 +27,10 @@ const tabs = [
   {
     id: "reviews" as const,
     label: "Reviews",
+  },
+  {
+    id: "compiler" as const,
+    label: "Compiler",
   },
   {
     id: "learning-tools" as const,

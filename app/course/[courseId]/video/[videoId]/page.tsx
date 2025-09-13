@@ -1,6 +1,5 @@
 // app/course/[courseId]/video/[videoId]/page.tsx
 "use client";
-
 import { useState, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -13,20 +12,19 @@ import {
   VideoPlayerRef,
 } from "@/components/VideoPlayerWithTranscript";
 import { NotesTab } from "@/components/NotesTab";
-import { 
-  PlayCircle, 
-  CheckCircle, 
-  Clock, 
-  Target, 
+import {
+  PlayCircle,
+  CheckCircle,
+  Clock,
+  Target,
   Award,
   XCircle,
   ChevronRight,
   ChevronLeft,
   Brain,
   HelpCircle,
-  RefreshCw
+  RefreshCw,
 } from "lucide-react";
-
 // Import existing components
 import { VideoPageHeader } from "@/components/video/VideoPageHeader";
 import { TabNavigation } from "@/components/video/TabNavigation";
@@ -36,6 +34,7 @@ import { AnnouncementsTab } from "@/components/video/AnnouncementsTab";
 import { AboutTab } from "@/components/video/AboutTab";
 import { LearningToolsTab } from "@/components/video/LearningToolsTab";
 import { EnhancedCourseSidebar } from "@/components/video/CourseSidebar";
+import { CompilerTab } from "@/components/video/CompilerTab";
 
 interface Test {
   id: string;
@@ -43,7 +42,7 @@ interface Test {
   options: string[];
   correct: number;
   explanation: string;
-  difficulty?: 'easy' | 'medium' | 'hard';
+  difficulty?: "easy" | "medium" | "hard";
   points?: number;
   order?: number;
 }
@@ -72,12 +71,12 @@ interface CourseSection {
   id: string;
   title: string;
   order: number;
-  videos: { 
-    id: string; 
-    order: number; 
-    title: string; 
-    duration?: number; 
-    tests?: Test[] 
+  videos: {
+    id: string;
+    order: number;
+    title: string;
+    duration?: number;
+    tests?: Test[];
   }[];
 }
 
@@ -89,12 +88,12 @@ interface Course {
   category: string;
   level: string;
   sections: CourseSection[];
-  videos: { 
-    id: string; 
-    order: number; 
-    title: string; 
-    duration?: number; 
-    tests?: Test[] 
+  videos: {
+    id: string;
+    order: number;
+    title: string;
+    duration?: number;
+    tests?: Test[];
   }[];
   _count: { enrollments: number };
   rating?: number;
@@ -184,20 +183,30 @@ export default function VideoPage({
   const playerRef = useRef<VideoPlayerRef>(null);
 
   // Check if we're in quiz mode
-  const isQuizMode = searchParams?.get('mode') === 'quiz';
+  const isQuizMode = searchParams?.get("mode") === "quiz";
 
   const [video, setVideo] = useState<Video | null>(null);
   const [course, setCourse] = useState<Course | null>(null);
   const [videoProgress, setVideoProgress] = useState<VideoProgress[]>([]);
   const [watchTime, setWatchTime] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [currentSection, setCurrentSection] = useState<CourseSection | null>(null);
+  const [currentSection, setCurrentSection] = useState<CourseSection | null>(
+    null
+  );
   const [videoCompleted, setVideoCompleted] = useState(false);
   const [canWatch, setCanWatch] = useState(false);
   const [activeTab, setActiveTab] = useState<
-    "about" | "qa" | "notes" | "announcements" | "reviews" | "learning-tools"
+    | "about"
+    | "qa"
+    | "notes"
+    | "announcements"
+    | "reviews"
+    | "learning-tools"
+    | "compiler"
   >("about");
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(
+    new Set()
+  );
   const [currentVideoTime, setCurrentVideoTime] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -228,7 +237,6 @@ export default function VideoPage({
       fetchQuestions();
       fetchAnnouncements();
       fetchReviews();
-      
       if (isQuizMode) {
         fetchPreviousAttempts();
       }
@@ -255,7 +263,9 @@ export default function VideoPage({
 
   const fetchPreviousAttempts = async () => {
     try {
-      const response = await fetch(`/api/videos/${params.videoId}/quiz-attempts`);
+      const response = await fetch(
+        `/api/videos/${params.videoId}/quiz-attempts`
+      );
       if (response.ok) {
         const attempts = await response.json();
         setPreviousAttempts(attempts);
@@ -279,7 +289,9 @@ export default function VideoPage({
 
   const fetchAnnouncements = async () => {
     try {
-      const response = await fetch(`/api/courses/${params.courseId}/announcements`);
+      const response = await fetch(
+        `/api/courses/${params.courseId}/announcements`
+      );
       if (response.ok) {
         const data = await response.json();
         setAnnouncements(data.announcements || []);
@@ -340,7 +352,6 @@ export default function VideoPage({
       if (response.ok) {
         const data = await response.json();
         setVideoProgress(data);
-
         const currentVideoProgress = data.find(
           (p: VideoProgress) => p.videoId === params.videoId
         );
@@ -372,12 +383,9 @@ export default function VideoPage({
     playedSeconds: number;
   }) => {
     if (isQuizMode) return;
-    
     setCurrentVideoTime(progress.playedSeconds);
-
     if (progress.playedSeconds > watchTime) {
       setWatchTime(progress.playedSeconds);
-
       if (Math.floor(progress.playedSeconds) % 10 === 0) {
         try {
           await fetch(`/api/progress/video`, {
@@ -397,9 +405,7 @@ export default function VideoPage({
 
   const handleVideoEnd = async () => {
     if (isQuizMode || videoCompleted) return;
-    
     setVideoCompleted(true);
-
     try {
       await fetch(`/api/progress/video`, {
         method: "POST",
@@ -410,7 +416,6 @@ export default function VideoPage({
           watchTime: video?.duration || 0,
         }),
       });
-
       await fetchVideoProgress();
     } catch (error) {
       console.error("Error marking video complete:", error);
@@ -420,7 +425,6 @@ export default function VideoPage({
   // Quiz handlers
   const startQuiz = () => {
     if (!video?.tests) return;
-    
     setQuizStarted(true);
     setStartTime(new Date());
     setCurrentQuestionIndex(0);
@@ -439,7 +443,6 @@ export default function VideoPage({
 
   const handleNext = () => {
     if (!video?.tests) return;
-    
     if (currentQuestionIndex < video.tests.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
       setSelectedAnswer(answers[currentQuestionIndex + 1]);
@@ -457,27 +460,24 @@ export default function VideoPage({
 
   const submitQuiz = async () => {
     if (!video?.tests) return;
-    
     setSubmitting(true);
-    
     try {
-      const correctAnswers = answers.filter((answer, index) => 
-        answer === video.tests[index].correct
+      const correctAnswers = answers.filter(
+        (answer, index) => answer === video.tests[index].correct
       ).length;
-      
       const score = Math.round((correctAnswers / video.tests.length) * 100);
       const passed = score >= 70;
 
       const response = await fetch(`/api/progress/quiz`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           videoId: params.videoId,
           answers: answers,
           score,
           passed,
-          timeSpent
-        })
+          timeSpent,
+        }),
       });
 
       if (response.ok) {
@@ -486,7 +486,7 @@ export default function VideoPage({
         await fetchPreviousAttempts();
       }
     } catch (error) {
-      console.error('Error submitting quiz:', error);
+      console.error("Error submitting quiz:", error);
     } finally {
       setSubmitting(false);
     }
@@ -494,23 +494,21 @@ export default function VideoPage({
 
   const calculateResults = () => {
     if (!video?.tests) return { correct: 0, total: 0, score: 0, passed: false };
-    
-    const correctAnswers = answers.filter((answer, index) => 
-      answer === video.tests[index].correct
+    const correctAnswers = answers.filter(
+      (answer, index) => answer === video.tests[index].correct
     ).length;
-    
     return {
       correct: correctAnswers,
       total: video.tests.length,
       score: Math.round((correctAnswers / video.tests.length) * 100),
-      passed: (correctAnswers / video.tests.length) * 100 >= 70
+      passed: (correctAnswers / video.tests.length) * 100 >= 70,
     };
   };
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   const handleSeekTo = (timeInSeconds: number) => {
@@ -528,7 +526,6 @@ export default function VideoPage({
     sectionIndex: number
   ): string => {
     const progress = videoProgress.find((p) => p.videoId === videoItem.id);
-
     if (videoItem.tests && videoItem.tests.length > 0) {
       if (progress?.completed && progress?.testPassed) return "completed";
       if (progress?.completed && !progress?.testPassed) return "quiz-required";
@@ -541,7 +538,6 @@ export default function VideoPage({
     }
 
     let prevVideo: any = null;
-
     if (videoIndex > 0) {
       prevVideo = sectionVideos[videoIndex - 1];
     } else if (sectionIndex > 0) {
@@ -552,13 +548,14 @@ export default function VideoPage({
     }
 
     if (prevVideo) {
-      const prevProgress = videoProgress.find((p) => p.videoId === prevVideo.id);
+      const prevProgress = videoProgress.find(
+        (p) => p.videoId === prevVideo.id
+      );
       const prevCompleted =
         prevProgress?.completed &&
         (!prevVideo.tests ||
           prevVideo.tests.length === 0 ||
           prevProgress?.testPassed);
-
       if (prevCompleted) {
         return "available";
       }
@@ -593,7 +590,6 @@ export default function VideoPage({
     return videoProgress.filter((p) => {
       const videoItem = getAllVideos().find((v) => v.id === p.videoId);
       if (!videoItem) return false;
-
       if (!videoItem.tests || videoItem.tests.length === 0) {
         return p.completed;
       }
@@ -634,9 +630,11 @@ export default function VideoPage({
     const remainingSeconds = Math.floor(seconds % 60);
 
     if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${remainingSeconds
+        .toString()
+        .padStart(2, "0")}`;
     }
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
   };
 
   // Render functions
@@ -674,10 +672,10 @@ export default function VideoPage({
                 Ready to test your knowledge?
               </h2>
               <p className="text-gray-600 leading-relaxed mb-8">
-                This quiz contains {video.tests.length} questions and should take about {Math.ceil(video.tests.length * 1.5)} minutes to complete.
-                You need a score of 70% or higher to pass.
+                This quiz contains {video.tests.length} questions and should
+                take about {Math.ceil(video.tests.length * 1.5)} minutes to
+                complete. You need a score of 70% or higher to pass.
               </p>
-
               <div className="grid md:grid-cols-3 gap-6 mb-8">
                 <div className="text-center p-4 bg-[#001e62]/5 rounded-lg border border-[#001e62]/20">
                   <div className="text-2xl font-bold text-[#001e62] mb-1">
@@ -686,7 +684,9 @@ export default function VideoPage({
                   <div className="text-sm text-[#001e62]">Questions</div>
                 </div>
                 <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
-                  <div className="text-2xl font-bold text-green-600 mb-1">70%</div>
+                  <div className="text-2xl font-bold text-green-600 mb-1">
+                    70%
+                  </div>
                   <div className="text-sm text-green-800">Passing Score</div>
                 </div>
                 <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
@@ -696,7 +696,6 @@ export default function VideoPage({
                   <div className="text-sm text-blue-800">Previous Attempts</div>
                 </div>
               </div>
-
               <Button
                 size="lg"
                 onClick={startQuiz}
@@ -721,19 +720,30 @@ export default function VideoPage({
           <div className="max-w-3xl mx-auto">
             <div className="mb-8">
               <div className="flex justify-between text-sm text-gray-600 mb-3">
-                <span>Question {currentQuestionIndex + 1} of {video.tests.length}</span>
+                <span>
+                  Question {currentQuestionIndex + 1} of {video.tests.length}
+                </span>
                 <div className="flex items-center space-x-4">
                   <div className="flex items-center">
                     <Clock className="w-4 h-4 mr-1" />
                     <span>{formatTime(timeSpent)}</span>
                   </div>
-                  <span>{Math.round(((currentQuestionIndex + 1) / video.tests.length) * 100)}% Complete</span>
+                  <span>
+                    {Math.round(
+                      ((currentQuestionIndex + 1) / video.tests.length) * 100
+                    )}
+                    % Complete
+                  </span>
                 </div>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
-                <div 
+                <div
                   className="bg-[#001e62] h-3 rounded-full transition-all duration-300"
-                  style={{ width: `${((currentQuestionIndex + 1) / video.tests.length) * 100}%` }}
+                  style={{
+                    width: `${
+                      ((currentQuestionIndex + 1) / video.tests.length) * 100
+                    }%`,
+                  }}
                 />
               </div>
             </div>
@@ -752,16 +762,18 @@ export default function VideoPage({
                       onClick={() => handleAnswerSelect(index)}
                       className={`w-full p-4 text-left rounded-lg border-2 transition-all duration-200 ${
                         selectedAnswer === index
-                          ? 'border-[#001e62] bg-[#001e62]/5 shadow-md'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          ? "border-[#001e62] bg-[#001e62]/5 shadow-md"
+                          : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                       }`}
                     >
                       <div className="flex items-center">
-                        <div className={`w-6 h-6 rounded-full border-2 mr-4 flex items-center justify-center ${
-                          selectedAnswer === index
-                            ? 'border-[#001e62] bg-[#001e62]'
-                            : 'border-gray-300'
-                        }`}>
+                        <div
+                          className={`w-6 h-6 rounded-full border-2 mr-4 flex items-center justify-center ${
+                            selectedAnswer === index
+                              ? "border-[#001e62] bg-[#001e62]"
+                              : "border-gray-300"
+                          }`}
+                        >
                           {selectedAnswer === index && (
                             <div className="w-2 h-2 rounded-full bg-white"></div>
                           )}
@@ -779,12 +791,13 @@ export default function VideoPage({
                       className="flex items-center text-[#001e62] hover:text-[#001e62]/80 text-sm"
                     >
                       <HelpCircle className="w-4 h-4 mr-1" />
-                      {showExplanation ? 'Hide' : 'Show'} explanation
+                      {showExplanation ? "Hide" : "Show"} explanation
                     </button>
-                    
                     {showExplanation && (
                       <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                        <p className="text-blue-800 text-sm">{currentQuestion.explanation}</p>
+                        <p className="text-blue-800 text-sm">
+                          {currentQuestion.explanation}
+                        </p>
                       </div>
                     )}
                   </div>
@@ -803,7 +816,9 @@ export default function VideoPage({
 
                   <div className="text-center">
                     {selectedAnswer === -1 ? (
-                      <p className="text-sm text-gray-500">Select an answer to continue</p>
+                      <p className="text-sm text-gray-500">
+                        Select an answer to continue
+                      </p>
                     ) : (
                       <div className="flex items-center justify-center text-[#001e62]">
                         <CheckCircle className="w-4 h-4 mr-1" />
@@ -844,63 +859,79 @@ export default function VideoPage({
 
     if (showResults) {
       const results = calculateResults();
-      
       return (
         <div className="bg-gray-50 p-6">
           <div className="max-w-2xl mx-auto">
-            <Card className={`border-2 shadow-lg ${
-              results.passed ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
-            }`}>
+            <Card
+              className={`border-2 shadow-lg ${
+                results.passed
+                  ? "border-green-200 bg-green-50"
+                  : "border-red-200 bg-red-50"
+              }`}
+            >
               <CardContent className="p-8 text-center">
-                <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${
-                  results.passed ? 'bg-green-100' : 'bg-red-100'
-                }`}>
+                <div
+                  className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${
+                    results.passed ? "bg-green-100" : "bg-red-100"
+                  }`}
+                >
                   {results.passed ? (
                     <Award className="w-10 h-10 text-green-600" />
                   ) : (
                     <XCircle className="w-10 h-10 text-red-600" />
                   )}
                 </div>
-                
-                <h2 className={`text-3xl font-bold mb-4 ${
-                  results.passed ? 'text-green-800' : 'text-red-800'
-                }`}>
-                  {results.passed ? 'Congratulations!' : 'Keep Learning!'}
+                <h2
+                  className={`text-3xl font-bold mb-4 ${
+                    results.passed ? "text-green-800" : "text-red-800"
+                  }`}
+                >
+                  {results.passed ? "Congratulations!" : "Keep Learning!"}
                 </h2>
-                
                 <div className="mb-6">
-                  <div className={`text-4xl font-bold mb-2 ${
-                    results.passed ? 'text-green-700' : 'text-red-700'
-                  }`}>
+                  <div
+                    className={`text-4xl font-bold mb-2 ${
+                      results.passed ? "text-green-700" : "text-red-700"
+                    }`}
+                  >
                     {results.score}%
                   </div>
-                  <p className={`text-lg ${
-                    results.passed ? 'text-green-600' : 'text-red-600'
-                  }`}>
+                  <p
+                    className={`text-lg ${
+                      results.passed ? "text-green-600" : "text-red-600"
+                    }`}
+                  >
                     {results.correct} out of {results.total} questions correct
                   </p>
                 </div>
-
                 <div className="flex items-center justify-center space-x-4">
                   {results.passed ? (
-                    <Button 
-                      onClick={() => router.push(`/course/${params.courseId}/video/${params.videoId}`)}
+                    <Button
+                      onClick={() =>
+                        router.push(
+                          `/course/${params.courseId}/video/${params.videoId}`
+                        )
+                      }
                       className="bg-[#001e62] hover:bg-[#001e62]/90"
                     >
                       Continue Learning
                     </Button>
                   ) : (
                     <>
-                      <Button 
+                      <Button
                         onClick={startQuiz}
                         className="bg-[#001e62] hover:bg-[#001e62]/90"
                       >
                         <RefreshCw className="w-4 h-4 mr-2" />
                         Retake Quiz
                       </Button>
-                      <Button 
+                      <Button
                         variant="outline"
-                        onClick={() => router.push(`/course/${params.courseId}/video/${params.videoId}`)}
+                        onClick={() =>
+                          router.push(
+                            `/course/${params.courseId}/video/${params.videoId}`
+                          )
+                        }
                       >
                         Review Video
                       </Button>
@@ -926,16 +957,19 @@ export default function VideoPage({
               {isQuizMode ? `Quiz: ${video?.title}` : video?.title}
             </h1>
             {video?.description && (
-              <p className="text-gray-600 leading-relaxed">{video.description}</p>
+              <p className="text-gray-600 leading-relaxed">
+                {video.description}
+              </p>
             )}
           </div>
-          
           {!isQuizMode && (
             <div className="flex items-center space-x-4 ml-6">
               <div className="text-center">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-1 ${
-                  videoCompleted ? 'bg-green-100' : 'bg-gray-100'
-                }`}>
+                <div
+                  className={`w-12 h-12 rounded-full flex items-center justify-center mb-1 ${
+                    videoCompleted ? "bg-green-100" : "bg-gray-100"
+                  }`}
+                >
                   {videoCompleted ? (
                     <CheckCircle className="w-6 h-6 text-green-600" />
                   ) : (
@@ -943,45 +977,59 @@ export default function VideoPage({
                   )}
                 </div>
                 <div className="text-xs text-gray-600">
-                  {videoCompleted ? 'Completed' : 'In Progress'}
+                  {videoCompleted ? "Completed" : "In Progress"}
                 </div>
               </div>
-
               <div className="text-right text-sm text-gray-600">
                 <div className="flex items-center mb-1">
                   <Clock className="w-4 h-4 mr-1" />
                   <span>
-                    {formatDuration(watchTime)} / {formatDuration(video?.duration || 0)}
+                    {formatDuration(watchTime)} /{" "}
+                    {formatDuration(video?.duration || 0)}
                   </span>
                 </div>
                 <div className="text-xs">
-                  Progress: {video?.duration ? Math.round((watchTime / video.duration) * 100) : 0}%
+                  Progress:{" "}
+                  {video?.duration
+                    ? Math.round((watchTime / video.duration) * 100)
+                    : 0}
+                  %
                 </div>
               </div>
             </div>
           )}
         </div>
-
+        
         {/* Quiz availability banner */}
-        {!isQuizMode && video?.tests && video.tests.length > 0 && videoCompleted && (
-          <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <div className="flex items-center">
-              <Target className="w-5 h-5 text-blue-600 mr-3" />
-              <div>
-                <div className="font-medium text-blue-900">Quiz Available</div>
-                <div className="text-sm text-blue-700">
-                  Test your knowledge with {video.tests.length} questions to continue
+        {!isQuizMode &&
+          video?.tests &&
+          video.tests.length > 0 &&
+          videoCompleted && (
+            <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex items-center">
+                <Target className="w-5 h-5 text-blue-600 mr-3" />
+                <div>
+                  <div className="font-medium text-blue-900">
+                    Quiz Available
+                  </div>
+                  <div className="text-sm text-blue-700">
+                    Test your knowledge with {video.tests.length} questions to
+                    continue
+                  </div>
                 </div>
               </div>
+              <Button
+                onClick={() =>
+                  router.push(
+                    `/course/${params.courseId}/video/${params.videoId}?mode=quiz`
+                  )
+                }
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                Take Quiz
+              </Button>
             </div>
-            <Button
-              onClick={() => router.push(`/course/${params.courseId}/video/${params.videoId}?mode=quiz`)}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              Take Quiz
-            </Button>
-          </div>
-        )}
+          )}
       </div>
     );
   };
@@ -1018,7 +1066,9 @@ export default function VideoPage({
           </div>
         ) : (
           <div className="text-center py-8">
-            <p className="text-gray-500">Notes are only available for video content.</p>
+            <p className="text-gray-500">
+              Notes are only available for video content.
+            </p>
           </div>
         );
       case "announcements":
@@ -1042,6 +1092,8 @@ export default function VideoPage({
             setActiveTab={setActiveTab}
           />
         );
+      case "compiler":
+        return <CompilerTab setActiveTab={setActiveTab} />;
       default:
         return null;
     }
@@ -1057,7 +1109,8 @@ export default function VideoPage({
             </div>
             <h2 className="text-xl font-semibold mb-4">Sign In Required</h2>
             <p className="text-gray-600 mb-6">
-              You need to sign in to access course content and track your progress.
+              You need to sign in to access course content and track your
+              progress.
             </p>
             <Link href="/auth/signin">
               <Button size="lg" className="bg-[#001e62] hover:bg-[#001e62]/90">
@@ -1126,7 +1179,10 @@ export default function VideoPage({
           {/* Tabs - Only show for video mode */}
           {!isQuizMode && (
             <div className="flex-1 bg-white">
-              <TabNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
+              <TabNavigation
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+              />
               <div className="p-6 flex-1 overflow-y-auto">
                 {renderTabContent()}
               </div>

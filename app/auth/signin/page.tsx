@@ -99,40 +99,6 @@ function SignInForm() {
             </Button>
           </Link>
         </div>
-
-        <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
-          <div className="w-full max-w-md">
-            <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/20">
-              <div className="text-center mb-8">
-                <h1 className="text-2xl font-bold text-white mb-2">Welcome Back!</h1>
-                <p className="text-white/70">You're successfully signed in</p>
-                
-                <div className="mt-6 p-4 bg-white/10 rounded-xl border border-white/20">
-                  <p className="text-sm text-white/80 mb-2">Redirecting to:</p>
-                  <p className="text-white font-medium text-sm break-all">{targetUrl}</p>
-                </div>
-              </div>
-              
-              <div className="space-y-4">
-                <Button
-                  onClick={handleManualRedirect}
-                  className="w-full bg-gradient-to-r from-[#001e62] to-purple-600 hover:from-[#001e62]/80 hover:to-purple-700 text-white border-0 h-12 rounded-xl font-medium"
-                >
-                  <ExternalLink className="w-4 h-4 mr-2" />
-                  Go to Destination
-                </Button>
-                
-                <Button
-                  onClick={() => signOut({ callbackUrl: '/auth/signin' })}
-                  variant="outline"
-                  className="w-full border-white/20 text-white hover:bg-white/10 h-12 rounded-xl"
-                >
-                  Sign Out & Use Different Account
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     )
   }
