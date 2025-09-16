@@ -40,3 +40,19 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 turboscribe.ai
 https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4
+
+Compiler
+https://rapidapi.com/judge0-official/api/judge0-ce/playground/apiendpoint_489fe32c-7191-4db3-b337-77d0d3932807
+
+
+// Wrap AI features with error boundary:
+
+{activeTab === "learning-tools" && (
+  <AIErrorBoundary>
+    <LearningToolsTab
+      video={video}
+      getProgressPercentage={getProgressPercentage}
+      setActiveTab={setActiveTab}
+    />
+  </AIErrorBoundary>
+)}

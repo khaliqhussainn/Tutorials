@@ -35,7 +35,9 @@ import { AboutTab } from "@/components/video/AboutTab";
 import { LearningToolsTab } from "@/components/video/LearningToolsTab";
 import { EnhancedCourseSidebar } from "@/components/video/CourseSidebar";
 import { CompilerTab } from "@/components/video/CompilerTab";
+import { AIFeaturesProvider } from "@/components/AIFeaturesProvider";
 
+// Interfaces
 interface Test {
   id: string;
   question: string;
@@ -181,18 +183,15 @@ export default function VideoPage({
   const router = useRouter();
   const searchParams = useSearchParams();
   const playerRef = useRef<VideoPlayerRef>(null);
-
-  // Check if we're in quiz mode
   const isQuizMode = searchParams?.get("mode") === "quiz";
 
+  // State declarations
   const [video, setVideo] = useState<Video | null>(null);
   const [course, setCourse] = useState<Course | null>(null);
   const [videoProgress, setVideoProgress] = useState<VideoProgress[]>([]);
   const [watchTime, setWatchTime] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [currentSection, setCurrentSection] = useState<CourseSection | null>(
-    null
-  );
+  const [currentSection, setCurrentSection] = useState<CourseSection | null>(null);
   const [videoCompleted, setVideoCompleted] = useState(false);
   const [canWatch, setCanWatch] = useState(false);
   const [activeTab, setActiveTab] = useState<
@@ -204,9 +203,7 @@ export default function VideoPage({
     | "learning-tools"
     | "compiler"
   >("about");
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set()
-  );
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [currentVideoTime, setCurrentVideoTime] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -229,6 +226,7 @@ export default function VideoPage({
   const [reviewStats, setReviewStats] = useState<ReviewStats | null>(null);
   const [userReview, setUserReview] = useState<CourseReviewData | null>(null);
 
+  // Effects
   useEffect(() => {
     if (session) {
       fetchVideoData();
@@ -250,7 +248,6 @@ export default function VideoPage({
     }
   }, [course]);
 
-  // Quiz timer
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (quizStarted && startTime && !showResults && isQuizMode) {
@@ -261,11 +258,10 @@ export default function VideoPage({
     return () => clearInterval(interval);
   }, [quizStarted, startTime, showResults, isQuizMode]);
 
+  // Data fetching functions
   const fetchPreviousAttempts = async () => {
     try {
-      const response = await fetch(
-        `/api/videos/${params.videoId}/quiz-attempts`
-      );
+      const response = await fetch(`/api/videos/${params.videoId}/quiz-attempts`);
       if (response.ok) {
         const attempts = await response.json();
         setPreviousAttempts(attempts);
@@ -289,9 +285,7 @@ export default function VideoPage({
 
   const fetchAnnouncements = async () => {
     try {
-      const response = await fetch(
-        `/api/courses/${params.courseId}/announcements`
-      );
+      const response = await fetch(`/api/courses/${params.courseId}/announcements`);
       if (response.ok) {
         const data = await response.json();
         setAnnouncements(data.announcements || []);
@@ -320,18 +314,14 @@ export default function VideoPage({
         fetch(`/api/videos/${params.videoId}`),
         fetch(`/api/courses/${params.courseId}`),
       ]);
-
       if (videoResponse.ok && courseResponse.ok) {
         const videoData = await videoResponse.json();
         const courseData = await courseResponse.json();
         setVideo(videoData);
         setCourse(courseData);
-
-        // Initialize quiz answers if in quiz mode
         if (isQuizMode && videoData.tests) {
           setAnswers(new Array(videoData.tests.length).fill(-1));
         }
-
         if (videoData.sectionId) {
           const section = courseData.sections?.find(
             (s: CourseSection) => s.id === videoData.sectionId
@@ -467,7 +457,6 @@ export default function VideoPage({
       ).length;
       const score = Math.round((correctAnswers / video.tests.length) * 100);
       const passed = score >= 70;
-
       const response = await fetch(`/api/progress/quiz`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -479,7 +468,6 @@ export default function VideoPage({
           timeSpent,
         }),
       });
-
       if (response.ok) {
         setShowResults(true);
         await fetchVideoProgress();
@@ -532,11 +520,9 @@ export default function VideoPage({
     } else {
       if (progress?.completed) return "completed";
     }
-
     if (sectionIndex === 0 && videoIndex === 0) {
       return "available";
     }
-
     let prevVideo: any = null;
     if (videoIndex > 0) {
       prevVideo = sectionVideos[videoIndex - 1];
@@ -546,11 +532,8 @@ export default function VideoPage({
         prevVideo = prevSection.videos[prevSection.videos.length - 1];
       }
     }
-
     if (prevVideo) {
-      const prevProgress = videoProgress.find(
-        (p) => p.videoId === prevVideo.id
-      );
+      const prevProgress = videoProgress.find((p) => p.videoId === prevVideo.id);
       const prevCompleted =
         prevProgress?.completed &&
         (!prevVideo.tests ||
@@ -560,7 +543,6 @@ export default function VideoPage({
         return "available";
       }
     }
-
     return "locked";
   };
 
@@ -628,7 +610,6 @@ export default function VideoPage({
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const remainingSeconds = Math.floor(seconds % 60);
-
     if (hours > 0) {
       return `${hours}:${minutes.toString().padStart(2, "0")}:${remainingSeconds
         .toString()
@@ -640,7 +621,6 @@ export default function VideoPage({
   // Render functions
   const renderVideoPlayer = () => {
     if (isQuizMode) return null;
-
     return (
       <div className="bg-black p-6">
         <VideoPlayerWithTranscript
@@ -659,7 +639,6 @@ export default function VideoPage({
 
   const renderQuizInterface = () => {
     if (!isQuizMode || !video?.tests?.length) return null;
-
     if (!quizStarted && !showResults) {
       return (
         <div className="bg-gray-50 p-6">
@@ -709,12 +688,10 @@ export default function VideoPage({
         </div>
       );
     }
-
     if (quizStarted && !showResults) {
       const currentQuestion = video.tests[currentQuestionIndex];
       const isLastQuestion = currentQuestionIndex === video.tests.length - 1;
       const isFirstQuestion = currentQuestionIndex === 0;
-
       return (
         <div className="bg-gray-50 p-6">
           <div className="max-w-3xl mx-auto">
@@ -747,7 +724,6 @@ export default function VideoPage({
                 />
               </div>
             </div>
-
             <Card className="border-0 shadow-lg">
               <CardHeader className="pb-4">
                 <CardTitle className="text-xl">
@@ -783,7 +759,6 @@ export default function VideoPage({
                     </button>
                   ))}
                 </div>
-
                 {selectedAnswer !== -1 && currentQuestion.explanation && (
                   <div className="mt-4">
                     <button
@@ -802,7 +777,6 @@ export default function VideoPage({
                     )}
                   </div>
                 )}
-
                 <div className="flex justify-between items-center pt-6 border-t">
                   <Button
                     variant="outline"
@@ -813,7 +787,6 @@ export default function VideoPage({
                     <ChevronLeft className="w-4 h-4 mr-1" />
                     Previous
                   </Button>
-
                   <div className="text-center">
                     {selectedAnswer === -1 ? (
                       <p className="text-sm text-gray-500">
@@ -826,7 +799,6 @@ export default function VideoPage({
                       </div>
                     )}
                   </div>
-
                   <Button
                     onClick={handleNext}
                     disabled={selectedAnswer === -1 || submitting}
@@ -856,7 +828,6 @@ export default function VideoPage({
         </div>
       );
     }
-
     if (showResults) {
       const results = calculateResults();
       return (
@@ -944,7 +915,6 @@ export default function VideoPage({
         </div>
       );
     }
-
     return null;
   };
 
@@ -999,7 +969,7 @@ export default function VideoPage({
             </div>
           )}
         </div>
-        
+
         {/* Quiz availability banner */}
         {!isQuizMode &&
           video?.tests &&
@@ -1099,6 +1069,7 @@ export default function VideoPage({
     }
   };
 
+  // Main render
   if (!session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -1161,50 +1132,48 @@ export default function VideoPage({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <VideoPageHeader
-        courseId={params.courseId}
-        courseTitle={course.title}
-        progressPercentage={getProgressPercentage()}
-      />
-
-      <div className="flex min-h-[calc(100vh-80px)]">
-        <div className="flex-1 bg-white flex flex-col min-w-0">
-          {/* Video Player or Quiz Interface */}
-          {isQuizMode ? renderQuizInterface() : renderVideoPlayer()}
-
-          {/* Info Section */}
-          {renderInfoSection()}
-
-          {/* Tabs - Only show for video mode */}
-          {!isQuizMode && (
-            <div className="flex-1 bg-white">
-              <TabNavigation
-                activeTab={activeTab}
-                setActiveTab={setActiveTab}
-              />
-              <div className="p-6 flex-1 overflow-y-auto">
-                {renderTabContent()}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <EnhancedCourseSidebar
-          sidebarOpen={sidebarOpen}
-          setSidebarOpen={setSidebarOpen}
-          course={course}
-          videoProgress={videoProgress}
-          expandedSections={expandedSections}
-          toggleSection={toggleSection}
-          currentVideoId={params.videoId}
-          getProgressPercentage={getProgressPercentage}
-          getCompletedVideos={getCompletedVideos}
-          getTotalVideos={getTotalVideos}
-          getVideoStatus={getVideoStatus}
-          isQuizMode={isQuizMode}
+    <AIFeaturesProvider>
+      <div className="min-h-screen bg-gray-50">
+        <VideoPageHeader
+          courseId={params.courseId}
+          courseTitle={course.title}
+          progressPercentage={getProgressPercentage()}
         />
+        <div className="flex min-h-[calc(100vh-80px)]">
+          <div className="flex-1 bg-white flex flex-col min-w-0">
+            {/* Video Player or Quiz Interface */}
+            {isQuizMode ? renderQuizInterface() : renderVideoPlayer()}
+            {/* Info Section */}
+            {renderInfoSection()}
+            {/* Tabs - Only show for video mode */}
+            {!isQuizMode && (
+              <div className="flex-1 bg-white">
+                <TabNavigation
+                  activeTab={activeTab}
+                  setActiveTab={setActiveTab}
+                />
+                <div className="p-6 flex-1 overflow-y-auto">
+                  {renderTabContent()}
+                </div>
+              </div>
+            )}
+          </div>
+          <EnhancedCourseSidebar
+            sidebarOpen={sidebarOpen}
+            setSidebarOpen={setSidebarOpen}
+            course={course}
+            videoProgress={videoProgress}
+            expandedSections={expandedSections}
+            toggleSection={toggleSection}
+            currentVideoId={params.videoId}
+            getProgressPercentage={getProgressPercentage}
+            getCompletedVideos={getCompletedVideos}
+            getTotalVideos={getTotalVideos}
+            getVideoStatus={getVideoStatus}
+            isQuizMode={isQuizMode}
+          />
+        </div>
       </div>
-    </div>
+    </AIFeaturesProvider>
   );
 }
