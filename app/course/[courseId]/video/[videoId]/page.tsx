@@ -24,6 +24,8 @@ import {
   Brain,
   HelpCircle,
   RefreshCw,
+  Menu,
+  X,
 } from "lucide-react";
 // Import existing components
 import { VideoPageHeader } from "@/components/video/VideoPageHeader";
@@ -33,7 +35,7 @@ import { ReviewsTab } from "@/components/video/ReviewsTab";
 import { AnnouncementsTab } from "@/components/video/AnnouncementsTab";
 import { AboutTab } from "@/components/video/AboutTab";
 import { LearningToolsTab } from "@/components/video/LearningToolsTab";
-import { EnhancedCourseSidebar } from "@/components/video/CourseSidebar";
+import { ResponsiveCourseSidebar } from "@/components/video/CourseSidebar";
 import { CompilerTab } from "@/components/video/CompilerTab";
 import { AIFeaturesProvider } from "@/components/AIFeaturesProvider";
 
@@ -205,7 +207,8 @@ export default function VideoPage({
   >("about");
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [currentVideoTime, setCurrentVideoTime] = useState(0);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false); // Changed default to false for mobile-first
+  const [isMobile, setIsMobile] = useState(false);
 
   // Quiz state
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -225,6 +228,56 @@ export default function VideoPage({
   const [reviews, setReviews] = useState<CourseReviewData[]>([]);
   const [reviewStats, setReviewStats] = useState<ReviewStats | null>(null);
   const [userReview, setUserReview] = useState<CourseReviewData | null>(null);
+
+  // Mobile detection and window resize handling
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 1024; // lg breakpoint
+      setIsMobile(mobile);
+      // Auto-close sidebar on mobile
+      if (mobile) {
+        setSidebarOpen(false);
+      } else {
+        setSidebarOpen(true); // Open by default on desktop
+      }
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Close sidebar when clicking outside on mobile
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isMobile && sidebarOpen) {
+        const sidebar = document.getElementById('course-sidebar');
+        const sidebarToggle = document.getElementById('sidebar-toggle');
+        
+        if (sidebar && sidebarToggle && 
+            !sidebar.contains(event.target as Node) && 
+            !sidebarToggle.contains(event.target as Node)) {
+          setSidebarOpen(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMobile, sidebarOpen]);
+
+  // Lock body scroll when mobile sidebar is open
+  useEffect(() => {
+    if (isMobile && sidebarOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isMobile, sidebarOpen]);
 
   // Effects
   useEffect(() => {
@@ -622,7 +675,7 @@ export default function VideoPage({
   const renderVideoPlayer = () => {
     if (isQuizMode) return null;
     return (
-      <div className="bg-black p-6">
+      <div className="bg-black p-3 md:p-6">
         <VideoPlayerWithTranscript
           ref={playerRef}
           videoUrl={video!.videoUrl}
@@ -641,44 +694,44 @@ export default function VideoPage({
     if (!isQuizMode || !video?.tests?.length) return null;
     if (!quizStarted && !showResults) {
       return (
-        <div className="bg-gray-50 p-6">
+        <div className="bg-gray-50 p-3 md:p-6">
           <Card className="max-w-2xl mx-auto border-0 shadow-lg">
-            <CardContent className="p-8 text-center">
-              <div className="w-20 h-20 bg-[#001e62]/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Brain className="w-10 h-10 text-[#001e62]" />
+            <CardContent className="p-4 md:p-8 text-center">
+              <div className="w-16 h-16 md:w-20 md:h-20 bg-[#001e62]/10 rounded-full flex items-center justify-center mx-auto mb-4 md:mb-6">
+                <Brain className="w-8 h-8 md:w-10 md:h-10 text-[#001e62]" />
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">
                 Ready to test your knowledge?
               </h2>
-              <p className="text-gray-600 leading-relaxed mb-8">
+              <p className="text-gray-600 leading-relaxed mb-6 md:mb-8 text-sm md:text-base">
                 This quiz contains {video.tests.length} questions and should
                 take about {Math.ceil(video.tests.length * 1.5)} minutes to
                 complete. You need a score of 70% or higher to pass.
               </p>
-              <div className="grid md:grid-cols-3 gap-6 mb-8">
-                <div className="text-center p-4 bg-[#001e62]/5 rounded-lg border border-[#001e62]/20">
-                  <div className="text-2xl font-bold text-[#001e62] mb-1">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-8">
+                <div className="text-center p-3 md:p-4 bg-[#001e62]/5 rounded-lg border border-[#001e62]/20">
+                  <div className="text-xl md:text-2xl font-bold text-[#001e62] mb-1">
                     {video.tests.length}
                   </div>
-                  <div className="text-sm text-[#001e62]">Questions</div>
+                  <div className="text-xs md:text-sm text-[#001e62]">Questions</div>
                 </div>
-                <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
-                  <div className="text-2xl font-bold text-green-600 mb-1">
+                <div className="text-center p-3 md:p-4 bg-green-50 rounded-lg border border-green-200">
+                  <div className="text-xl md:text-2xl font-bold text-green-600 mb-1">
                     70%
                   </div>
-                  <div className="text-sm text-green-800">Passing Score</div>
+                  <div className="text-xs md:text-sm text-green-800">Passing Score</div>
                 </div>
-                <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <div className="text-2xl font-bold text-blue-600 mb-1">
+                <div className="text-center p-3 md:p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="text-xl md:text-2xl font-bold text-blue-600 mb-1">
                     {previousAttempts.length}
                   </div>
-                  <div className="text-sm text-blue-800">Previous Attempts</div>
+                  <div className="text-xs md:text-sm text-blue-800">Previous Attempts</div>
                 </div>
               </div>
               <Button
                 size="lg"
                 onClick={startQuiz}
-                className="min-w-48 bg-[#001e62] hover:bg-[#001e62]/90"
+                className="w-full md:w-auto min-w-48 bg-[#001e62] hover:bg-[#001e62]/90"
               >
                 <Target className="w-5 h-5 mr-2" />
                 Start Quiz
@@ -693,10 +746,10 @@ export default function VideoPage({
       const isLastQuestion = currentQuestionIndex === video.tests.length - 1;
       const isFirstQuestion = currentQuestionIndex === 0;
       return (
-        <div className="bg-gray-50 p-6">
+        <div className="bg-gray-50 p-3 md:p-6">
           <div className="max-w-3xl mx-auto">
-            <div className="mb-8">
-              <div className="flex justify-between text-sm text-gray-600 mb-3">
+            <div className="mb-6 md:mb-8">
+              <div className="flex flex-col md:flex-row md:justify-between text-sm text-gray-600 mb-3 space-y-2 md:space-y-0">
                 <span>
                   Question {currentQuestionIndex + 1} of {video.tests.length}
                 </span>
@@ -713,9 +766,9 @@ export default function VideoPage({
                   </span>
                 </div>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
+              <div className="w-full bg-gray-200 rounded-full h-2 md:h-3">
                 <div
-                  className="bg-[#001e62] h-3 rounded-full transition-all duration-300"
+                  className="bg-[#001e62] h-2 md:h-3 rounded-full transition-all duration-300"
                   style={{
                     width: `${
                       ((currentQuestionIndex + 1) / video.tests.length) * 100
@@ -726,17 +779,17 @@ export default function VideoPage({
             </div>
             <Card className="border-0 shadow-lg">
               <CardHeader className="pb-4">
-                <CardTitle className="text-xl">
+                <CardTitle className="text-lg md:text-xl">
                   {currentQuestion.question}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-4 md:space-y-6">
                 <div className="space-y-3">
                   {currentQuestion.options.map((option, index) => (
                     <button
                       key={index}
                       onClick={() => handleAnswerSelect(index)}
-                      className={`w-full p-4 text-left rounded-lg border-2 transition-all duration-200 ${
+                      className={`w-full p-3 md:p-4 text-left rounded-lg border-2 transition-all duration-200 ${
                         selectedAnswer === index
                           ? "border-[#001e62] bg-[#001e62]/5 shadow-md"
                           : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
@@ -744,7 +797,7 @@ export default function VideoPage({
                     >
                       <div className="flex items-center">
                         <div
-                          className={`w-6 h-6 rounded-full border-2 mr-4 flex items-center justify-center ${
+                          className={`w-5 h-5 md:w-6 md:h-6 rounded-full border-2 mr-3 md:mr-4 flex items-center justify-center ${
                             selectedAnswer === index
                               ? "border-[#001e62] bg-[#001e62]"
                               : "border-gray-300"
@@ -754,7 +807,7 @@ export default function VideoPage({
                             <div className="w-2 h-2 rounded-full bg-white"></div>
                           )}
                         </div>
-                        <span className="text-gray-900">{option}</span>
+                        <span className="text-gray-900 text-sm md:text-base">{option}</span>
                       </div>
                     </button>
                   ))}
@@ -769,7 +822,7 @@ export default function VideoPage({
                       {showExplanation ? "Hide" : "Show"} explanation
                     </button>
                     {showExplanation && (
-                      <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="mt-3 p-3 md:p-4 bg-blue-50 border border-blue-200 rounded-lg">
                         <p className="text-blue-800 text-sm">
                           {currentQuestion.explanation}
                         </p>
@@ -777,17 +830,17 @@ export default function VideoPage({
                     )}
                   </div>
                 )}
-                <div className="flex justify-between items-center pt-6 border-t">
+                <div className="flex flex-col md:flex-row md:justify-between md:items-center pt-4 md:pt-6 border-t space-y-4 md:space-y-0">
                   <Button
                     variant="outline"
                     onClick={handlePrevious}
                     disabled={isFirstQuestion}
-                    className="flex items-center"
+                    className="flex items-center w-full md:w-auto"
                   >
                     <ChevronLeft className="w-4 h-4 mr-1" />
                     Previous
                   </Button>
-                  <div className="text-center">
+                  <div className="text-center order-first md:order-none">
                     {selectedAnswer === -1 ? (
                       <p className="text-sm text-gray-500">
                         Select an answer to continue
@@ -802,7 +855,7 @@ export default function VideoPage({
                   <Button
                     onClick={handleNext}
                     disabled={selectedAnswer === -1 || submitting}
-                    className="flex items-center min-w-32 bg-[#001e62] hover:bg-[#001e62]/90"
+                    className="flex items-center w-full md:w-auto md:min-w-32 bg-[#001e62] hover:bg-[#001e62]/90"
                   >
                     {submitting ? (
                       <>
@@ -831,7 +884,7 @@ export default function VideoPage({
     if (showResults) {
       const results = calculateResults();
       return (
-        <div className="bg-gray-50 p-6">
+        <div className="bg-gray-50 p-3 md:p-6">
           <div className="max-w-2xl mx-auto">
             <Card
               className={`border-2 shadow-lg ${
@@ -840,20 +893,20 @@ export default function VideoPage({
                   : "border-red-200 bg-red-50"
               }`}
             >
-              <CardContent className="p-8 text-center">
+              <CardContent className="p-6 md:p-8 text-center">
                 <div
-                  className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${
+                  className={`w-16 h-16 md:w-20 md:h-20 rounded-full flex items-center justify-center mx-auto mb-4 md:mb-6 ${
                     results.passed ? "bg-green-100" : "bg-red-100"
                   }`}
                 >
                   {results.passed ? (
-                    <Award className="w-10 h-10 text-green-600" />
+                    <Award className="w-8 h-8 md:w-10 md:h-10 text-green-600" />
                   ) : (
-                    <XCircle className="w-10 h-10 text-red-600" />
+                    <XCircle className="w-8 h-8 md:w-10 md:h-10 text-red-600" />
                   )}
                 </div>
                 <h2
-                  className={`text-3xl font-bold mb-4 ${
+                  className={`text-2xl md:text-3xl font-bold mb-4 ${
                     results.passed ? "text-green-800" : "text-red-800"
                   }`}
                 >
@@ -861,21 +914,21 @@ export default function VideoPage({
                 </h2>
                 <div className="mb-6">
                   <div
-                    className={`text-4xl font-bold mb-2 ${
+                    className={`text-3xl md:text-4xl font-bold mb-2 ${
                       results.passed ? "text-green-700" : "text-red-700"
                     }`}
                   >
                     {results.score}%
                   </div>
                   <p
-                    className={`text-lg ${
+                    className={`text-base md:text-lg ${
                       results.passed ? "text-green-600" : "text-red-600"
                     }`}
                   >
                     {results.correct} out of {results.total} questions correct
                   </p>
                 </div>
-                <div className="flex items-center justify-center space-x-4">
+                <div className="flex flex-col md:flex-row items-center justify-center space-y-3 md:space-y-0 md:space-x-4">
                   {results.passed ? (
                     <Button
                       onClick={() =>
@@ -883,7 +936,7 @@ export default function VideoPage({
                           `/course/${params.courseId}/video/${params.videoId}`
                         )
                       }
-                      className="bg-[#001e62] hover:bg-[#001e62]/90"
+                      className="w-full md:w-auto bg-[#001e62] hover:bg-[#001e62]/90"
                     >
                       Continue Learning
                     </Button>
@@ -891,7 +944,7 @@ export default function VideoPage({
                     <>
                       <Button
                         onClick={startQuiz}
-                        className="bg-[#001e62] hover:bg-[#001e62]/90"
+                        className="w-full md:w-auto bg-[#001e62] hover:bg-[#001e62]/90"
                       >
                         <RefreshCw className="w-4 h-4 mr-2" />
                         Retake Quiz
@@ -903,6 +956,7 @@ export default function VideoPage({
                             `/course/${params.courseId}/video/${params.videoId}`
                           )
                         }
+                        className="w-full md:w-auto"
                       >
                         Review Video
                       </Button>
@@ -920,30 +974,30 @@ export default function VideoPage({
 
   const renderInfoSection = () => {
     return (
-      <div className="p-6 border-b border-gray-200">
-        <div className="flex items-start justify-between mb-4">
+      <div className="p-4 md:p-6 border-b border-gray-200">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-4">
           <div className="flex-1">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 mb-2">
               {isQuizMode ? `Quiz: ${video?.title}` : video?.title}
             </h1>
             {video?.description && (
-              <p className="text-gray-600 leading-relaxed">
+              <p className="text-gray-600 leading-relaxed text-sm md:text-base">
                 {video.description}
               </p>
             )}
           </div>
           {!isQuizMode && (
-            <div className="flex items-center space-x-4 ml-6">
+            <div className="flex items-center justify-between md:justify-end space-x-4 mt-4 md:mt-0 md:ml-6">
               <div className="text-center">
                 <div
-                  className={`w-12 h-12 rounded-full flex items-center justify-center mb-1 ${
+                  className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center mb-1 ${
                     videoCompleted ? "bg-green-100" : "bg-gray-100"
                   }`}
                 >
                   {videoCompleted ? (
-                    <CheckCircle className="w-6 h-6 text-green-600" />
+                    <CheckCircle className="w-5 h-5 md:w-6 md:h-6 text-green-600" />
                   ) : (
-                    <PlayCircle className="w-6 h-6 text-gray-400" />
+                    <PlayCircle className="w-5 h-5 md:w-6 md:h-6 text-gray-400" />
                   )}
                 </div>
                 <div className="text-xs text-gray-600">
@@ -975,7 +1029,7 @@ export default function VideoPage({
           video?.tests &&
           video.tests.length > 0 &&
           videoCompleted && (
-            <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between p-4 bg-blue-50 rounded-lg border border-blue-200 space-y-3 md:space-y-0">
               <div className="flex items-center">
                 <Target className="w-5 h-5 text-blue-600 mr-3" />
                 <div>
@@ -994,7 +1048,7 @@ export default function VideoPage({
                     `/course/${params.courseId}/video/${params.videoId}?mode=quiz`
                   )
                 }
-                className="bg-blue-600 hover:bg-blue-700"
+                className="w-full md:w-auto bg-blue-600 hover:bg-blue-700"
               >
                 Take Quiz
               </Button>
@@ -1059,7 +1113,6 @@ export default function VideoPage({
           <LearningToolsTab
             video={video}
             getProgressPercentage={getProgressPercentage}
-            setActiveTab={setActiveTab}
           />
         );
       case "compiler":
@@ -1072,19 +1125,19 @@ export default function VideoPage({
   // Main render
   if (!session) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <Card className="max-w-md border-0 shadow-xl">
-          <CardContent className="text-center p-8">
-            <div className="w-16 h-16 bg-[#001e62]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <PlayCircle className="w-8 h-8 text-[#001e62]" />
+          <CardContent className="text-center p-6 md:p-8">
+            <div className="w-12 h-12 md:w-16 md:h-16 bg-[#001e62]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <PlayCircle className="w-6 h-6 md:w-8 md:h-8 text-[#001e62]" />
             </div>
-            <h2 className="text-xl font-semibold mb-4">Sign In Required</h2>
-            <p className="text-gray-600 mb-6">
+            <h2 className="text-lg md:text-xl font-semibold mb-4">Sign In Required</h2>
+            <p className="text-gray-600 mb-6 text-sm md:text-base">
               You need to sign in to access course content and track your
               progress.
             </p>
             <Link href="/auth/signin">
-              <Button size="lg" className="bg-[#001e62] hover:bg-[#001e62]/90">
+              <Button size="lg" className="w-full bg-[#001e62] hover:bg-[#001e62]/90">
                 Sign In to Continue
               </Button>
             </Link>
@@ -1098,8 +1151,8 @@ export default function VideoPage({
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-[#001e62] mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading content...</p>
+          <div className="animate-spin rounded-full h-12 w-12 md:h-16 md:w-16 border-b-2 border-[#001e62] mx-auto mb-4"></div>
+          <p className="text-gray-600 text-sm md:text-base">Loading content...</p>
         </div>
       </div>
     );
@@ -1107,12 +1160,12 @@ export default function VideoPage({
 
   if (!video || !course) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900 mb-4">
             Content Not Found
           </h1>
-          <p className="text-gray-600 mb-6">
+          <p className="text-gray-600 mb-6 text-sm md:text-base">
             The content you're looking for doesn't exist.
           </p>
           <Link href={`/course/${params.courseId}`}>
@@ -1132,13 +1185,22 @@ export default function VideoPage({
   }
 
   return (
-    <AIFeaturesProvider>
+    <AIFeaturesProvider children={""}>
       <div className="min-h-screen bg-gray-50">
         <VideoPageHeader
           courseId={params.courseId}
           courseTitle={course.title}
           progressPercentage={getProgressPercentage()}
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+          isMobile={isMobile}
         />
+        
+        {/* Mobile Overlay */}
+        {isMobile && sidebarOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-20 lg:hidden" />
+        )}
+
         <div className="flex min-h-[calc(100vh-80px)]">
           <div className="flex-1 bg-white flex flex-col min-w-0">
             {/* Video Player or Quiz Interface */}
@@ -1152,13 +1214,14 @@ export default function VideoPage({
                   activeTab={activeTab}
                   setActiveTab={setActiveTab}
                 />
-                <div className="p-6 flex-1 overflow-y-auto">
+                <div className="p-4 md:p-6 flex-1 overflow-y-auto">
                   {renderTabContent()}
                 </div>
               </div>
             )}
           </div>
-          <EnhancedCourseSidebar
+          
+          <ResponsiveCourseSidebar
             sidebarOpen={sidebarOpen}
             setSidebarOpen={setSidebarOpen}
             course={course}
@@ -1171,6 +1234,7 @@ export default function VideoPage({
             getTotalVideos={getTotalVideos}
             getVideoStatus={getVideoStatus}
             isQuizMode={isQuizMode}
+            isMobile={isMobile}
           />
         </div>
       </div>

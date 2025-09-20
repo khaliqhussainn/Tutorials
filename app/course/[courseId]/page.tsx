@@ -28,6 +28,7 @@ import {
   Loader2,
   AlertCircle,
   X,
+  Menu,
 } from "lucide-react";
 import { formatDuration, calculateProgress } from "@/lib/utils";
 
@@ -91,6 +92,7 @@ export default function CoursePage({ params }: CoursePageProps) {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [enrollmentChecked, setEnrollmentChecked] = useState<boolean>(false);
   const [authCheckComplete, setAuthCheckComplete] = useState<boolean>(false);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
 
   // Fetch course data
   const fetchCourse = useCallback(async () => {
@@ -466,42 +468,42 @@ export default function CoursePage({ params }: CoursePageProps) {
 
   // Render videos tab
   const renderVideosTab = () => (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {!enrollmentChecked ? (
         <div className="text-center py-8">
           <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
-          <p>Checking your enrollment status...</p>
+          <p className="text-sm md:text-base">Checking your enrollment status...</p>
         </div>
       ) : (
         course?.sections?.map((section, sectionIndex) => (
           <Card key={section.id} className="overflow-hidden">
             <div
-              className="flex items-center justify-between p-6 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors border-b"
+              className="flex items-center justify-between p-4 md:p-6 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors border-b"
               onClick={() => toggleSection(section.id)}
             >
-              <div className="flex items-center">
-                <div className="flex items-center mr-4">
+              <div className="flex items-center min-w-0 flex-1">
+                <div className="flex items-center mr-3 md:mr-4 flex-shrink-0">
                   {expandedSections.has(section.id) ? (
-                    <ChevronDown className="w-5 h-5 text-gray-600" />
+                    <ChevronDown className="w-4 h-4 md:w-5 md:h-5 text-gray-600" />
                   ) : (
-                    <ChevronRight className="w-5 h-5 text-gray-600" />
+                    <ChevronRight className="w-4 h-4 md:w-5 md:h-5 text-gray-600" />
                   )}
                 </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900 text-lg">{section.title}</h3>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-semibold text-gray-900 text-base md:text-lg truncate">{section.title}</h3>
                   {section.description && (
-                    <p className="text-sm text-gray-600 mt-1">{section.description}</p>
+                    <p className="text-xs md:text-sm text-gray-600 mt-1 line-clamp-2">{section.description}</p>
                   )}
                 </div>
               </div>
 
-              <div className="flex items-center space-x-6 text-sm text-gray-500">
-                <span className="flex items-center">
-                  <PlayCircle className="w-4 h-4 mr-1" />
+              <div className="flex flex-col md:flex-row md:items-center md:space-x-6 text-xs md:text-sm text-gray-500 ml-2 flex-shrink-0">
+                <span className="flex items-center mb-1 md:mb-0">
+                  <PlayCircle className="w-3 h-3 md:w-4 md:h-4 mr-1" />
                   {section.videos.length} videos
                 </span>
                 <span className="flex items-center">
-                  <Clock className="w-4 h-4 mr-1" />
+                  <Clock className="w-3 h-3 md:w-4 md:h-4 mr-1" />
                   {formatDuration(section.videos.reduce((acc, v) => acc + (v.duration || 0), 0))}
                 </span>
               </div>
@@ -517,7 +519,7 @@ export default function CoursePage({ params }: CoursePageProps) {
                   return (
                     <div
                       key={video.id}
-                      className={`flex items-center p-6 border-b border-gray-100 last:border-b-0 transition-colors ${
+                      className={`flex flex-col md:flex-row md:items-center p-4 md:p-6 border-b border-gray-100 last:border-b-0 transition-colors ${
                         status === "completed"
                           ? "bg-green-50"
                           : status === "available"
@@ -525,27 +527,27 @@ export default function CoursePage({ params }: CoursePageProps) {
                           : "bg-gray-50"
                       }`}
                     >
-                      <div className="flex items-center mr-6">
-                        <div className="w-10 h-10 rounded-full bg-white border-2 border-gray-200 flex items-center justify-center mr-4 text-sm font-medium">
+                      <div className="flex items-center mb-3 md:mb-0 md:mr-6">
+                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-white border-2 border-gray-200 flex items-center justify-center mr-3 md:mr-4 text-xs md:text-sm font-medium flex-shrink-0">
                           {videoIndex + 1}
                         </div>
                         {status === "completed" ? (
-                          <CheckCircle className="w-6 h-6 text-green-600" />
+                          <CheckCircle className="w-5 h-5 md:w-6 md:h-6 text-green-600 flex-shrink-0" />
                         ) : status === "available" ? (
-                          <Play className="w-6 h-6 text-blue-600" />
+                          <Play className="w-5 h-5 md:w-6 md:h-6 text-blue-600 flex-shrink-0" />
                         ) : (
-                          <Lock className="w-6 h-6 text-gray-400" />
+                          <Lock className="w-5 h-5 md:w-6 md:h-6 text-gray-400 flex-shrink-0" />
                         )}
                       </div>
 
-                      <div className="flex-1">
-                        <h4 className="font-medium text-gray-900 mb-2 text-lg">{video.title}</h4>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium text-gray-900 mb-2 text-base md:text-lg line-clamp-2">{video.title}</h4>
                         {video.description && (
-                          <p className="text-sm text-gray-600 mb-3">{video.description}</p>
+                          <p className="text-sm text-gray-600 mb-3 line-clamp-2">{video.description}</p>
                         )}
-                        <div className="flex items-center text-sm text-gray-500 space-x-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center text-xs md:text-sm text-gray-500 space-y-2 sm:space-y-0 sm:space-x-6">
                           <div className="flex items-center">
-                            <Clock className="w-4 h-4 mr-1" />
+                            <Clock className="w-3 h-3 md:w-4 md:h-4 mr-1" />
                             {formatDuration(video.duration || 0)}
                           </div>
 
@@ -561,18 +563,22 @@ export default function CoursePage({ params }: CoursePageProps) {
                             >
                               {quizStatus === "quiz-passed" ? (
                                 <>
-                                  <Target className="w-4 h-4 mr-1" />
-                                  Quiz Passed ({progress?.testScore}%)
+                                  <Target className="w-3 h-3 md:w-4 md:h-4 mr-1" />
+                                  <span className="hidden sm:inline">Quiz Passed</span>
+                                  <span className="sm:hidden">Passed</span>
+                                  <span className="ml-1">({progress?.testScore}%)</span>
                                 </>
                               ) : quizStatus === "quiz-available" ? (
                                 <>
-                                  <FileText className="w-4 h-4 mr-1" />
-                                  Quiz Available
+                                  <FileText className="w-3 h-3 md:w-4 md:h-4 mr-1" />
+                                  <span className="hidden sm:inline">Quiz Available</span>
+                                  <span className="sm:hidden">Quiz</span>
                                 </>
                               ) : (
                                 <>
-                                  <Lock className="w-4 h-4 mr-1" />
-                                  Quiz Locked
+                                  <Lock className="w-3 h-3 md:w-4 md:h-4 mr-1" />
+                                  <span className="hidden sm:inline">Quiz Locked</span>
+                                  <span className="sm:hidden">Locked</span>
                                 </>
                               )}
                             </div>
@@ -581,11 +587,13 @@ export default function CoursePage({ params }: CoursePageProps) {
                       </div>
 
                       {isEnrolled && status === "available" && (
-                        <Link href={`/course/${course.id}/video/${video.id}`}>
-                          <Button size="lg" className="ml-4">
-                            {progress?.completed ? "Review" : "Watch"}
-                          </Button>
-                        </Link>
+                        <div className="mt-4 md:mt-0 md:ml-4 flex-shrink-0">
+                          <Link href={`/course/${course.id}/video/${video.id}`}>
+                            <Button size="sm" className="w-full md:w-auto">
+                              {progress?.completed ? "Review" : "Watch"}
+                            </Button>
+                          </Link>
+                        </div>
                       )}
                     </div>
                   );
@@ -600,11 +608,11 @@ export default function CoursePage({ params }: CoursePageProps) {
 
   // Render other tabs (about, notes, certificates)
   const renderAboutTab = () => (
-    <div className="space-y-8">
+    <div className="space-y-6 md:space-y-8">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center">
-            <Info className="w-5 h-5 mr-2" />
+          <CardTitle className="flex items-center text-lg md:text-xl">
+            <Info className="w-4 h-4 md:w-5 md:h-5 mr-2" />
             What you'll learn
           </CardTitle>
         </CardHeader>
@@ -612,16 +620,16 @@ export default function CoursePage({ params }: CoursePageProps) {
           <div className="grid md:grid-cols-2 gap-4">
             <div className="space-y-3">
               <div className="flex items-start">
-                <CheckCircle className="w-5 h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
-                <span>Apply modern development techniques</span>
+                <CheckCircle className="w-4 h-4 md:w-5 md:h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
+                <span className="text-sm md:text-base">Apply modern development techniques</span>
               </div>
               <div className="flex items-start">
-                <CheckCircle className="w-5 h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
-                <span>Gain hands-on experience with tools</span>
+                <CheckCircle className="w-4 h-4 md:w-5 md:h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
+                <span className="text-sm md:text-base">Gain hands-on experience with tools</span>
               </div>
               <div className="flex items-start">
-                <CheckCircle className="w-5 h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
-                <span>Prepare for professional development</span>
+                <CheckCircle className="w-4 h-4 md:w-5 md:h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
+                <span className="text-sm md:text-base">Prepare for professional development</span>
               </div>
             </div>
           </div>
@@ -630,18 +638,18 @@ export default function CoursePage({ params }: CoursePageProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Course Description</CardTitle>
+          <CardTitle className="text-lg md:text-xl">Course Description</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="prose max-w-none">
-            <p className="text-gray-700 leading-relaxed">{course?.description}</p>
+            <p className="text-gray-700 leading-relaxed text-sm md:text-base">{course?.description}</p>
           </div>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Skills you'll gain</CardTitle>
+          <CardTitle className="text-lg md:text-xl">Skills you'll gain</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2">
@@ -655,7 +663,7 @@ export default function CoursePage({ params }: CoursePageProps) {
             ].map((skill, index) => (
               <span
                 key={index}
-                className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium"
+                className="px-2 md:px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs md:text-sm font-medium"
               >
                 {skill}
               </span>
@@ -669,26 +677,26 @@ export default function CoursePage({ params }: CoursePageProps) {
   const renderNotesTab = () => (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center">
-          <StickyNote className="w-5 h-5 mr-2" />
+        <CardTitle className="flex items-center text-lg md:text-xl">
+          <StickyNote className="w-4 h-4 md:w-5 md:h-5 mr-2" />
           Course Notes
         </CardTitle>
       </CardHeader>
       <CardContent>
         {isEnrolled ? (
-          <div className="text-center py-12">
-            <StickyNote className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Your Notes</h3>
-            <p className="text-gray-600 mb-6">
+          <div className="text-center py-8 md:py-12">
+            <StickyNote className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-base md:text-lg font-medium text-gray-900 mb-2">Your Notes</h3>
+            <p className="text-gray-600 mb-4 md:mb-6 text-sm md:text-base">
               Take notes while watching videos to remember important concepts
             </p>
-            <Button>Start Taking Notes</Button>
+            <Button size="sm" className="md:size-default">Start Taking Notes</Button>
           </div>
         ) : (
-          <div className="text-center py-12">
-            <Lock className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Enroll to Access Notes</h3>
-            <p className="text-gray-600">Enroll in this course to start taking and managing your notes</p>
+          <div className="text-center py-8 md:py-12">
+            <Lock className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-base md:text-lg font-medium text-gray-900 mb-2">Enroll to Access Notes</h3>
+            <p className="text-gray-600 text-sm md:text-base">Enroll in this course to start taking and managing your notes</p>
           </div>
         )}
       </CardContent>
@@ -698,43 +706,43 @@ export default function CoursePage({ params }: CoursePageProps) {
   const renderCertificatesTab = () => (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center">
-          <Award className="w-5 h-5 mr-2" />
+        <CardTitle className="flex items-center text-lg md:text-xl">
+          <Award className="w-4 h-4 md:w-5 md:h-5 mr-2" />
           Certificates
         </CardTitle>
       </CardHeader>
       <CardContent>
         {isEnrolled ? (
-          <div className="text-center py-12">
-            <Award className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Course Certificate</h3>
-            <p className="text-gray-600 mb-6">
+          <div className="text-center py-8 md:py-12">
+            <Award className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-base md:text-lg font-medium text-gray-900 mb-2">Course Certificate</h3>
+            <p className="text-gray-600 mb-4 md:mb-6 text-sm md:text-base">
               Complete all course videos and pass the quizzes to earn your certificate
             </p>
             {getProgressPercentage() === 100 ? (
-              <Button className="bg-green-600 hover:bg-green-700">
-                <Download className="w-4 h-4 mr-2" />
+              <Button className="bg-green-600 hover:bg-green-700" size="sm">
+                <Download className="w-3 h-3 md:w-4 md:h-4 mr-2" />
                 Download Certificate
               </Button>
             ) : (
               <div className="space-y-4">
-                <div className="w-full bg-gray-200 rounded-full h-3">
+                <div className="w-full bg-gray-200 rounded-full h-2 md:h-3">
                   <div
-                    className="bg-green-600 h-3 rounded-full transition-all duration-300"
+                    className="bg-green-600 h-2 md:h-3 rounded-full transition-all duration-300"
                     style={{ width: `${getProgressPercentage()}%` }}
                   />
                 </div>
-                <p className="text-sm text-gray-600">
+                <p className="text-xs md:text-sm text-gray-600">
                   {getProgressPercentage()}% complete - {getTotalVideos() - getCompletedVideos()} videos remaining
                 </p>
               </div>
             )}
           </div>
         ) : (
-          <div className="text-center py-12">
-            <Lock className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Enroll to Earn Certificate</h3>
-            <p className="text-gray-600">
+          <div className="text-center py-8 md:py-12">
+            <Lock className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-base md:text-lg font-medium text-gray-900 mb-2">Enroll to Earn Certificate</h3>
+            <p className="text-gray-600 text-sm md:text-base">
               Enroll in this course to work towards earning your completion certificate
             </p>
           </div>
@@ -746,10 +754,10 @@ export default function CoursePage({ params }: CoursePageProps) {
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center px-4">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading course...</p>
+          <div className="animate-spin rounded-full h-20 w-20 md:h-32 md:w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 text-sm md:text-base">Loading course...</p>
         </div>
       </div>
     );
@@ -758,15 +766,15 @@ export default function CoursePage({ params }: CoursePageProps) {
   // Error state
   if (!course) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center px-4">
         <div className="text-center">
-          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Course Not Found</h1>
-          <p className="text-gray-600 mb-6">
+          <AlertCircle className="w-12 h-12 md:w-16 md:h-16 text-red-500 mx-auto mb-4" />
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900 mb-4">Course Not Found</h1>
+          <p className="text-gray-600 mb-6 text-sm md:text-base">
             The course you're looking for doesn't exist or has been removed.
           </p>
           <Link href="/courses">
-            <Button>Browse Courses</Button>
+            <Button size="sm" className="md:size-default">Browse Courses</Button>
           </Link>
         </div>
       </div>
@@ -781,32 +789,32 @@ export default function CoursePage({ params }: CoursePageProps) {
     <div className="min-h-screen bg-gray-50">
       {/* Error/Success Messages */}
       {(error || successMessage) && (
-        <div className="fixed top-4 right-4 z-50 max-w-md">
+        <div className="fixed top-4 right-4 z-50 max-w-xs md:max-w-md">
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 shadow-lg mb-2">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 md:p-4 shadow-lg mb-2">
               <div className="flex items-start">
-                <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 mr-3 flex-shrink-0" />
-                <div>
-                  <h4 className="text-red-800 font-medium">Error</h4>
-                  <p className="text-red-700 text-sm mt-1">{error}</p>
+                <AlertCircle className="w-4 h-4 md:w-5 md:h-5 text-red-600 mt-0.5 mr-2 md:mr-3 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-red-800 font-medium text-sm md:text-base">Error</h4>
+                  <p className="text-red-700 text-xs md:text-sm mt-1 break-words">{error}</p>
                 </div>
-                <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-600">
-                  <X className="w-4 h-4" />
+                <button onClick={() => setError(null)} className="ml-2 text-red-400 hover:text-red-600 flex-shrink-0">
+                  <X className="w-3 h-3 md:w-4 md:h-4" />
                 </button>
               </div>
             </div>
           )}
 
           {successMessage && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4 shadow-lg">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 md:p-4 shadow-lg">
               <div className="flex items-start">
-                <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
-                <div>
-                  <h4 className="text-green-800 font-medium">Success</h4>
-                  <p className="text-green-700 text-sm mt-1">{successMessage}</p>
+                <CheckCircle className="w-4 h-4 md:w-5 md:h-5 text-green-600 mt-0.5 mr-2 md:mr-3 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-green-800 font-medium text-sm md:text-base">Success</h4>
+                  <p className="text-green-700 text-xs md:text-sm mt-1 break-words">{successMessage}</p>
                 </div>
-                <button onClick={() => setSuccessMessage(null)} className="ml-auto text-green-400 hover:text-green-600">
-                  <X className="w-4 h-4" />
+                <button onClick={() => setSuccessMessage(null)} className="ml-2 text-green-400 hover:text-green-600 flex-shrink-0">
+                  <X className="w-3 h-3 md:w-4 md:h-4" />
                 </button>
               </div>
             </div>
@@ -829,15 +837,15 @@ export default function CoursePage({ params }: CoursePageProps) {
         </div>
 
         {/* Content */}
-        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20">
           <div className="max-w-4xl">
             {/* Badge and Level */}
-            <div className="flex items-center mb-6">
-              <span className="bg-blue-500 text-white px-4 py-2 rounded-full text-sm font-medium mr-4">
+            <div className="flex flex-wrap items-center gap-3 mb-4 md:mb-6">
+              <span className="bg-blue-500 text-white px-3 md:px-4 py-1 md:py-2 rounded-full text-xs md:text-sm font-medium">
                 {course.category}
               </span>
               <span
-                className={`px-4 py-2 rounded-full text-sm font-medium ${
+                className={`px-3 md:px-4 py-1 md:py-2 rounded-full text-xs md:text-sm font-medium ${
                   course.level === "BEGINNER"
                     ? "bg-green-500 text-white"
                     : course.level === "INTERMEDIATE"
@@ -850,51 +858,51 @@ export default function CoursePage({ params }: CoursePageProps) {
             </div>
 
             {/* Title */}
-            <h1 className="text-4xl md:text-5xl font-bold text-white mb-6 leading-tight">
+            <h1 className="text-2xl md:text-4xl lg:text-5xl font-bold text-white mb-4 md:mb-6 leading-tight">
               {course.title}
             </h1>
 
             {/* Description */}
-            <p className="text-xl text-blue-100 mb-8 leading-relaxed">{course.description}</p>
+            <p className="text-base md:text-xl text-blue-100 mb-6 md:mb-8 leading-relaxed">{course.description}</p>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
               <div className="text-center">
                 <div className="flex items-center justify-center mb-2">
-                  <Clock className="w-6 h-6 text-blue-200 mr-2" />
+                  <Clock className="w-4 h-4 md:w-6 md:h-6 text-blue-200 mr-1 md:mr-2" />
                 </div>
-                <div className="text-2xl font-bold text-white">{formatDuration(totalDuration)}</div>
-                <div className="text-sm text-blue-200">Duration</div>
+                <div className="text-lg md:text-2xl font-bold text-white">{formatDuration(totalDuration)}</div>
+                <div className="text-xs md:text-sm text-blue-200">Duration</div>
               </div>
               <div className="text-center">
                 <div className="flex items-center justify-center mb-2">
-                  <BookOpen className="w-6 h-6 text-blue-200 mr-2" />
+                  <BookOpen className="w-4 h-4 md:w-6 md:h-6 text-blue-200 mr-1 md:mr-2" />
                 </div>
-                <div className="text-2xl font-bold text-white">{totalVideos}</div>
-                <div className="text-sm text-blue-200">Videos</div>
+                <div className="text-lg md:text-2xl font-bold text-white">{totalVideos}</div>
+                <div className="text-xs md:text-sm text-blue-200">Videos</div>
               </div>
               <div className="text-center">
                 <div className="flex items-center justify-center mb-2">
-                  <Users className="w-6 h-6 text-blue-200 mr-2" />
+                  <Users className="w-4 h-4 md:w-6 md:h-6 text-blue-200 mr-1 md:mr-2" />
                 </div>
-                <div className="text-2xl font-bold text-white">{course._count?.enrollments || 0}</div>
-                <div className="text-sm text-blue-200">Students</div>
+                <div className="text-lg md:text-2xl font-bold text-white">{course._count?.enrollments || 0}</div>
+                <div className="text-xs md:text-sm text-blue-200">Students</div>
               </div>
               <div className="text-center">
                 <div className="flex items-center justify-center mb-2">
-                  <Star className="w-6 h-6 text-yellow-400 mr-2 fill-current" />
+                  <Star className="w-4 h-4 md:w-6 md:h-6 text-yellow-400 mr-1 md:mr-2 fill-current" />
                 </div>
-                <div className="text-2xl font-bold text-white">{course.rating || 4.8}</div>
-                <div className="text-sm text-blue-200">Rating</div>
+                <div className="text-lg md:text-2xl font-bold text-white">{course.rating || 4.8}</div>
+                <div className="text-xs md:text-sm text-blue-200">Rating</div>
               </div>
             </div>
 
             {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex flex-col sm:flex-row gap-3 md:gap-4">
               {!authCheckComplete || !enrollmentChecked ? (
-                <div className="flex items-center space-x-3">
-                  <Loader2 className="w-6 h-6 animate-spin text-white" />
-                  <span className="text-white">
+                <div className="flex items-center space-x-2 md:space-x-3">
+                  <Loader2 className="w-5 h-5 md:w-6 md:h-6 animate-spin text-white" />
+                  <span className="text-white text-sm md:text-base">
                     {!authCheckComplete ? "Checking authentication..." : "Checking enrollment..."}
                   </span>
                 </div>
@@ -903,11 +911,11 @@ export default function CoursePage({ params }: CoursePageProps) {
                   size="lg"
                   onClick={handleEnroll}
                   disabled={enrolling}
-                  className="bg-white text-blue-900 hover:bg-gray-100 text-lg px-8 py-4 disabled:opacity-50"
+                  className="bg-white text-blue-900 hover:bg-gray-100 text-base md:text-lg px-6 md:px-8 py-3 md:py-4 disabled:opacity-50 w-full sm:w-auto"
                 >
                   {enrolling ? (
                     <>
-                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      <Loader2 className="w-4 h-4 md:w-5 md:h-5 mr-2 animate-spin" />
                       Enrolling...
                     </>
                   ) : (
@@ -920,20 +928,21 @@ export default function CoursePage({ params }: CoursePageProps) {
                     href={`/course/${course.id}/video/${
                       course.sections?.[0]?.videos?.[0]?.id || course.videos?.[0]?.id
                     }`}
+                    className="block sm:inline-block"
                   >
-                    <Button size="lg" className="bg-white text-blue-900 hover:bg-gray-100 text-lg px-8 py-4">
-                      <Play className="w-5 h-5 mr-2" />
+                    <Button size="lg" className="bg-white text-blue-900 hover:bg-gray-100 text-base md:text-lg px-6 md:px-8 py-3 md:py-4 w-full sm:w-auto">
+                      <Play className="w-4 h-4 md:w-5 md:h-5 mr-2" />
                       Continue Learning
                     </Button>
                   </Link>
-                  <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 text-white">
+                  <div className="bg-white/10 backdrop-blur-sm rounded-lg p-3 md:p-4 text-white">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium">Progress</span>
-                      <span className="text-sm">{progressPercentage}%</span>
+                      <span className="text-xs md:text-sm font-medium">Progress</span>
+                      <span className="text-xs md:text-sm">{progressPercentage}%</span>
                     </div>
-                    <div className="w-full bg-white/20 rounded-full h-2">
+                    <div className="w-full bg-white/20 rounded-full h-1.5 md:h-2">
                       <div
-                        className="bg-white h-2 rounded-full transition-all duration-300"
+                        className="bg-white h-1.5 md:h-2 rounded-full transition-all duration-300"
                         style={{ width: `${progressPercentage}%` }}
                       />
                     </div>
@@ -946,10 +955,10 @@ export default function CoursePage({ params }: CoursePageProps) {
       </div>
 
       {/* Main Content with Tabs */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
         {/* Tab Navigation */}
-        <div className="border-b border-gray-200 mb-8">
-          <nav className="-mb-px flex space-x-8">
+        <div className="border-b border-gray-200 mb-6 md:mb-8">
+          <nav className="-mb-px flex space-x-4 md:space-x-8 overflow-x-auto">
             {[
               { id: "videos", label: "Videos", icon: PlayCircle },
               { id: "about", label: "About", icon: Info },
@@ -961,13 +970,13 @@ export default function CoursePage({ params }: CoursePageProps) {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center ${
+                  className={`whitespace-nowrap py-3 md:py-4 px-1 border-b-2 font-medium text-sm md:text-base flex items-center flex-shrink-0 ${
                     activeTab === tab.id
                       ? "border-blue-500 text-blue-600"
                       : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                   }`}
                 >
-                  <Icon className="w-4 h-4 mr-2" />
+                  <Icon className="w-3 h-3 md:w-4 md:h-4 mr-1 md:mr-2" />
                   {tab.label}
                 </button>
               );

@@ -648,10 +648,11 @@ export default function CoursesPage() {
     const totalVideos = getTotalVideos(course);
     const isLoadingFavorite = favoriteLoading === course.id;
     const isLoadingEnrollment = enrollingCourseId === course.id;
+    
     return (
       <Link href={`/course/${course.id}`}>
         <Card
-          className={`group overflow-hidden hover:shadow-xl transition-all duration-500 border-0 bg-white hover:-translate-y-1 ${
+          className={`group overflow-hidden hover:shadow-xl transition-all duration-500 border-0 bg-white hover:-translate-y-1 h-full flex flex-col ${
             featured ? "ring-2 ring-[#001e62]/20" : ""
           } ${size === "large" ? "lg:col-span-2" : ""} ${
             isLoadingEnrollment ? "opacity-75" : ""
@@ -758,7 +759,7 @@ export default function CoursesPage() {
               </div>
             )}
           </div>
-          <CardContent className="p-4">
+          <CardContent className="p-4 flex-1 flex flex-col">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-[#001e62]">
                 {mapCategoryToDisplay(course.category)}
@@ -769,14 +770,32 @@ export default function CoursesPage() {
               </div>
             </div>
             <h3
-              className={`font-bold text-gray-900 mb-2 line-clamp-2 leading-tight ${
+              className={`font-bold text-gray-900 mb-2 leading-tight flex-shrink-0 ${
                 size === "large" ? "text-xl" : "text-lg"
               }`}
+              style={{
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                minHeight: size === "large" ? '3.5rem' : '3rem'
+              }}
             >
               {course.title}
             </h3>
-            <p className="text-gray-600 text-sm mb-4 line-clamp-2">{course.description}</p>
-            <div className="grid grid-cols-3 gap-2 text-xs text-gray-500 mb-4">
+            <p 
+              className="text-gray-600 text-sm mb-4 flex-grow"
+              style={{
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                minHeight: '2.5rem'
+              }}
+            >
+              {course.description}
+            </p>
+            <div className="grid grid-cols-3 gap-2 text-xs text-gray-500 mb-4 flex-shrink-0">
               <div className="flex items-center">
                 <Clock className="w-3 h-3 mr-1" />
                 <span className="truncate">{formatDuration(totalDuration)}</span>
@@ -790,7 +809,7 @@ export default function CoursesPage() {
                 <span>{course.rating || 4.8}</span>
               </div>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mt-auto">
               <div className="flex items-center"></div>
               <Button
                 size="sm"
@@ -1064,9 +1083,9 @@ export default function CoursesPage() {
                   {continueCourses.map((userProgress) => (
                     <Card
                       key={userProgress.courseId}
-                      className="group hover:shadow-xl transition-all duration-300 border-0 hover:-translate-y-1"
+                      className="group hover:shadow-xl transition-all duration-300 border-0 hover:-translate-y-1 h-full flex flex-col"
                     >
-                      <CardContent className="p-6">
+                      <CardContent className="p-6 flex-1 flex flex-col">
                         <div className="flex items-start justify-between mb-4">
                           <div className="flex-1">
                             <span className="text-sm font-medium text-[#001e62] mb-1 block">
@@ -1081,7 +1100,7 @@ export default function CoursesPage() {
                             </div>
                           </div>
                         </div>
-                        <div className="mb-6">
+                        <div className="mb-6 mt-auto">
                           <div className="w-full bg-gray-200 rounded-full h-2">
                             <div
                               className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full transition-all duration-500"

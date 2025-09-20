@@ -11,7 +11,8 @@ import {
   Lock,
   Target,
   Award,
-  RefreshCw
+  RefreshCw,
+  X
 } from "lucide-react";
 
 interface VideoProgress {
@@ -54,7 +55,7 @@ interface Course {
   videos?: Video[];
 }
 
-interface EnhancedCourseSidebarProps {
+interface ResponsiveCourseSidebarProps {
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
   course: Course | null;
@@ -72,6 +73,7 @@ interface EnhancedCourseSidebarProps {
     sectionIndex: number
   ) => string;
   isQuizMode?: boolean;
+  isMobile?: boolean;
 }
 
 const formatDuration = (seconds: number | undefined) => {
@@ -88,7 +90,7 @@ const formatDuration = (seconds: number | undefined) => {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 };
 
-export function EnhancedCourseSidebar({
+export function ResponsiveCourseSidebar({
   sidebarOpen,
   setSidebarOpen,
   course,
@@ -100,8 +102,9 @@ export function EnhancedCourseSidebar({
   getCompletedVideos,
   getTotalVideos,
   getVideoStatus,
-  isQuizMode = false
-}: EnhancedCourseSidebarProps) {
+  isQuizMode = false,
+  isMobile = false
+}: ResponsiveCourseSidebarProps) {
 
   const renderCourseItems = (section: CourseSection, sectionIndex: number) => {
     const items: JSX.Element[] = [];
@@ -127,7 +130,7 @@ export function EnhancedCourseSidebar({
         >
           <div className="flex items-center mr-3">
             <div
-              className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center text-xs font-bold transition-all ${
+              className={`w-7 h-7 md:w-8 md:h-8 rounded-lg border-2 flex items-center justify-center text-xs font-bold transition-all ${
                 isCurrentVideo
                   ? "bg-[#001e62] text-white border-[#001e62]"
                   : status === "completed"
@@ -138,9 +141,9 @@ export function EnhancedCourseSidebar({
               }`}
             >
               {status === "completed" ? (
-                <CheckCircle className="w-4 h-4" />
+                <CheckCircle className="w-3 h-3 md:w-4 md:h-4" />
               ) : status === "available" ? (
-                <PlayCircle className="w-4 h-4" />
+                <PlayCircle className="w-3 h-3 md:w-4 md:h-4" />
               ) : (
                 videoIndex + 1
               )}
@@ -149,7 +152,7 @@ export function EnhancedCourseSidebar({
 
           <div className="flex-1 min-w-0">
             <h5
-              className={`font-medium text-sm leading-tight truncate ${
+              className={`font-medium text-sm leading-tight line-clamp-2 ${
                 isCurrentVideo
                   ? "text-[#001e62]"
                   : "text-gray-900"
@@ -157,50 +160,55 @@ export function EnhancedCourseSidebar({
             >
               {videoItem.title}
             </h5>
-            <div className="flex items-center text-xs text-gray-500 mt-1">
-              <Clock className="w-3 h-3 mr-1" />
-              {formatDuration(videoItem.duration)}
+            <div className="flex flex-wrap items-center text-xs text-gray-500 mt-1 gap-x-2">
+              <div className="flex items-center">
+                <Clock className="w-3 h-3 mr-1" />
+                {formatDuration(videoItem.duration)}
+              </div>
               {hasQuiz && (
-                <>
-                  <span className="mx-2">•</span>
-                  <Target className="w-3 h-3 mr-1" />
+                <div className="flex items-center">
+                  <span>•</span>
+                  <Target className="w-3 h-3 mx-1" />
                   <span>Quiz</span>
-                </>
+                </div>
               )}
               {progress && progress.watchTime > 0 && !isCurrentVideo && (
-                <>
-                  <span className="mx-2">•</span>
-                  <span className="text-blue-600">
+                <div className="flex items-center">
+                  <span>•</span>
+                  <span className="text-blue-600 ml-1">
                     {Math.round(
                       (progress.watchTime / (videoItem.duration || 1)) * 100
                     )}% watched
                   </span>
-                </>
+                </div>
               )}
             </div>
           </div>
 
-          {status === "available" && !isCurrentVideo && (
-            <Link href={`/course/${course?.id}/video/${videoItem.id}`}>
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-xs px-2 py-1"
-              >
-                <PlayCircle className="w-3 h-3" />
-              </Button>
-            </Link>
-          )}
+          <div className="flex items-center space-x-2 ml-2">
+            {status === "available" && !isCurrentVideo && (
+              <Link href={`/course/${course?.id}/video/${videoItem.id}`}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs px-2 py-1 h-8"
+                  onClick={() => isMobile && setSidebarOpen(false)}
+                >
+                  <PlayCircle className="w-3 h-3" />
+                </Button>
+              </Link>
+            )}
 
-          {isCurrentVideo && (
-            <Badge className="bg-[#001e62] text-white text-xs px-2 py-1">
-              Playing
-            </Badge>
-          )}
+            {isCurrentVideo && (
+              <Badge className="bg-[#001e62] text-white text-xs px-2 py-1">
+                Playing
+              </Badge>
+            )}
 
-          {status === "locked" && (
-            <Lock className="w-4 h-4 text-gray-400" />
-          )}
+            {status === "locked" && (
+              <Lock className="w-4 h-4 text-gray-400" />
+            )}
+          </div>
         </div>
       );
 
@@ -219,7 +227,7 @@ export function EnhancedCourseSidebar({
           >
             <div className="flex items-center mr-3">
               <div
-                className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center text-xs font-bold transition-all ${
+                className={`w-7 h-7 md:w-8 md:h-8 rounded-lg border-2 flex items-center justify-center text-xs font-bold transition-all ${
                   isCurrentQuiz
                     ? "bg-blue-500 text-white border-blue-500"
                     : quizCompleted
@@ -228,34 +236,36 @@ export function EnhancedCourseSidebar({
                 }`}
               >
                 {quizCompleted ? (
-                  <Award className="w-4 h-4" />
+                  <Award className="w-3 h-3 md:w-4 md:h-4" />
                 ) : (
-                  <Target className="w-4 h-4" />
+                  <Target className="w-3 h-3 md:w-4 md:h-4" />
                 )}
               </div>
             </div>
 
             <div className="flex-1 min-w-0">
-              <h5 className={`font-medium text-sm leading-tight ${
+              <h5 className={`font-medium text-sm leading-tight line-clamp-2 ${
                 isCurrentQuiz ? "text-blue-700" : "text-gray-900"
               }`}>
                 Quiz: {videoItem.title}
               </h5>
-              <div className="flex items-center text-xs text-gray-500 mt-1">
-                <Target className="w-3 h-3 mr-1" />
-                {videoItem.tests?.length || 0} questions • 70% to pass
+              <div className="flex flex-wrap items-center text-xs text-gray-500 mt-1 gap-x-2">
+                <div className="flex items-center">
+                  <Target className="w-3 h-3 mr-1" />
+                  {videoItem.tests?.length || 0} questions • 70% to pass
+                </div>
                 {progress?.testScore && (
-                  <>
-                    <span className="mx-2">•</span>
-                    <span className={progress.testPassed ? "text-green-600" : "text-red-600"}>
+                  <div className="flex items-center">
+                    <span>•</span>
+                    <span className={`ml-1 ${progress.testPassed ? "text-green-600" : "text-red-600"}`}>
                       Best: {progress.testScore}%
                     </span>
-                  </>
+                  </div>
                 )}
               </div>
             </div>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 ml-2">
               {quizCompleted && progress?.testScore && (
                 <Badge className="bg-green-100 text-green-800 text-xs px-2 py-1">
                   {progress.testScore}%
@@ -267,19 +277,20 @@ export function EnhancedCourseSidebar({
                   <Button
                     size="sm"
                     variant={quizCompleted ? "outline" : "primary"}
-                    className={`text-xs px-2 py-1 ${
+                    className={`text-xs px-2 py-1 h-8 ${
                       !quizCompleted ? "bg-blue-600 hover:bg-blue-700" : ""
                     }`}
+                    onClick={() => isMobile && setSidebarOpen(false)}
                   >
                     {quizCompleted ? (
                       <>
                         <RefreshCw className="w-3 h-3 mr-1" />
-                        Retake
+                        <span className="hidden sm:inline">Retake</span>
                       </>
                     ) : (
                       <>
                         <Target className="w-3 h-3 mr-1" />
-                        Take Quiz
+                        <span className="hidden sm:inline">Take Quiz</span>
                       </>
                     )}
                   </Button>
@@ -300,36 +311,60 @@ export function EnhancedCourseSidebar({
     return items;
   };
 
+  const sidebarClasses = isMobile 
+    ? `fixed top-16 right-0 h-[calc(100vh-4rem)] bg-white shadow-xl transform transition-transform duration-300 ease-in-out z-30 ${
+        sidebarOpen ? 'translate-x-0' : 'translate-x-full'
+      } w-80 max-w-[85vw] flex flex-col`
+    : `${
+        sidebarOpen ? "w-80 lg:w-96" : "w-12"
+      } transition-all duration-300 bg-white border-l border-gray-200 flex-shrink-0 flex flex-col`;
+
   return (
-    <div
-      className={`${
-        sidebarOpen ? "w-96" : "w-12"
-      } transition-all duration-300 bg-white border-l border-gray-200 flex-shrink-0`}
-    >
-      <div className="p-4 border-b border-gray-200">
-        <Button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          variant="outline"
-          size="sm"
-          className="w-full"
-        >
-          {sidebarOpen ? (
-            <>
-              <ChevronRight className="w-4 h-4 mr-2" />
-              Hide Course Content
-            </>
-          ) : (
-            <List className="w-4 h-4" />
-          )}
-        </Button>
+    <div className={sidebarClasses} id="course-sidebar">
+      {/* Header */}
+      <div className="p-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+        {!isMobile && (
+          <Button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            variant="outline"
+            size="sm"
+            className="flex-1"
+          >
+            {sidebarOpen ? (
+              <>
+                <ChevronRight className="w-4 h-4 mr-2" />
+                <span className="hidden md:inline">Hide Course Content</span>
+                <span className="md:hidden">Hide Content</span>
+              </>
+            ) : (
+              <List className="w-4 h-4" />
+            )}
+          </Button>
+        )}
+        
+        {/* Mobile Header */}
+        {isMobile && sidebarOpen && (
+          <>
+            <h3 className="font-semibold text-gray-900 flex-1">Course Content</h3>
+            <Button
+              onClick={() => setSidebarOpen(false)}
+              variant="ghost"
+              size="sm"
+              className="flex-shrink-0 p-2 hover:bg-gray-100"
+            >
+              <X className="w-5 h-5 text-gray-600" />
+            </Button>
+          </>
+        )}
       </div>
 
       {sidebarOpen && (
-        <div className="p-4 h-full overflow-y-auto">
-          <div className="mb-6">
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Progress Section */}
+          <div className="p-4 flex-shrink-0">
             <div className="bg-gradient-to-r from-[#001e62] to-[#001e62]/90 p-4 rounded-xl text-white">
-              <h3 className="font-bold mb-2">Course Progress</h3>
-              <div className="text-2xl font-bold mb-2">
+              <h3 className="font-bold mb-2 text-sm md:text-base">Course Progress</h3>
+              <div className="text-xl md:text-2xl font-bold mb-2">
                 {getProgressPercentage()}%
               </div>
               <div className="w-full bg-white/20 rounded-full h-2">
@@ -338,46 +373,64 @@ export function EnhancedCourseSidebar({
                   style={{ width: `${getProgressPercentage()}%` }}
                 />
               </div>
-              <div className="text-sm text-white/80 mt-2">
+              <div className="text-xs md:text-sm text-white/80 mt-2">
                 {getCompletedVideos()}/{getTotalVideos()} videos completed
               </div>
             </div>
           </div>
 
-          <div className="space-y-4">
-            {course?.sections && Array.isArray(course.sections) && course.sections.map((section, sectionIndex) => (
-              <div
-                key={section.id}
-                className="border border-gray-200 rounded-lg overflow-hidden"
-              >
+          {/* Course Content - Scrollable */}
+          <div className="flex-1 overflow-y-auto px-4">
+            <div className="space-y-4 pb-4">
+              {course?.sections && Array.isArray(course.sections) && course.sections.map((section, sectionIndex) => (
                 <div
-                  className="flex items-center justify-between p-3 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => toggleSection(section.id)}
+                  key={section.id}
+                  className="border border-gray-200 rounded-lg overflow-hidden"
                 >
-                  <div className="flex items-center">
-                    {expandedSections.has(section.id) ? (
-                      <ChevronDown className="w-4 h-4 mr-2 text-gray-600" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4 mr-2 text-gray-600" />
-                    )}
-                    <div>
-                      <h4 className="font-semibold text-sm">{section.title}</h4>
-                      <p className="text-xs text-gray-500">
-                        {section.videos?.length || 0} videos
-                        {section.videos?.some(v => v.tests && v.tests.length > 0) && " + quizzes"}
-                      </p>
+                  <div
+                    className="flex items-center justify-between p-3 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                    onClick={() => toggleSection(section.id)}
+                  >
+                    <div className="flex items-center min-w-0 flex-1">
+                      {expandedSections.has(section.id) ? (
+                        <ChevronDown className="w-4 h-4 mr-2 text-gray-600 flex-shrink-0" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 mr-2 text-gray-600 flex-shrink-0" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <h4 className="font-semibold text-sm line-clamp-1">{section.title}</h4>
+                        <p className="text-xs text-gray-500">
+                          {section.videos?.length || 0} videos
+                          {section.videos?.some(v => v.tests && v.tests.length > 0) && " + quizzes"}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {expandedSections.has(section.id) && section.videos && Array.isArray(section.videos) && (
-                  <div className="bg-white">
-                    {renderCourseItems(section, sectionIndex)}
-                  </div>
-                )}
-              </div>
-            ))}
+                  {expandedSections.has(section.id) && section.videos && Array.isArray(section.videos) && (
+                    <div className="bg-white">
+                      {renderCourseItems(section, sectionIndex)}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
+
+          {/* Mobile Close Button at Bottom */}
+          {isMobile && (
+            <div className="p-4 border-t border-gray-200 flex-shrink-0 bg-white">
+              <Button
+                onClick={() => setSidebarOpen(false)}
+                variant="outline"
+                size="sm"
+                className="w-full flex items-center justify-center border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
+              >
+                <X className="w-4 h-4 mr-2" />
+                Close Sidebar
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>
