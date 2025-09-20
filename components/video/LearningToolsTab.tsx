@@ -1,48 +1,41 @@
+"use client"
 import { useState, useEffect } from 'react'
 import { Button } from "@/components/ui/Button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card"
 import { Badge } from "@/components/ui/Badge"
 import { Input } from "@/components/ui/Input"
-// import { Textarea } from "@/components/ui/Textarea"
 import {
   Brain,
-  StickyNote,
-  Award,
-  Download,
-  Clock,
-  Bot,
-  BookOpen,
-  Target,
-  Lightbulb,
   MessageSquare,
+  MapPin,
   FileText,
-  TrendingUp,
-  Zap,
-  Search,
-  RefreshCw,
-  CheckCircle,
-  AlertCircle,
-  Play,
-  PenTool,
-  Sparkles,
-  BarChart3,
-  Book,
-  HelpCircle,
-  Loader2,
   Send,
-  X,
+  Loader2,
+  Bot,
+  User,
   ChevronRight,
-  Mic,
-  MicOff,
-  Volume2,
-  VolumeX
+  CheckCircle,
+  Clock,
+  Download,
+  RefreshCw,
+  Lightbulb,
+  TrendingUp,
+  Award,
+  AlertCircle,
+  Sparkles,
+  BookOpen,
+  Target
 } from "lucide-react"
 
 interface Video {
   id: string
   title: string
   description?: string
-  tests: any[]
+  courseId?: string
+  course?: {
+    title: string
+    category: string
+  }
   transcript?: {
     content: string
     status: string
@@ -53,648 +46,651 @@ interface Video {
 interface LearningToolsTabProps {
   video: Video | null
   getProgressPercentage: () => number
-  setActiveTab: (tab: any) => void
 }
 
-interface AIResponse {
-  type: 'summary' | 'explanation' | 'quiz' | 'notes' | 'concepts'
+interface ChatMessage {
+  id: string
+  type: 'user' | 'ai'
   content: string
-  confidence: number
-  sources?: string[]
+  timestamp: Date
+  isLoading?: boolean
+}
+
+interface LearningPathStep {
+  id: number
+  title: string
+  description: string
+  category: string
+  difficulty: 'Beginner' | 'Intermediate' | 'Advanced'
+  estimatedTime: string
+  status: 'completed' | 'current' | 'upcoming'
+  skills: string[]
 }
 
 interface StudyNote {
   id: string
+  title: string
   content: string
-  timestamp: number
-  aiGenerated: boolean
+  keyPoints: string[]
+  summary: string
+  difficulty: string
+  estimatedTime: string
   tags: string[]
   createdAt: string
-}
-
-interface ConceptMap {
-  concept: string
-  description: string
-  difficulty: 'easy' | 'medium' | 'hard'
-  connections: string[]
 }
 
 export function LearningToolsTab({
   video,
   getProgressPercentage,
-  setActiveTab,
 }: LearningToolsTabProps) {
-  const [activeAITool, setActiveAITool] = useState<string | null>(null)
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiResponse, setAiResponse] = useState<AIResponse | null>(null)
+  // AI Q&A State
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [userQuery, setUserQuery] = useState('')
-  const [studyNotes, setStudyNotes] = useState<StudyNote[]>([])
-  const [conceptMap, setConceptMap] = useState<ConceptMap[]>([])
-  const [studyGoals, setStudyGoals] = useState<string[]>([])
-  const [learningPath, setLearningPath] = useState<any[]>([])
-  const [isVoiceMode, setIsVoiceMode] = useState(false)
-  const [isSpeaking, setIsSpeaking] = useState(false)
-  const [quizResults, setQuizResults] = useState<any>(null)
+  const [isAILoading, setIsAILoading] = useState(false)
 
-  // AI Chat State
-  const [chatMessages, setChatMessages] = useState<Array<{
-    id: string
-    type: 'user' | 'ai'
-    content: string
-    timestamp: Date
-  }>>([])
+  // Learning Journey State
+  const [learningPath, setLearningPath] = useState<LearningPathStep[]>([])
+  const [isPathLoading, setIsPathLoading] = useState(false)
 
+  // Study Notes State
+  const [studyNotes, setStudyNotes] = useState<StudyNote | null>(null)
+  const [isNotesLoading, setIsNotesLoading] = useState(false)
+
+  // Initialize features when video changes
   useEffect(() => {
     if (video) {
-      generateConceptMap()
       generateLearningPath()
+      generateStudyNotes()
     }
   }, [video])
 
-  const generateConceptMap = async () => {
-    if (!video?.transcript?.content) return
+  // 1. AI Q&A Feature - Enhanced to answer ANY questions using Gemini
+  const handleAIQuestion = async () => {
+    if (!userQuery.trim() || !video) return
 
-    setAiLoading(true)
-    try {
-      const response = await fetch('/api/ai/analyze-concepts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoId: video.id,
-          transcript: video.transcript.content,
-          title: video.title
-        })
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setConceptMap(data.concepts || [])
-      }
-    } catch (error) {
-      console.error('Failed to generate concept map:', error)
-    } finally {
-      setAiLoading(false)
+    const userMessage: ChatMessage = {
+      id: Date.now() + '-user',
+      type: 'user',
+      content: userQuery,
+      timestamp: new Date()
     }
-  }
 
-  const generateLearningPath = async () => {
-    if (!video) return
-
-    try {
-      const response = await fetch('/api/ai/learning-path', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoId: video.id,
-          userProgress: getProgressPercentage(),
-          hasQuiz: video.tests?.length > 0
-        })
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setLearningPath(data.path || [])
-      }
-    } catch (error) {
-      console.error('Failed to generate learning path:', error)
+    const loadingMessage: ChatMessage = {
+      id: Date.now() + '-loading',
+      type: 'ai',
+      content: 'Thinking...',
+      timestamp: new Date(),
+      isLoading: true
     }
-  }
 
-  const handleAIQuery = async (query: string, type: string) => {
-    if (!query.trim() || !video) return
-
-    setAiLoading(true)
-    setActiveAITool(type)
+    setChatMessages(prev => [...prev, userMessage, loadingMessage])
+    setIsAILoading(true)
+    setUserQuery('')
 
     try {
       const response = await fetch('/api/ai/tutor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query,
+          query: userQuery,
           videoId: video.id,
           videoTitle: video.title,
           transcript: video.transcript?.content,
-          type,
-          context: chatMessages.slice(-3) // Include recent context
+          courseTitle: video.course?.title,
+          courseCategory: video.course?.category,
+          type: 'question',
+          context: chatMessages.slice(-3)
         })
       })
 
       if (response.ok) {
         const data = await response.json()
-        setAiResponse(data)
-
-        // Add to chat history
-        const userMessage = {
-          id: Date.now() + '-user',
-          type: 'user' as const,
-          content: query,
-          timestamp: new Date()
-        }
-
-        const aiMessage = {
+        
+        const aiMessage: ChatMessage = {
           id: Date.now() + '-ai',
-          type: 'ai' as const,
+          type: 'ai',
           content: data.content,
           timestamp: new Date()
         }
 
-        setChatMessages(prev => [...prev, userMessage, aiMessage])
-
-        // Text-to-speech if enabled
-        if (isVoiceMode && data.content) {
-          speakText(data.content)
-        }
+        setChatMessages(prev => 
+          prev.filter(msg => !msg.isLoading).concat([userMessage, aiMessage])
+        )
+      } else {
+        throw new Error('Failed to get AI response')
       }
     } catch (error) {
-      console.error('AI query failed:', error)
+      const errorMessage: ChatMessage = {
+        id: Date.now() + '-error',
+        type: 'ai',
+        content: 'Sorry, I encountered an error. Please try again.',
+        timestamp: new Date()
+      }
+
+      setChatMessages(prev => 
+        prev.filter(msg => !msg.isLoading).concat([userMessage, errorMessage])
+      )
     } finally {
-      setAiLoading(false)
-      setUserQuery('')
+      setIsAILoading(false)
     }
   }
 
-  const generateAINotes = async () => {
-    if (!video?.transcript?.content) return
+  // 2. Learning Journey/Path Generator - Field-specific roadmaps
+  const generateLearningPath = async () => {
+    if (!video) return
 
-    setAiLoading(true)
+    setIsPathLoading(true)
     try {
-      const response = await fetch('/api/ai/generate-notes', {
+      const response = await fetch('/api/ai/learning-journey', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoTitle: video.title,
+          courseTitle: video.course?.title,
+          courseCategory: video.course?.category,
+          description: video.description,
+          currentProgress: getProgressPercentage()
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setLearningPath(data.steps || [])
+      }
+    } catch (error) {
+      console.error('Failed to generate learning path:', error)
+      generateFallbackPath()
+    } finally {
+      setIsPathLoading(false)
+    }
+  }
+
+  const generateFallbackPath = () => {
+    const category = video?.course?.category?.toLowerCase() || 'general'
+    let steps: LearningPathStep[] = []
+
+    if (category.includes('web') || category.includes('frontend') || category.includes('html') || category.includes('css') || category.includes('javascript')) {
+      steps = [
+        {
+          id: 1,
+          title: "HTML & CSS Foundations",
+          description: "Master structure, semantics, and styling fundamentals",
+          category: "Web Development",
+          difficulty: "Beginner",
+          estimatedTime: "2-3 weeks",
+          status: "current",
+          skills: ["HTML5", "CSS3", "Responsive Design", "Accessibility"]
+        },
+        {
+          id: 2,
+          title: "JavaScript Programming",
+          description: "Learn core JS concepts and DOM manipulation",
+          category: "Web Development",
+          difficulty: "Intermediate",
+          estimatedTime: "3-4 weeks",
+          status: "upcoming",
+          skills: ["ES6+", "DOM", "Events", "Async/Await"]
+        },
+        {
+          id: 3,
+          title: "React Framework",
+          description: "Build modern applications with React",
+          category: "Web Development",
+          difficulty: "Intermediate",
+          estimatedTime: "4-5 weeks",
+          status: "upcoming",
+          skills: ["Components", "Hooks", "State", "Router"]
+        },
+        {
+          id: 4,
+          title: "Full-Stack Development",
+          description: "Backend APIs, databases, and deployment",
+          category: "Web Development",
+          difficulty: "Advanced",
+          estimatedTime: "6-8 weeks",
+          status: "upcoming",
+          skills: ["Node.js", "APIs", "Databases", "Deployment"]
+        }
+      ]
+    } else if (category.includes('cyber') || category.includes('security')) {
+      steps = [
+        {
+          id: 1,
+          title: "Security Fundamentals",
+          description: "Basic security concepts and threat landscape",
+          category: "Cybersecurity",
+          difficulty: "Beginner",
+          estimatedTime: "2-3 weeks",
+          status: "current",
+          skills: ["Threat Modeling", "Risk Assessment", "Policies"]
+        },
+        {
+          id: 2,
+          title: "Network Security",
+          description: "Secure network design and monitoring",
+          category: "Cybersecurity",
+          difficulty: "Intermediate",
+          estimatedTime: "3-4 weeks",
+          status: "upcoming",
+          skills: ["Firewalls", "IDS/IPS", "VPN", "Protocols"]
+        },
+        {
+          id: 3,
+          title: "Ethical Hacking",
+          description: "Penetration testing and vulnerability assessment",
+          category: "Cybersecurity",
+          difficulty: "Advanced",
+          estimatedTime: "4-6 weeks",
+          status: "upcoming",
+          skills: ["Pentesting", "Vuln Scanning", "Social Engineering"]
+        }
+      ]
+    } else {
+      steps = [
+        {
+          id: 1,
+          title: "Foundation Knowledge",
+          description: "Build strong fundamentals in the subject area",
+          category: "General",
+          difficulty: "Beginner",
+          estimatedTime: "2-3 weeks",
+          status: "current",
+          skills: ["Core Concepts", "Best Practices", "Standards"]
+        },
+        {
+          id: 2,
+          title: "Practical Application",
+          description: "Apply knowledge through hands-on projects",
+          category: "General",
+          difficulty: "Intermediate",
+          estimatedTime: "3-4 weeks",
+          status: "upcoming",
+          skills: ["Projects", "Problem Solving", "Real-world"]
+        },
+        {
+          id: 3,
+          title: "Advanced Mastery",
+          description: "Master advanced topics and specializations",
+          category: "General",
+          difficulty: "Advanced",
+          estimatedTime: "4-6 weeks",
+          status: "upcoming",
+          skills: ["Advanced Techniques", "Optimization", "Leadership"]
+        }
+      ]
+    }
+
+    setLearningPath(steps)
+  }
+
+  // 3. AI Study Notes Generator - Video-specific notes
+  const generateStudyNotes = async () => {
+    if (!video) return
+
+    setIsNotesLoading(true)
+    try {
+      const response = await fetch('/api/ai/study-notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoId: video.id,
-          transcript: video.transcript.content,
-          title: video.title
+          videoTitle: video.title,
+          transcript: video.transcript?.content,
+          courseTitle: video.course?.title,
+          courseCategory: video.course?.category
         })
       })
 
       if (response.ok) {
         const data = await response.json()
-        const newNote: StudyNote = {
-          id: Date.now().toString(),
-          content: data.notes,
-          timestamp: 0,
-          aiGenerated: true,
-          tags: data.tags || [],
-          createdAt: new Date().toISOString()
-        }
-        setStudyNotes(prev => [newNote, ...prev])
+        setStudyNotes(data.notes)
       }
     } catch (error) {
-      console.error('Failed to generate AI notes:', error)
+      console.error('Failed to generate study notes:', error)
+      generateFallbackNotes()
     } finally {
-      setAiLoading(false)
+      setIsNotesLoading(false)
     }
   }
 
-  const generatePersonalizedQuiz = async () => {
-    if (!video) return
-
-    setAiLoading(true)
-    try {
-      const response = await fetch(`/api/admin/videos/${video.id}/generate-quiz`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          regenerate: true,
-          personalized: true,
-          difficulty: 'adaptive',
-          focusAreas: studyGoals
-        })
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setQuizResults(data)
-      }
-    } catch (error) {
-      console.error('Failed to generate personalized quiz:', error)
-    } finally {
-      setAiLoading(false)
+  const generateFallbackNotes = () => {
+    const category = video?.course?.category || 'General'
+    const fallbackNotes: StudyNote = {
+      id: Date.now().toString(),
+      title: `Study Notes: ${video?.title}`,
+      content: `# ${video?.title}\n\n## Overview\nThis lesson covers important concepts in ${category}.\n\n## Key Points\n- Understand fundamental concepts\n- Apply practical techniques\n- Follow best practices\n- Build practical skills\n\n## Summary\nThis lesson provides essential knowledge for advancing in ${category}.`,
+      keyPoints: [
+        "Master the fundamental concepts presented",
+        "Apply the techniques in practical scenarios", 
+        "Follow industry best practices",
+        "Build hands-on experience",
+        "Connect to broader learning goals"
+      ],
+      summary: `This lesson on "${video?.title}" covers essential ${category} concepts with practical applications.`,
+      difficulty: "Intermediate",
+      estimatedTime: "15-20 minutes",
+      tags: [category, "Fundamentals", "Practice"],
+      createdAt: new Date().toISOString()
     }
+    setStudyNotes(fallbackNotes)
   }
 
-  const speakText = (text: string) => {
-    if (!('speechSynthesis' in window)) return
+  const downloadNotes = () => {
+    if (!studyNotes) return
 
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.rate = 0.8
-    utterance.pitch = 1
-    utterance.volume = 0.8
-
-    utterance.onstart = () => setIsSpeaking(true)
-    utterance.onend = () => setIsSpeaking(false)
-
-    speechSynthesis.speak(utterance)
-  }
-
-  const stopSpeaking = () => {
-    speechSynthesis.cancel()
-    setIsSpeaking(false)
-  }
-
-  const startVoiceRecognition = () => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert('Speech recognition not supported in this browser')
-      return
-    }
-
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    const recognition = new SpeechRecognition()
-
-    recognition.continuous = false
-    recognition.interimResults = false
-    recognition.lang = 'en-US'
-
-    recognition.onstart = () => setIsVoiceMode(true)
-    recognition.onend = () => setIsVoiceMode(false)
-
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript
-      setUserQuery(transcript)
-    }
-
-    recognition.start()
+    const notesText = `${studyNotes.title}\n\n${studyNotes.content}\n\nKey Points:\n${studyNotes.keyPoints.map(point => `• ${point}`).join('\n')}\n\nSummary:\n${studyNotes.summary}`
+    
+    const blob = new Blob([notesText], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${video?.title}-notes.txt`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">AI Learning Assistant</h2>
-          <p className="text-gray-600">Enhance your learning with AI-powered tools and insights</p>
-        </div>
-        <div className="flex items-center space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsVoiceMode(!isVoiceMode)}
-            className={isVoiceMode ? 'bg-blue-50 border-blue-200' : ''}
-          >
-            {isVoiceMode ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-            Voice {isVoiceMode ? 'Off' : 'On'}
-          </Button>
-          {isSpeaking && (
-            <Button variant="outline" size="sm" onClick={stopSpeaking}>
-              <X className="w-4 h-4 mr-1" />
-              Stop
-            </Button>
-          )}
-        </div>
+      <div className="text-center">
+        <h2 className="text-3xl font-bold text-gray-900 mb-2">AI Learning Assistant</h2>
+        <p className="text-gray-600">Enhanced learning with AI-powered Q&A, personalized learning paths, and study notes</p>
       </div>
 
-      {/* AI Chat Interface */}
-      <Card className="border-2 border-blue-100">
-        <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50">
-          <CardTitle className="flex items-center text-blue-900">
-            <Bot className="w-6 h-6 mr-2" />
-            AI Tutor Chat
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {/* Chat Messages */}
-          <div className="h-64 overflow-y-auto p-4 space-y-3">
-            {chatMessages.length === 0 ? (
-              <div className="text-center text-gray-500 py-8">
-                <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                <p>Ask me anything about this lesson!</p>
-                <div className="flex flex-wrap gap-2 mt-4 justify-center">
-                  {['Explain key concepts', 'Generate summary', 'Create practice questions', 'Study tips'].map((suggestion) => (
+      {/* Main AI Features Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* 1. AI Q&A Chat - Can answer ANY questions */}
+        <Card className="lg:col-span-1 border-2 border-blue-200">
+          <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50">
+            <CardTitle className="flex items-center text-blue-900">
+              <MessageSquare className="w-6 h-6 mr-2" />
+              AI Q&A Assistant
+            </CardTitle>
+            <p className="text-sm text-blue-700">Ask me anything - lesson questions, general knowledge, explanations, and more!</p>
+          </CardHeader>
+          <CardContent className="p-0">
+            {/* Chat Messages */}
+            <div className="h-80 overflow-y-auto p-4 space-y-4">
+              {chatMessages.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">
+                  <Bot className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p className="mb-4">Ask me anything!</p>
+                  <div className="space-y-2">
                     <Button
-                      key={suggestion}
                       variant="outline"
                       size="sm"
-                      onClick={() => handleAIQuery(suggestion, 'explanation')}
-                      className="text-xs"
+                      onClick={() => {
+                        setUserQuery("Explain the main concepts from this lesson")
+                        setTimeout(() => handleAIQuestion(), 100)
+                      }}
+                      className="w-full text-xs"
                     >
-                      {suggestion}
+                      Explain lesson concepts
                     </Button>
-                  ))}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setUserQuery("What is artificial intelligence?")
+                        setTimeout(() => handleAIQuestion(), 100)
+                      }}
+                      className="w-full text-xs"
+                    >
+                      What is AI?
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setUserQuery("Give me study tips for this subject")
+                        setTimeout(() => handleAIQuestion(), 100)
+                      }}
+                      className="w-full text-xs"
+                    >
+                      Study tips
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              chatMessages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
+              ) : (
+                chatMessages.map((message) => (
                   <div
-                    className={`max-w-[80%] p-3 rounded-lg ${
-                      message.type === 'user'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-900'
-                    }`}
+                    key={message.id}
+                    className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div className="text-sm">{message.content}</div>
-                    <div className="text-xs mt-1 opacity-70">
-                      {message.timestamp.toLocaleTimeString()}
+                    <div
+                      className={`max-w-[85%] p-3 rounded-lg ${
+                        message.type === 'user'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-900'
+                      }`}
+                    >
+                      <div className="flex items-start space-x-2">
+                        {message.type === 'ai' && <Bot className="w-4 h-4 mt-0.5 flex-shrink-0" />}
+                        {message.type === 'user' && <User className="w-4 h-4 mt-0.5 flex-shrink-0" />}
+                        <div className="flex-1">
+                          {message.isLoading ? (
+                            <div className="flex items-center space-x-2">
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span>Thinking...</span>
+                            </div>
+                          ) : (
+                            <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+                          )}
+                          <div className="text-xs mt-1 opacity-70">
+                            {message.timestamp.toLocaleTimeString()}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
-            )}
-            {aiLoading && (
-              <div className="flex justify-start">
-                <div className="bg-gray-100 p-3 rounded-lg">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Chat Input */}
-          <div className="border-t p-4">
-            <div className="flex space-x-2">
-              <Input
-                placeholder="Ask about this lesson..."
-                value={userQuery}
-                onChange={(e) => setUserQuery(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleAIQuery(userQuery, 'chat')}
-                className="flex-1"
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={startVoiceRecognition}
-                disabled={isVoiceMode}
-              >
-                {isVoiceMode ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
-              </Button>
-              <Button
-                onClick={() => handleAIQuery(userQuery, 'chat')}
-                disabled={!userQuery.trim() || aiLoading}
-              >
-                <Send className="w-4 h-4" />
-              </Button>
+                ))
+              )}
             </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* AI Tools Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        
-        {/* Concept Map */}
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <CardTitle className="flex items-center text-lg">
-              <Brain className="w-5 h-5 mr-2 text-purple-600" />
-              Concept Map
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-600 text-sm mb-4">
-              Visualize key concepts and their relationships
-            </p>
-            {conceptMap.length > 0 ? (
-              <div className="space-y-2 max-h-32 overflow-y-auto">
-                {conceptMap.slice(0, 3).map((concept, index) => (
-                  <div key={index} className="p-2 bg-purple-50 rounded border-l-4 border-purple-500">
-                    <div className="font-medium text-sm">{concept.concept}</div>
-                    <div className="text-xs text-gray-600">{concept.description}</div>
-                  </div>
-                ))}
+            {/* Chat Input */}
+            <div className="border-t p-4">
+              <div className="flex space-x-2">
+                <Input
+                  placeholder="Ask me anything..."
+                  value={userQuery}
+                  onChange={(e) => setUserQuery(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && !isAILoading && handleAIQuestion()}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={handleAIQuestion}
+                  disabled={!userQuery.trim() || isAILoading}
+                  size="sm"
+                >
+                  {isAILoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                </Button>
               </div>
-            ) : (
-              <div className="text-center py-4">
-                <Sparkles className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                <p className="text-sm text-gray-500">Generate concept map</p>
-              </div>
-            )}
-            <Button
-              className="w-full mt-4"
-              variant="outline"
-              onClick={generateConceptMap}
-              disabled={aiLoading || !video?.transcript?.content}
-            >
-              {aiLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Brain className="w-4 h-4 mr-2" />}
-              {conceptMap.length > 0 ? 'Regenerate' : 'Generate'} Map
-            </Button>
+              <p className="text-xs text-gray-500 mt-2">
+                Powered by Gemini AI - Ask about this lesson, general knowledge, or anything else!
+              </p>
+            </div>
           </CardContent>
         </Card>
 
-        {/* AI Study Notes */}
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <CardTitle className="flex items-center text-lg">
-              <PenTool className="w-5 h-5 mr-2 text-green-600" />
+        {/* 2. Learning Journey Map - Field-specific roadmaps */}
+        <Card className="lg:col-span-1 border-2 border-green-200">
+          <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50">
+            <CardTitle className="flex items-center text-green-900">
+              <MapPin className="w-6 h-6 mr-2" />
+              Learning Journey Map
+            </CardTitle>
+            <p className="text-sm text-green-700">Your personalized roadmap for mastering {video?.course?.category || 'this field'}</p>
+          </CardHeader>
+          <CardContent className="p-4">
+            {isPathLoading ? (
+              <div className="text-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
+                <p className="text-sm text-gray-500">Generating your learning path...</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {learningPath.slice(0, 4).map((step, index) => (
+                  <div key={step.id} className="relative">
+                    <div className={`flex items-start space-x-3 p-3 rounded-lg border-2 ${
+                      step.status === 'completed' ? 'bg-green-50 border-green-200' :
+                      step.status === 'current' ? 'bg-blue-50 border-blue-200' :
+                      'bg-gray-50 border-gray-200'
+                    }`}>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                        step.status === 'completed' ? 'bg-green-600 text-white' :
+                        step.status === 'current' ? 'bg-blue-600 text-white' :
+                        'bg-gray-400 text-white'
+                      }`}>
+                        {step.status === 'completed' ? <CheckCircle className="w-4 h-4" /> : step.id}
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-sm">{step.title}</h4>
+                        <p className="text-xs text-gray-600 mb-2">{step.description}</p>
+                        <div className="flex items-center space-x-2 text-xs">
+                          <Badge variant="outline" className="text-xs px-1 py-0">
+                            {step.difficulty}
+                          </Badge>
+                          <span className="text-gray-500">{step.estimatedTime}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {step.skills.slice(0, 2).map((skill, i) => (
+                            <Badge key={i} variant="secondary" className="text-xs px-1 py-0">
+                              {skill}
+                            </Badge>
+                          ))}
+                          {step.skills.length > 2 && (
+                            <Badge variant="secondary" className="text-xs px-1 py-0">
+                              +{step.skills.length - 2}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {index < learningPath.slice(0, 4).length - 1 && (
+                      <div className="absolute left-6 top-14 w-0.5 h-4 bg-gray-300"></div>
+                    )}
+                  </div>
+                ))}
+                <div className="pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={generateLearningPath}
+                    disabled={isPathLoading}
+                    className="w-full"
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Refresh Journey
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 3. AI Study Notes - Video-specific notes */}
+        <Card className="lg:col-span-1 border-2 border-purple-200">
+          <CardHeader className="bg-gradient-to-r from-purple-50 to-violet-50">
+            <CardTitle className="flex items-center text-purple-900">
+              <FileText className="w-6 h-6 mr-2" />
               AI Study Notes
             </CardTitle>
+            <p className="text-sm text-purple-700">Comprehensive notes generated specifically for "{video?.title}"</p>
           </CardHeader>
-          <CardContent>
-            <p className="text-gray-600 text-sm mb-4">
-              Auto-generated notes from lesson content
-            </p>
-            {studyNotes.length > 0 ? (
-              <div className="space-y-2 max-h-32 overflow-y-auto">
-                {studyNotes.slice(0, 2).map((note) => (
-                  <div key={note.id} className="p-2 bg-green-50 rounded text-sm">
-                    <div className="flex items-center mb-1">
-                      {note.aiGenerated && <Bot className="w-3 h-3 mr-1 text-green-600" />}
-                      <span className="text-xs text-gray-500">
-                        {new Date(note.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <p className="text-gray-800 line-clamp-2">{note.content}</p>
+          <CardContent className="p-4">
+            {isNotesLoading ? (
+              <div className="text-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
+                <p className="text-sm text-gray-500">Generating study notes...</p>
+              </div>
+            ) : studyNotes ? (
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-semibold text-sm mb-2">{studyNotes.title}</h4>
+                  <div className="text-xs text-gray-600 mb-3 flex items-center space-x-4">
+                    <span className="flex items-center">
+                      <Clock className="w-3 h-3 mr-1" />
+                      {studyNotes.estimatedTime}
+                    </span>
+                    <Badge variant="outline" className="text-xs">
+                      {studyNotes.difficulty}
+                    </Badge>
                   </div>
-                ))}
+                </div>
+
+                <div>
+                  <h5 className="font-medium text-sm mb-2">Key Points:</h5>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {studyNotes.keyPoints.map((point, index) => (
+                      <div key={index} className="flex items-start space-x-2 text-xs">
+                        <Lightbulb className="w-3 h-3 mt-0.5 text-yellow-500 flex-shrink-0" />
+                        <span className="text-gray-700">{point}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h5 className="font-medium text-sm mb-2">Summary:</h5>
+                  <p className="text-xs text-gray-700 leading-relaxed">{studyNotes.summary}</p>
+                </div>
+
+                <div className="flex flex-wrap gap-1">
+                  {studyNotes.tags.map((tag, index) => (
+                    <Badge key={index} variant="secondary" className="text-xs px-1 py-0">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+
+                <div className="flex space-x-2 pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={downloadNotes}
+                    className="flex-1"
+                  >
+                    <Download className="w-3 h-3 mr-1" />
+                    Download
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={generateStudyNotes}
+                    disabled={isNotesLoading}
+                    className="flex-1"
+                  >
+                    <RefreshCw className="w-3 h-3 mr-1" />
+                    Regenerate
+                  </Button>
+                </div>
               </div>
             ) : (
-              <div className="text-center py-4">
-                <FileText className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                <p className="text-sm text-gray-500">No notes yet</p>
-              </div>
-            )}
-            <Button
-              className="w-full mt-4"
-              variant="outline"
-              onClick={generateAINotes}
-              disabled={aiLoading || !video?.transcript?.content}
-            >
-              <PenTool className="w-4 h-4 mr-2" />
-              Generate Notes
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Personalized Quiz */}
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <CardTitle className="flex items-center text-lg">
-              <Target className="w-5 h-5 mr-2 text-blue-600" />
-              Smart Quiz
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-600 text-sm mb-4">
-              Adaptive quiz based on your learning progress
-            </p>
-            {quizResults ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span>Questions Generated:</span>
-                  <Badge variant="secondary">{quizResults.count}</Badge>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span>Difficulty:</span>
-                  <Badge className="bg-blue-100 text-blue-800">Adaptive</Badge>
-                </div>
-                <div className="text-xs text-gray-500">
-                  Generated from: {quizResults.source}
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-4">
-                <Brain className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                <p className="text-sm text-gray-500">Create personalized quiz</p>
-              </div>
-            )}
-            <Button
-              className="w-full mt-4"
-              variant="outline"
-              onClick={generatePersonalizedQuiz}
-              disabled={aiLoading}
-            >
-              <Target className="w-4 h-4 mr-2" />
-              {quizResults ? 'Retake Quiz' : 'Generate Quiz'}
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Learning Analytics */}
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <CardTitle className="flex items-center text-lg">
-              <BarChart3 className="w-5 h-5 mr-2 text-orange-600" />
-              Learning Analytics
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-600 text-sm mb-4">
-              Track your progress and get insights
-            </p>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm">Completion</span>
-                <div className="flex items-center">
-                  <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
-                    <div 
-                      className="bg-orange-500 h-2 rounded-full" 
-                      style={{ width: `${getProgressPercentage()}%` }}
-                    />
-                  </div>
-                  <span className="text-xs font-medium">{getProgressPercentage()}%</span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span>Quiz Available:</span>
-                <Badge variant={video?.tests?.length > 0 ? "default" : "secondary"}>
-                  {video?.tests?.length > 0 ? "Yes" : "No"}
-                </Badge>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span>AI Features:</span>
-                <Badge className="bg-green-100 text-green-800">Active</Badge>
-              </div>
-            </div>
-            <Button className="w-full mt-4" variant="outline">
-              <TrendingUp className="w-4 h-4 mr-2" />
-              View Detailed Analytics
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Learning Path */}
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <CardTitle className="flex items-center text-lg">
-              <BookOpen className="w-5 h-5 mr-2 text-indigo-600" />
-              Learning Path
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-600 text-sm mb-4">
-              Personalized next steps for optimal learning
-            </p>
-            {learningPath.length > 0 ? (
-              <div className="space-y-2 max-h-32 overflow-y-auto">
-                {learningPath.slice(0, 3).map((step, index) => (
-                  <div key={index} className="flex items-center p-2 bg-indigo-50 rounded">
-                    <div className="w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs mr-2">
-                      {index + 1}
-                    </div>
-                    <span className="text-sm">{step.title}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-4">
-                <BookOpen className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                <p className="text-sm text-gray-500">Generating path...</p>
-              </div>
-            )}
-            <Button className="w-full mt-4" variant="outline">
-              <ChevronRight className="w-4 h-4 mr-2" />
-              View Full Path
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Certificate Progress */}
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <CardTitle className="flex items-center text-lg">
-              <Award className="w-5 h-5 mr-2 text-yellow-600" />
-              Certificate Progress
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-600 text-sm mb-4">
-              Track progress toward earning your certificate
-            </p>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span>Video Completion:</span>
-                <CheckCircle className="w-4 h-4 text-green-500" />
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span>Quiz Completion:</span>
-                {video?.tests?.length > 0 ? (
-                  <Clock className="w-4 h-4 text-orange-500" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-gray-400" />
+              <div className="text-center py-8">
+                <FileText className="w-8 h-8 mx-auto mb-3 text-gray-300" />
+                <p className="text-sm text-gray-500 mb-4">No study notes available</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={generateStudyNotes}
+                  disabled={isNotesLoading}
+                >
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Generate Notes
+                </Button>
+                {!video?.transcript?.content && (
+                  <p className="text-xs text-gray-400 mt-2">
+                    Note: Transcript needed for best results
+                  </p>
                 )}
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <span>AI Engagement:</span>
-                <Badge className="bg-blue-100 text-blue-800">Active</Badge>
-              </div>
-            </div>
-            <Button
-              className="w-full mt-4"
-              disabled={getProgressPercentage() !== 100}
-              variant={getProgressPercentage() === 100 ? "primary" : "outline"}
-            >
-              {getProgressPercentage() === 100 ? (
-                <>
-                  <Download className="w-4 h-4 mr-2" />
-                  Download Certificate
-                </>
-              ) : (
-                <>
-                  <Award className="w-4 h-4 mr-2" />
-                  {getProgressPercentage()}% Complete
-                </>
-              )}
-            </Button>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Quick Actions */}
+      {/* Quick Action Buttons */}
       <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
         <CardContent className="p-6">
           <h3 className="text-lg font-semibold text-blue-900 mb-4">Quick AI Actions</h3>
@@ -702,8 +698,11 @@ export function LearningToolsTab({
             <Button
               variant="outline"
               className="h-auto p-3 flex flex-col items-center space-y-2"
-              onClick={() => handleAIQuery('Summarize this lesson', 'summary')}
-              disabled={aiLoading}
+              onClick={() => {
+                setUserQuery("Summarize this lesson")
+                setTimeout(() => handleAIQuestion(), 100)
+              }}
+              disabled={isAILoading}
             >
               <FileText className="w-6 h-6 text-blue-600" />
               <span className="text-sm">Summarize</span>
@@ -712,8 +711,11 @@ export function LearningToolsTab({
             <Button
               variant="outline"
               className="h-auto p-3 flex flex-col items-center space-y-2"
-              onClick={() => handleAIQuery('Explain the key concepts', 'explanation')}
-              disabled={aiLoading}
+              onClick={() => {
+                setUserQuery("Explain the key concepts")
+                setTimeout(() => handleAIQuestion(), 100)
+              }}
+              disabled={isAILoading}
             >
               <Lightbulb className="w-6 h-6 text-yellow-600" />
               <span className="text-sm">Explain</span>
@@ -722,42 +724,70 @@ export function LearningToolsTab({
             <Button
               variant="outline"
               className="h-auto p-3 flex flex-col items-center space-y-2"
-              onClick={() => handleAIQuery('Create practice questions', 'quiz')}
-              disabled={aiLoading}
+              onClick={() => {
+                setUserQuery("Create practice questions")
+                setTimeout(() => handleAIQuestion(), 100)
+              }}
+              disabled={isAILoading}
             >
-              <HelpCircle className="w-6 h-6 text-green-600" />
+              <Target className="w-6 h-6 text-green-600" />
               <span className="text-sm">Practice</span>
             </Button>
             
             <Button
               variant="outline"
               className="h-auto p-3 flex flex-col items-center space-y-2"
-              onClick={() => setActiveTab("notes")}
+              onClick={() => {
+                setUserQuery("Give me study tips")
+                setTimeout(() => handleAIQuestion(), 100)
+              }}
+              disabled={isAILoading}
             >
-              <StickyNote className="w-6 h-6 text-purple-600" />
-              <span className="text-sm">Notes</span>
+              <BookOpen className="w-6 h-6 text-purple-600" />
+              <span className="text-sm">Study Tips</span>
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Schedule Learning Time (from original) */}
-      <Card className="border-gray-200 shadow-sm">
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Clock className="w-5 h-5 mr-2 text-blue-600" />
-            Schedule Learning Time
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-gray-600 mb-4">
-            Learning a little each day adds up. Research shows that students who make learning a habit are more likely to reach their goals. Set time aside to learn and get reminders using your learning scheduler.
-          </p>
-          <div className="flex space-x-4">
-            <Button className="bg-blue-600 hover:bg-blue-700">
-              Get Started
-            </Button>
-            <Button variant="outline">Dismiss</Button>
+      {/* Progress Summary */}
+      <Card className="bg-gradient-to-r from-gray-50 to-slate-50 border-gray-200">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Learning Progress</h3>
+              <p className="text-gray-600">Track your AI-enhanced learning journey</p>
+            </div>
+            <div className="text-right">
+              <div className="text-3xl font-bold text-blue-600">{getProgressPercentage()}%</div>
+              <div className="text-sm text-gray-500">Complete</div>
+            </div>
+          </div>
+          
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="text-center p-4 bg-white rounded-lg border">
+              <MessageSquare className="w-6 h-6 mx-auto mb-2 text-blue-600" />
+              <div className="text-sm font-medium">AI Interactions</div>
+              <div className="text-lg font-bold text-gray-900">{chatMessages.length}</div>
+            </div>
+            
+            <div className="text-center p-4 bg-white rounded-lg border">
+              <MapPin className="w-6 h-6 mx-auto mb-2 text-green-600" />
+              <div className="text-sm font-medium">Learning Steps</div>
+              <div className="text-lg font-bold text-gray-900">{learningPath.length}</div>
+            </div>
+            
+            <div className="text-center p-4 bg-white rounded-lg border">
+              <FileText className="w-6 h-6 mx-auto mb-2 text-purple-600" />
+              <div className="text-sm font-medium">Study Notes</div>
+              <div className="text-lg font-bold text-gray-900">{studyNotes ? '1' : '0'}</div>
+            </div>
+            
+            <div className="text-center p-4 bg-white rounded-lg border">
+              <Award className="w-6 h-6 mx-auto mb-2 text-yellow-600" />
+              <div className="text-sm font-medium">AI Features</div>
+              <div className="text-lg font-bold text-gray-900">Active</div>
+            </div>
           </div>
         </CardContent>
       </Card>

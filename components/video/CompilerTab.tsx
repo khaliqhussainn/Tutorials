@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { 
@@ -11,7 +11,6 @@ import {
   Copy, 
   Download,
   Trash2,
-  FileText,
   AlertCircle,
   CheckCircle,
   Loader2
@@ -24,9 +23,11 @@ import { cpp } from "@codemirror/lang-cpp";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorView } from "@codemirror/view";
 import Draggable from "react-draggable";
+
 interface CompilerTabProps {
   setActiveTab: (tab: any) => void;
 }
+
 interface ExecutionResult {
   stdout?: string;
   stderr?: string;
@@ -38,6 +39,7 @@ interface ExecutionResult {
   time: string;
   memory: number;
 }
+
 const LANGUAGE_CONFIGS = {
   javascript: {
     id: 63,
@@ -81,6 +83,7 @@ public class Main {
     defaultCode: `// C++ Code
 #include <iostream>
 #include <string>
+
 int main() {
     std::cout << "Hello, World!" << std::endl;
     
@@ -92,44 +95,115 @@ int main() {
 }`
   }
 };
+
 export function CompilerTab({ setActiveTab }: CompilerTabProps) {
-  const [code, setCode] = useState<string>("");
-  const [language, setLanguage] = useState<string>("javascript");
-  const [output, setOutput] = useState<string>("");
-  const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [isFloating, setIsFloating] = useState<boolean>(false);
-  const [isDarkTheme, setIsDarkTheme] = useState<boolean>(false);
-  const [fontSize, setFontSize] = useState<number>(14);
-  const [executionTime, setExecutionTime] = useState<string>("");
-  const [memoryUsed, setMemoryUsed] = useState<string>("");
-  const [showSettings, setShowSettings] = useState<boolean>(false);
+  // Use refs to store values that don't need to trigger re-renders
+  const codeRef = useRef<Record<string, string>>(() => {
+    const initialStates: Record<string, string> = {};
+    Object.entries(LANGUAGE_CONFIGS).forEach(([key, config]) => {
+      initialStates[key] = config.defaultCode;
+    });
+    return initialStates;
+  });
+
+  const [language, setLanguage] = useState("javascript");
+  const [output, setOutput] = useState("");
+  const [isRunning, setIsRunning] = useState(false);
+  const [isFloating, setIsFloating] = useState(false);
+  const [isDarkTheme, setIsDarkTheme] = useState(false);
+  const [fontSize, setFontSize] = useState(14);
+  const [executionTime, setExecutionTime] = useState("");
+  const [memoryUsed, setMemoryUsed] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [editorKey, setEditorKey] = useState(0); // Force re-mount when needed
   
   const outputRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<HTMLDivElement>(null);
-  // Initialize with default code for selected language
-  useEffect(() => {
-    setCode(LANGUAGE_CONFIGS[language as keyof typeof LANGUAGE_CONFIGS].defaultCode);
+
+  // Get current code without causing re-renders
+  const getCurrentCode = () => {
+    return codeRef.current[language] || LANGUAGE_CONFIGS[language as keyof typeof LANGUAGE_CONFIGS].defaultCode;
+  };
+
+  // Handle code changes without causing component re-renders
+  const handleCodeChange = useCallback((value: string) => {
+    codeRef.current[language] = value;
   }, [language]);
+
+  // Handle language change
+  const handleLanguageChange = useCallback((newLanguage: string) => {
+    setLanguage(newLanguage);
+    setOutput("");
+    setExecutionTime("");
+    setMemoryUsed("");
+    setEditorKey(prev => prev + 1); // Force re-mount with new language
+  }, []);
+
+  // Get extensions for the editor
+  const getExtensions = () => {
+    const exts = [
+      EditorView.theme({
+        "&": {
+          fontSize: `${fontSize}px`,
+        },
+        ".cm-content": {
+          padding: "16px",
+          minHeight: "200px",
+        },
+        ".cm-focused": {
+          outline: "none"
+        },
+        ".cm-editor": {
+          height: "100%"
+        }
+      })
+    ];
+
+    switch (language) {
+      case "javascript":
+        exts.push(javascript());
+        break;
+      case "python":
+        exts.push(python());
+        break;
+      case "java":
+        exts.push(java());
+        break;
+      case "cpp":
+        exts.push(cpp());
+        break;
+    }
+
+    if (isDarkTheme) {
+      exts.push(oneDark);
+    }
+
+    return exts;
+  };
+
   // Auto-scroll output to bottom
   useEffect(() => {
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
   }, [output]);
+
   const runCode = async () => {
-    if (!code.trim()) {
+    const currentCode = getCurrentCode();
+    if (!currentCode.trim()) {
       setOutput("Error: Please write some code before running.");
       return;
     }
+
     setIsRunning(true);
     setOutput("🚀 Compiling and running your code...\n");
     setExecutionTime("");
     setMemoryUsed("");
+
     try {
       const startTime = Date.now();
       
-      // Using Judge0 API (free tier)
-      const response = await fetch("https://judge0-ce.p.rapidapi.com/submissions", {
+      const response = await fetch("https://judge0-ce.p.rapidapi.com/submissions?base64_encoded=false&wait=false", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -138,26 +212,26 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
         },
         body: JSON.stringify({
           language_id: LANGUAGE_CONFIGS[language as keyof typeof LANGUAGE_CONFIGS].id,
-          source_code: code,
+          source_code: currentCode,
           stdin: "",
-          expected_output: ""
         }),
       });
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
+
       const submission = await response.json();
       
-      // Poll for results
       let result: ExecutionResult;
       let attempts = 0;
-      const maxAttempts = 10;
+      const maxAttempts = 15;
       
       do {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 1500));
         
         const resultResponse = await fetch(
-          `https://judge0-ce.p.rapidapi.com/submissions/${submission.token}`,
+          `https://judge0-ce.p.rapidapi.com/submissions/${submission.token}?base64_encoded=false`,
           {
             headers: {
               "X-RapidAPI-Key": process.env.NEXT_PUBLIC_RAPIDAPI_KEY || "your-api-key-here",
@@ -166,55 +240,64 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
           }
         );
         
+        if (!resultResponse.ok) {
+          throw new Error(`Failed to get result: ${resultResponse.status}`);
+        }
+        
         result = await resultResponse.json();
         attempts++;
         
+        if (result.status.id <= 2) {
+          setOutput(`🚀 Compiling and running your code... (${attempts}/${maxAttempts})\n`);
+        }
+        
       } while (result.status.id <= 2 && attempts < maxAttempts);
+
       const endTime = Date.now();
       const totalTime = (endTime - startTime) / 1000;
       
       setExecutionTime(`${totalTime.toFixed(2)}s`);
       setMemoryUsed(result.memory ? `${result.memory} KB` : "N/A");
-      // Format output based on result
+
       let formattedOutput = "";
       
-      if (result.status.id === 3) { // Accepted
-        formattedOutput = "✅ Execution successful!\n\n";
-        formattedOutput += "📤 Output:\n";
-        formattedOutput += result.stdout || "(no output)";
-      } else if (result.status.id === 4) { // Wrong Answer
-        formattedOutput = "❌ Wrong Answer\n\n";
-        formattedOutput += "📤 Output:\n";
-        formattedOutput += result.stdout || "(no output)";
-      } else if (result.status.id === 5) { // Time Limit Exceeded
-        formattedOutput = "⏰ Time Limit Exceeded\n";
-      } else if (result.status.id === 6) { // Compilation Error
-        formattedOutput = "🔨 Compilation Error:\n\n";
-        formattedOutput += result.compile_output || "Unknown compilation error";
-      } else if (result.status.id === 7) { // Runtime Error (SIGSEGV)
-        formattedOutput = "💥 Runtime Error (Segmentation Fault):\n\n";
-        formattedOutput += result.stderr || "Segmentation fault occurred";
-      } else if (result.status.id === 8) { // Runtime Error (SIGXFSZ)
-        formattedOutput = "💥 Runtime Error (Output Limit Exceeded):\n";
-      } else if (result.status.id === 9) { // Runtime Error (SIGFPE)
-        formattedOutput = "💥 Runtime Error (Floating Point Exception):\n\n";
-        formattedOutput += result.stderr || "Division by zero or similar error";
-      } else if (result.status.id === 10) { // Runtime Error (SIGABRT)
-        formattedOutput = "💥 Runtime Error (Aborted):\n\n";
-        formattedOutput += result.stderr || "Program was aborted";
-      } else if (result.status.id === 11) { // Runtime Error (NZEC)
-        formattedOutput = "💥 Runtime Error (Non-zero Exit Code):\n\n";
-        formattedOutput += result.stderr || "Program exited with non-zero code";
-      } else if (result.status.id === 12) { // Runtime Error (Other)
-        formattedOutput = "💥 Runtime Error:\n\n";
-        formattedOutput += result.stderr || "Unknown runtime error";
-      } else {
-        formattedOutput = `⚠️ ${result.status.description}\n`;
-        if (result.stderr) {
-          formattedOutput += "\n🐛 Error Details:\n" + result.stderr;
+      if (result.status.id === 3) {
+        formattedOutput = "✅ Code executed successfully!\n\n";
+        if (result.stdout && result.stdout.trim()) {
+          formattedOutput += "📤 Output:\n";
+          formattedOutput += result.stdout;
+        } else {
+          formattedOutput += "📤 Output: (no output)\n";
         }
-        if (result.stdout) {
-          formattedOutput += "\n📤 Output:\n" + result.stdout;
+      } else if (result.status.id === 4) {
+        formattedOutput = "✅ Code executed!\n\n";
+        formattedOutput += "📤 Output:\n";
+        formattedOutput += result.stdout || "(no output)";
+        if (result.stderr && result.stderr.trim()) {
+          formattedOutput += "\n\n⚠️ Warnings:\n" + result.stderr;
+        }
+      } else if (result.status.id === 6) {
+        formattedOutput = "🔨 Compilation Error:\n\n";
+        formattedOutput += result.compile_output || result.stderr || "Unknown compilation error";
+      } else if (result.status.id >= 7 && result.status.id <= 12) {
+        formattedOutput = "💥 Runtime Error:\n\n";
+        formattedOutput += `Error Type: ${result.status.description}\n\n`;
+        if (result.stderr && result.stderr.trim()) {
+          formattedOutput += "Error Details:\n" + result.stderr;
+        }
+        if (result.stdout && result.stdout.trim()) {
+          formattedOutput += "\n\nOutput before error:\n" + result.stdout;
+        }
+      } else {
+        formattedOutput = `⚠️ ${result.status.description}\n\n`;
+        if (result.compile_output && result.compile_output.trim()) {
+          formattedOutput += "Compile Output:\n" + result.compile_output + "\n\n";
+        }
+        if (result.stderr && result.stderr.trim()) {
+          formattedOutput += "Error Details:\n" + result.stderr + "\n\n";
+        }
+        if (result.stdout && result.stdout.trim()) {
+          formattedOutput += "Output:\n" + result.stdout;
         }
       }
       
@@ -224,62 +307,33 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
       console.error("Execution error:", error);
       setOutput(
         "❌ Failed to execute code.\n\n" +
+        `Error: ${error instanceof Error ? error.message : 'Unknown error'}\n\n` +
         "This could be due to:\n" +
         "• Network connectivity issues\n" +
+        "• Invalid API key\n" +
         "• API rate limiting\n" +
         "• Server maintenance\n\n" +
-        "Please try again in a moment."
+        "Please check your API configuration and try again."
       );
     } finally {
       setIsRunning(false);
     }
   };
-  const getLanguageExtension = () => {
-    const extensions = [EditorView.theme({
-      "&": {
-        fontSize: `${fontSize}px`,
-      },
-      ".cm-content": {
-        padding: "16px",
-        minHeight: "200px",
-      },
-      ".cm-focused": {
-        outline: "none"
-      }
-    })];
-    switch (language) {
-      case "javascript":
-        extensions.push(javascript());
-        break;
-      case "python":
-        extensions.push(python());
-        break;
-      case "java":
-        extensions.push(java());
-        break;
-      case "cpp":
-        extensions.push(cpp());
-        break;
-      default:
-        extensions.push(javascript());
-    }
-    if (isDarkTheme) {
-      extensions.push(oneDark);
-    }
-    return extensions;
-  };
+
   const clearOutput = () => {
     setOutput("");
     setExecutionTime("");
     setMemoryUsed("");
   };
+
   const copyCode = async () => {
     try {
-      await navigator.clipboard.writeText(code);
+      await navigator.clipboard.writeText(getCurrentCode());
     } catch (err) {
       console.error("Failed to copy code:", err);
     }
   };
+
   const copyOutput = async () => {
     try {
       await navigator.clipboard.writeText(output);
@@ -287,9 +341,10 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
       console.error("Failed to copy output:", err);
     }
   };
+
   const downloadCode = () => {
     const config = LANGUAGE_CONFIGS[language as keyof typeof LANGUAGE_CONFIGS];
-    const blob = new Blob([code], { type: "text/plain" });
+    const blob = new Blob([getCurrentCode()], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -297,10 +352,14 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
     a.click();
     URL.revokeObjectURL(url);
   };
+
   const resetCode = () => {
-    setCode(LANGUAGE_CONFIGS[language as keyof typeof LANGUAGE_CONFIGS].defaultCode);
+    const defaultCode = LANGUAGE_CONFIGS[language as keyof typeof LANGUAGE_CONFIGS].defaultCode;
+    codeRef.current[language] = defaultCode;
+    setEditorKey(prev => prev + 1); // Force re-mount to show reset code
     clearOutput();
   };
+
   const SettingsPanel = () => (
     <div className="absolute top-12 right-0 bg-white border rounded-lg shadow-lg p-4 z-50 w-64">
       <h3 className="font-medium mb-3">Editor Settings</h3>
@@ -310,7 +369,10 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
           <label className="block text-sm text-gray-600 mb-1">Theme</label>
           <select
             value={isDarkTheme ? "dark" : "light"}
-            onChange={(e) => setIsDarkTheme(e.target.value === "dark")}
+            onChange={(e) => {
+              setIsDarkTheme(e.target.value === "dark");
+              setEditorKey(prev => prev + 1); // Re-mount to apply theme
+            }}
             className="w-full p-2 border rounded text-sm"
           >
             <option value="light">Light</option>
@@ -322,7 +384,10 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
           <label className="block text-sm text-gray-600 mb-1">Font Size</label>
           <select
             value={fontSize}
-            onChange={(e) => setFontSize(Number(e.target.value))}
+            onChange={(e) => {
+              setFontSize(Number(e.target.value));
+              setEditorKey(prev => prev + 1); // Re-mount to apply font size
+            }}
             className="w-full p-2 border rounded text-sm"
           >
             <option value={12}>12px</option>
@@ -335,6 +400,7 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
       </div>
     </div>
   );
+
   const CompilerContent = () => (
     <>
       <CardHeader className="flex flex-row justify-between items-center pb-4">
@@ -380,7 +446,7 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
           <div className="flex items-center space-x-2">
             <select
               value={language}
-              onChange={(e) => setLanguage(e.target.value)}
+              onChange={(e) => handleLanguageChange(e.target.value)}
               className="p-2 border rounded text-sm"
               disabled={isRunning}
             >
@@ -442,16 +508,29 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
             </Button>
           </div>
         </div>
+
         {/* Code Editor */}
         <div className="flex-1 mb-4 border rounded-lg overflow-hidden">
           <CodeMirror
-            value={code}
+            key={editorKey}
+            value={getCurrentCode()}
             height="100%"
-            extensions={getLanguageExtension()}
-            onChange={(value) => setCode(value)}
+            extensions={getExtensions()}
+            onChange={handleCodeChange}
             className="h-full"
+            basicSetup={{
+              lineNumbers: true,
+              foldGutter: true,
+              dropCursor: false,
+              allowMultipleSelections: false,
+              autocompletion: true,
+              bracketMatching: true,
+              closeBrackets: true,
+              highlightSelectionMatches: false,
+            }}
           />
         </div>
+
         {/* Output Section */}
         <div className="flex-1 border rounded-lg flex flex-col bg-gray-900 text-gray-100">
           <div className="flex items-center justify-between p-3 border-b border-gray-700">
@@ -484,15 +563,11 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
             ref={outputRef}
             className="flex-1 p-4 overflow-auto font-mono text-sm whitespace-pre-wrap"
           >
-
             {output || (
-              <div className="text-gray-500 text-sm">
-                <AlertCircle className="inline w-4 h-4 mr-2" />
+              <div className="text-gray-500 text-sm flex items-center">
+                <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
                 Output will appear here after execution.
               </div>
-            )}
-            {output && (
-              <pre className="whitespace-pre-wrap">{output}</pre>
             )}
           </div>
         </div>
@@ -504,23 +579,23 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
     <Draggable handle=".drag-handle" nodeRef={dragRef}>
       <div
         ref={dragRef}
-        className="fixed bottom-4 right-4 bg-gray-800 border border-gray-700 rounded-lg shadow-xl w-[500px] h-[600px] flex flex-col z-50"
+        className="fixed bottom-4 right-4 bg-white border border-gray-300 rounded-lg shadow-xl w-[500px] h-[600px] flex flex-col z-50"
       >
-        <div className="drag-handle flex justify-between items-center p-3 border-b border-gray-700 cursor-move">
+        <div className="drag-handle flex justify-between items-center p-3 border-b border-gray-300 cursor-move bg-gray-50">
           <div className="flex items-center">
-            <Code className="w-4 h-4 mr-2 text-gray-100" />
-            <span className="text-sm font-medium text-gray-100">Code Compiler</span>
+            <Code className="w-4 h-4 mr-2 text-gray-700" />
+            <span className="text-sm font-medium text-gray-700">Code Compiler</span>
           </div>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setIsFloating(false)}
-            className="text-gray-400 hover:text-gray-100"
+            className="text-gray-600 hover:text-gray-800"
           >
             <X className="w-4 h-4" />
           </Button>
         </div>
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col overflow-hidden">
           <CompilerContent />
         </div>
       </div>
