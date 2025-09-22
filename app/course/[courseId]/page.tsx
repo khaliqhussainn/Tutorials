@@ -87,7 +87,7 @@ export default function CoursePage({ params }: CoursePageProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState<boolean>(true);
   const [enrolling, setEnrolling] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<"videos" | "about" | "notes" | "certificates">("videos");
+  const [activeTab, setActiveTab] = useState<"videos" | "about"| "certificates">("videos");
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [enrollmentChecked, setEnrollmentChecked] = useState<boolean>(false);
@@ -962,7 +962,6 @@ export default function CoursePage({ params }: CoursePageProps) {
             {[
               { id: "videos", label: "Videos", icon: PlayCircle },
               { id: "about", label: "About", icon: Info },
-              { id: "notes", label: "Notes", icon: StickyNote },
               { id: "certificates", label: "Certificates", icon: Award },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -988,7 +987,6 @@ export default function CoursePage({ params }: CoursePageProps) {
         <div className="min-h-96">
           {activeTab === "videos" && renderVideosTab()}
           {activeTab === "about" && renderAboutTab()}
-          {activeTab === "notes" && renderNotesTab()}
           {activeTab === "certificates" && renderCertificatesTab()}
         </div>
       </div>

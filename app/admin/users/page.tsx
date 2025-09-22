@@ -1,6 +1,5 @@
 // app/admin/users/page.tsx - Users Management Page
 'use client'
-
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
@@ -8,11 +7,11 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { 
-  Users, 
-  Search, 
-  Filter, 
-  Download, 
+import {
+  Users,
+  Search,
+  Filter,
+  Download,
   UserPlus,
   Mail,
   Calendar,
@@ -73,7 +72,6 @@ export default function AdminUsersPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-
   const usersPerPage = 10
 
   useEffect(() => {
@@ -121,27 +119,20 @@ export default function AdminUsersPage() {
 
   const filterUsers = () => {
     let filtered = users
-
-    // Apply search filter
     if (searchTerm) {
       filtered = filtered.filter(user =>
         user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.email.toLowerCase().includes(searchTerm.toLowerCase())
       )
     }
-
-    // Apply role filter
     if (filterRole !== 'all') {
       filtered = filtered.filter(user => user.role === filterRole)
     }
-
-    // Apply status filter
     if (filterStatus !== 'all') {
-      filtered = filtered.filter(user => 
+      filtered = filtered.filter(user =>
         filterStatus === 'active' ? user.isActive : !user.isActive
       )
     }
-
     setFilteredUsers(filtered)
     setCurrentPage(1)
   }
@@ -154,7 +145,6 @@ export default function AdminUsersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: newRole })
       })
-
       if (response.ok) {
         setUsers(prev =>
           prev.map(user =>
@@ -179,7 +169,6 @@ export default function AdminUsersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: newStatus })
       })
-
       if (response.ok) {
         setUsers(prev =>
           prev.map(user =>
@@ -233,7 +222,7 @@ export default function AdminUsersPage() {
   }
 
   const getRoleIcon = (role: string) => {
-    return role === 'ADMIN' ? <ShieldCheck className="w-4 h-4 text-purple-600" /> : <Shield className="w-4 h-4 text-gray-500" />
+    return role === 'ADMIN' ? <ShieldCheck className="w-4 h-4 text-[#001e62]" /> : <Shield className="w-4 h-4 text-gray-500" />
   }
 
   const getStatusIcon = (isActive: boolean) => {
@@ -254,7 +243,7 @@ export default function AdminUsersPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
+          <Loader2 className="w-12 h-12 animate-spin text-[#001e62] mx-auto mb-4" />
           <p className="text-gray-600">Loading users...</p>
         </div>
       </div>
@@ -275,13 +264,13 @@ export default function AdminUsersPage() {
                 Manage all users, roles, and permissions on your platform.
               </p>
             </div>
-            
+
             <div className="flex space-x-3">
               <Button onClick={exportUsers} variant="outline" className="flex items-center">
                 <Download className="w-4 h-4 mr-2" />
                 Export CSV
               </Button>
-              <Button className="flex items-center bg-blue-600 hover:bg-blue-700">
+              <Button className="flex items-center bg-[#001e62] hover:bg-[#001e62]/90">
                 <UserPlus className="w-4 h-4 mr-2" />
                 Add User
               </Button>
@@ -293,12 +282,12 @@ export default function AdminUsersPage() {
             <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
               <Card>
                 <CardContent className="p-4 text-center">
-                  <Users className="w-6 h-6 text-blue-600 mx-auto mb-2" />
+                  <Users className="w-6 h-6 text-[#001e62] mx-auto mb-2" />
                   <div className="text-2xl font-bold text-gray-900">{stats.totalUsers}</div>
                   <div className="text-sm text-gray-600">Total Users</div>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardContent className="p-4 text-center">
                   <CheckCircle className="w-6 h-6 text-green-600 mx-auto mb-2" />
@@ -306,34 +295,34 @@ export default function AdminUsersPage() {
                   <div className="text-sm text-gray-600">Active</div>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardContent className="p-4 text-center">
-                  <ShieldCheck className="w-6 h-6 text-purple-600 mx-auto mb-2" />
+                  <ShieldCheck className="w-6 h-6 text-[#001e62] mx-auto mb-2" />
                   <div className="text-2xl font-bold text-gray-900">{stats.adminUsers}</div>
                   <div className="text-sm text-gray-600">Admins</div>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardContent className="p-4 text-center">
-                  <TrendingUp className="w-6 h-6 text-orange-600 mx-auto mb-2" />
+                  <TrendingUp className="w-6 h-6 text-[#001e62] mx-auto mb-2" />
                   <div className="text-2xl font-bold text-gray-900">{stats.newUsersThisMonth}</div>
                   <div className="text-sm text-gray-600">New This Month</div>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardContent className="p-4 text-center">
-                  <BookOpen className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
+                  <BookOpen className="w-6 h-6 text-[#001e62] mx-auto mb-2" />
                   <div className="text-2xl font-bold text-gray-900">{stats.totalEnrollments}</div>
                   <div className="text-sm text-gray-600">Enrollments</div>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardContent className="p-4 text-center">
-                  <Award className="w-6 h-6 text-yellow-600 mx-auto mb-2" />
+                  <Award className="w-6 h-6 text-[#001e62] mx-auto mb-2" />
                   <div className="text-2xl font-bold text-gray-900">{stats.avgCompletionRate}%</div>
                   <div className="text-sm text-gray-600">Avg Completion</div>
                 </CardContent>
@@ -349,7 +338,6 @@ export default function AdminUsersPage() {
             {error}
           </div>
         )}
-
         {success && (
           <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 flex items-center">
             <CheckCircle className="w-5 h-5 mr-2" />
@@ -378,7 +366,7 @@ export default function AdminUsersPage() {
                 <select
                   value={filterRole}
                   onChange={(e) => setFilterRole(e.target.value as any)}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#001e62]"
                 >
                   <option value="all">All Roles</option>
                   <option value="USER">Users</option>
@@ -391,7 +379,7 @@ export default function AdminUsersPage() {
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value as any)}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#001e62]"
                 >
                   <option value="all">All Status</option>
                   <option value="active">Active</option>
@@ -412,6 +400,7 @@ export default function AdminUsersPage() {
               </div>
             </CardTitle>
           </CardHeader>
+
           <CardContent>
             {currentUsers.length > 0 ? (
               <div className="overflow-x-auto">
@@ -432,7 +421,7 @@ export default function AdminUsersPage() {
                       <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="py-4 px-4">
                           <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+                            <div className="w-10 h-10 bg-[#001e62] rounded-full flex items-center justify-center text-white font-semibold">
                               {user.name?.charAt(0) || user.email.charAt(0)}
                             </div>
                             <div>
@@ -447,8 +436,8 @@ export default function AdminUsersPage() {
                           <div className="flex items-center space-x-2">
                             {getRoleIcon(user.role)}
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              user.role === 'ADMIN' 
-                                ? 'bg-purple-100 text-purple-800' 
+                              user.role === 'ADMIN'
+                                ? 'bg-[#001e62]/10 text-[#001e62]'
                                 : 'bg-gray-100 text-gray-800'
                             }`}>
                               {user.role}
@@ -459,8 +448,8 @@ export default function AdminUsersPage() {
                           <div className="flex items-center space-x-2">
                             {getStatusIcon(user.isActive)}
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              user.isActive 
-                                ? 'bg-green-100 text-green-800' 
+                              user.isActive
+                                ? 'bg-green-100 text-green-800'
                                 : 'bg-red-100 text-red-800'
                             }`}>
                               {user.isActive ? 'Active' : 'Inactive'}
@@ -499,8 +488,8 @@ export default function AdminUsersPage() {
                               size="sm"
                               onClick={() => toggleUserStatus(user.id, user.isActive)}
                               className={`text-xs ${
-                                user.isActive 
-                                  ? 'text-red-600 hover:bg-red-50' 
+                                user.isActive
+                                  ? 'text-red-600 hover:bg-red-50'
                                   : 'text-green-600 hover:bg-green-50'
                               }`}
                             >
@@ -542,7 +531,7 @@ export default function AdminUsersPage() {
                     <ChevronLeft className="w-4 h-4" />
                     Previous
                   </Button>
-                  
+
                   {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
                     <Button
                       key={page}
@@ -554,7 +543,7 @@ export default function AdminUsersPage() {
                       {page}
                     </Button>
                   ))}
-                  
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -570,6 +559,6 @@ export default function AdminUsersPage() {
           </CardContent>
         </Card>
       </div>
-    </div>  
-    )
+    </div>
+  )
 }

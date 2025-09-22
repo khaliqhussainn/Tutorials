@@ -1,6 +1,5 @@
 // app/admin/enrollments/page.tsx - Enrollments Management Page
 'use client'
-
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
@@ -8,11 +7,11 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { 
-  Users, 
-  Search, 
-  Filter, 
-  Download, 
+import {
+  Users,
+  Search,
+  Filter,
+  Download,
   BookOpen,
   Calendar,
   TrendingUp,
@@ -85,7 +84,6 @@ export default function AdminEnrollmentsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [error, setError] = useState('')
   const [courses, setCourses] = useState<Array<{id: string, title: string}>>([])
-
   const enrollmentsPerPage = 15
 
   useEffect(() => {
@@ -149,8 +147,6 @@ export default function AdminEnrollmentsPage() {
 
   const filterAndSortEnrollments = () => {
     let filtered = enrollments
-
-    // Apply search filter
     if (searchTerm) {
       filtered = filtered.filter(enrollment =>
         enrollment.user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -158,8 +154,6 @@ export default function AdminEnrollmentsPage() {
         enrollment.course.title.toLowerCase().includes(searchTerm.toLowerCase())
       )
     }
-
-    // Apply status filter
     if (filterStatus !== 'all') {
       filtered = filtered.filter(enrollment => {
         switch (filterStatus) {
@@ -168,7 +162,7 @@ export default function AdminEnrollmentsPage() {
           case 'active':
             return enrollment.progress > 0 && enrollment.progress < 100
           case 'stalled':
-            const daysSinceLastAccess = enrollment.lastAccessedAt 
+            const daysSinceLastAccess = enrollment.lastAccessedAt
               ? Math.floor((Date.now() - new Date(enrollment.lastAccessedAt).getTime()) / (1000 * 60 * 60 * 24))
               : 999
             return enrollment.progress > 0 && enrollment.progress < 100 && daysSinceLastAccess > 7
@@ -177,20 +171,16 @@ export default function AdminEnrollmentsPage() {
         }
       })
     }
-
-    // Apply course filter
     if (filterCourse !== 'all') {
       filtered = filtered.filter(enrollment => enrollment.course.id === filterCourse)
     }
-
-    // Apply sorting
     filtered.sort((a, b) => {
       switch (sortBy) {
         case 'progress':
           return b.progress - a.progress
         case 'completion':
           if (a.completedAt && b.completedAt) {
-            return new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
+            return new Date(b.completedAt).getTime() - new Date(a.completedAt!).getTime()
           }
           if (a.completedAt && !b.completedAt) return -1
           if (!a.completedAt && b.completedAt) return 1
@@ -200,7 +190,6 @@ export default function AdminEnrollmentsPage() {
           return new Date(b.enrolledAt).getTime() - new Date(a.enrolledAt).getTime()
       }
     })
-
     setFilteredEnrollments(filtered)
     setCurrentPage(1)
   }
@@ -226,7 +215,7 @@ export default function AdminEnrollmentsPage() {
 
   const getProgressColor = (progress: number) => {
     if (progress >= 100) return 'text-green-600 bg-green-100'
-    if (progress >= 70) return 'text-blue-600 bg-blue-100'
+    if (progress >= 70) return 'text-[#001e62] bg-[#001e62]/10'
     if (progress >= 30) return 'text-yellow-600 bg-yellow-100'
     return 'text-red-600 bg-red-100'
   }
@@ -235,19 +224,18 @@ export default function AdminEnrollmentsPage() {
     if (enrollment.progress >= 100) {
       return <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">Completed</span>
     }
-    
-    const daysSinceLastAccess = enrollment.lastAccessedAt 
+
+    const daysSinceLastAccess = enrollment.lastAccessedAt
       ? Math.floor((Date.now() - new Date(enrollment.lastAccessedAt).getTime()) / (1000 * 60 * 60 * 24))
       : 999
-
     if (enrollment.progress > 0 && daysSinceLastAccess > 7) {
       return <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-medium">Stalled</span>
     }
-    
+
     if (enrollment.progress > 0) {
-      return <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">In Progress</span>
+      return <span className="px-2 py-1 bg-[#001e62]/10 text-[#001e62] rounded-full text-xs font-medium">In Progress</span>
     }
-    
+
     return <span className="px-2 py-1 bg-gray-100 text-gray-800 rounded-full text-xs font-medium">Not Started</span>
   }
 
@@ -282,7 +270,7 @@ export default function AdminEnrollmentsPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
+          <Loader2 className="w-12 h-12 animate-spin text-[#001e62] mx-auto mb-4" />
           <p className="text-gray-600">Loading enrollments...</p>
         </div>
       </div>
@@ -303,12 +291,9 @@ export default function AdminEnrollmentsPage() {
                 Track student progress and manage course enrollments.
               </p>
             </div>
-            
+
             <div className="flex space-x-3">
-              <Button onClick={exportEnrollments} variant="outline" className="flex items-center">
-                <Download className="w-4 h-4 mr-2" />
-                Export CSV
-              </Button>
+             
               <Button onClick={fetchEnrollments} variant="outline" className="flex items-center">
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Refresh
@@ -321,12 +306,12 @@ export default function AdminEnrollmentsPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-6">
               <Card>
                 <CardContent className="p-4 text-center">
-                  <UserCheck className="w-6 h-6 text-blue-600 mx-auto mb-2" />
+                  <UserCheck className="w-6 h-6 text-[#001e62] mx-auto mb-2" />
                   <div className="text-2xl font-bold text-gray-900">{stats.totalEnrollments}</div>
                   <div className="text-sm text-gray-600">Total</div>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardContent className="p-4 text-center">
                   <Play className="w-6 h-6 text-green-600 mx-auto mb-2" />
@@ -334,7 +319,7 @@ export default function AdminEnrollmentsPage() {
                   <div className="text-sm text-gray-600">Active</div>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardContent className="p-4 text-center">
                   <CheckCircle className="w-6 h-6 text-emerald-600 mx-auto mb-2" />
@@ -342,42 +327,42 @@ export default function AdminEnrollmentsPage() {
                   <div className="text-sm text-gray-600">Completed</div>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardContent className="p-4 text-center">
-                  <Target className="w-6 h-6 text-purple-600 mx-auto mb-2" />
+                  <Target className="w-6 h-6 text-[#001e62] mx-auto mb-2" />
                   <div className="text-2xl font-bold text-gray-900">{stats.averageProgress}%</div>
                   <div className="text-sm text-gray-600">Avg Progress</div>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardContent className="p-4 text-center">
-                  <TrendingUp className="w-6 h-6 text-orange-600 mx-auto mb-2" />
+                  <TrendingUp className="w-6 h-6 text-[#001e62] mx-auto mb-2" />
                   <div className="text-2xl font-bold text-gray-900">{stats.enrollmentsThisMonth}</div>
                   <div className="text-sm text-gray-600">This Month</div>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardContent className="p-4 text-center">
-                  <Award className="w-6 h-6 text-yellow-600 mx-auto mb-2" />
+                  <Award className="w-6 h-6 text-[#001e62] mx-auto mb-2" />
                   <div className="text-2xl font-bold text-gray-900">{stats.completionRate}%</div>
                   <div className="text-sm text-gray-600">Success Rate</div>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardContent className="p-4 text-center">
-                  <Clock className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
+                  <Clock className="w-6 h-6 text-[#001e62] mx-auto mb-2" />
                   <div className="text-2xl font-bold text-gray-900">{stats.averageCompletionTime}</div>
                   <div className="text-sm text-gray-600">Avg Days</div>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardContent className="p-4 text-center">
-                  <BarChart3 className="w-6 h-6 text-pink-600 mx-auto mb-2" />
+                  <BarChart3 className="w-6 h-6 text-[#001e62] mx-auto mb-2" />
                   <div className="text-2xl font-bold text-gray-900">${stats.totalRevenue.toLocaleString()}</div>
                   <div className="text-sm text-gray-600">Revenue</div>
                 </CardContent>
@@ -415,7 +400,7 @@ export default function AdminEnrollmentsPage() {
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value as any)}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#001e62]"
                 >
                   <option value="all">All Status</option>
                   <option value="active">In Progress</option>
@@ -429,7 +414,7 @@ export default function AdminEnrollmentsPage() {
                 <select
                   value={filterCourse}
                   onChange={(e) => setFilterCourse(e.target.value)}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#001e62]"
                 >
                   <option value="all">All Courses</option>
                   {courses.map(course => (
@@ -443,7 +428,7 @@ export default function AdminEnrollmentsPage() {
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as any)}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#001e62]"
                 >
                   <option value="recent">Most Recent</option>
                   <option value="progress">Highest Progress</option>
@@ -464,6 +449,7 @@ export default function AdminEnrollmentsPage() {
               </div>
             </CardTitle>
           </CardHeader>
+
           <CardContent>
             {currentEnrollments.length > 0 ? (
               <div className="overflow-x-auto">
@@ -484,7 +470,7 @@ export default function AdminEnrollmentsPage() {
                       <tr key={enrollment.id} className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="py-4 px-4">
                           <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-full flex items-center justify-center text-white font-semibold">
+                            <div className="w-10 h-10 bg-[#001e62] rounded-full flex items-center justify-center text-white font-semibold">
                               {enrollment.user.name?.charAt(0) || enrollment.user.email.charAt(0)}
                             </div>
                             <div>
@@ -522,7 +508,7 @@ export default function AdminEnrollmentsPage() {
                               <div
                                 className={`h-2 rounded-full transition-all duration-300 ${
                                   enrollment.progress >= 100 ? 'bg-green-500' :
-                                  enrollment.progress >= 70 ? 'bg-blue-500' :
+                                  enrollment.progress >= 70 ? 'bg-[#001e62]' :
                                   enrollment.progress >= 30 ? 'bg-yellow-500' : 'bg-red-500'
                                 }`}
                                 style={{ width: `${Math.min(enrollment.progress, 100)}%` }}
@@ -593,7 +579,7 @@ export default function AdminEnrollmentsPage() {
                     <ChevronLeft className="w-4 h-4" />
                     Previous
                   </Button>
-                  
+
                   {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
                     let page;
                     if (totalPages <= 7) {
@@ -605,7 +591,7 @@ export default function AdminEnrollmentsPage() {
                     } else {
                       page = currentPage - 3 + i;
                     }
-                    
+
                     return (
                       <Button
                         key={page}
@@ -618,7 +604,7 @@ export default function AdminEnrollmentsPage() {
                       </Button>
                     );
                   })}
-                  
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -643,21 +629,6 @@ export default function AdminEnrollmentsPage() {
             <CardContent>
               <div className="space-y-3">
                 {enrollments
-                  .reduce((acc, enrollment) => {
-                    const courseId = enrollment.course.id;
-                    if (!acc[courseId]) {
-                      acc[courseId] = {
-                        course: enrollment.course,
-                        count: 0,
-                        avgProgress: 0,
-                        totalProgress: 0
-                      };
-                    }
-                    acc[courseId].count++;
-                    acc[courseId].totalProgress += enrollment.progress;
-                    acc[courseId].avgProgress = Math.round(acc[courseId].totalProgress / acc[courseId].count);
-                    return acc;
-                  }, {} as any)
                   ? Object.values(enrollments.reduce((acc, enrollment) => {
                       const courseId = enrollment.course.id;
                       if (!acc[courseId]) {
@@ -754,7 +725,7 @@ export default function AdminEnrollmentsPage() {
                   <span className="text-sm text-gray-600">Stalled enrollments</span>
                   <span className="text-sm font-medium text-orange-600">
                     {enrollments.filter(e => {
-                      const daysSinceLastAccess = e.lastAccessedAt 
+                      const daysSinceLastAccess = e.lastAccessedAt
                         ? Math.floor((Date.now() - new Date(e.lastAccessedAt).getTime()) / (1000 * 60 * 60 * 24))
                         : 999;
                       return e.progress > 0 && e.progress < 100 && daysSinceLastAccess > 7;
@@ -767,5 +738,5 @@ export default function AdminEnrollmentsPage() {
         </div>
       </div>
     </div>
-    )
-}  
+  )
+}
