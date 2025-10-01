@@ -16,7 +16,8 @@ model User {
   image         String?
   password      String?
   role          Role      @default(USER)
-  isActive      Boolean   @default(true) 
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime? @map("last_login_at")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -28,22 +29,22 @@ model User {
   language String? @default("en")
 
   // Relations
-  accounts        Account[]
-  sessions        Session[]
-  enrollments     Enrollment[]
-  videoProgress   VideoProgress[]
-  videoNotes      VideoNote[]
-  quizAttempts    QuizAttempt[]
-  favoriteCourses FavoriteCourse[]
-  courseReviews   CourseReview[]
-  preferences     UserPreferences?
-  notifications   Notification[]
-  activities      UserActivity[]
-  streaks         DailyStreak[]
-  testAnswers     UserTestAnswer[]
-  aiInteractions      AIInteraction[]
- learningSessions    LearningSession[]
- learningProfile     UserLearningProfile?
+  accounts         Account[]
+  sessions         Session[]
+  enrollments      Enrollment[]
+  videoProgress    VideoProgress[]
+  videoNotes       VideoNote[]
+  quizAttempts     QuizAttempt[]
+  favoriteCourses  FavoriteCourse[]
+  courseReviews    CourseReview[]
+  preferences      UserPreferences?
+  notifications    Notification[]
+  activities       UserActivity[]
+  streaks          DailyStreak[]
+  testAnswers      UserTestAnswer[]
+  aiInteractions   AIInteraction[]
+  learningSessions LearningSession[]
+  learningProfile  UserLearningProfile?
 
   // NEW: Q&A and Announcements
   questions     CourseQuestion[]
@@ -403,15 +404,15 @@ model Video {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  course       Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  section      CourseSection?  @relation(fields: [sectionId], references: [id], onDelete: SetNull)
-  tests        Test[]
-  transcript   Transcript?
-  progress     VideoProgress[]
-  notes        VideoNote[]
-  quizAttempts QuizAttempt[]
-  aiInteractions      AIInteraction[]
-  learningSessions    LearningSession[]
+  course           Course            @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  section          CourseSection?    @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  tests            Test[]
+  transcript       Transcript?
+  progress         VideoProgress[]
+  notes            VideoNote[]
+  quizAttempts     QuizAttempt[]
+  aiInteractions   AIInteraction[]
+  learningSessions LearningSession[]
 
   @@unique([courseId, order])
   @@map("videos")
@@ -540,52 +541,51 @@ model QuizAttempt {
   @@map("quiz_attempts")
 }
 
-
 model AIInteraction {
-  id          String   @id @default(cuid())
-  userId      String
-  videoId     String
-  type        String   // 'question', 'explanation', 'summary', etc.
-  query       String
-  response    String   @db.Text
-  satisfaction Int?    // 1-5 rating
-  timestamp   DateTime @default(now())
-  
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  video       Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
-  
+  id           String   @id @default(cuid())
+  userId       String
+  videoId      String
+  type         String // 'question', 'explanation', 'summary', etc.
+  query        String
+  response     String   @db.Text
+  satisfaction Int? // 1-5 rating
+  timestamp    DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
   @@map("ai_interactions")
 }
 
 model LearningSession {
-  id               String   @id @default(cuid())
-  userId           String
-  videoId          String
-  startTime        DateTime
-  endTime          DateTime?
-  interactionCount Int      @default(0)
+  id                 String    @id @default(cuid())
+  userId             String
+  videoId            String
+  startTime          DateTime
+  endTime            DateTime?
+  interactionCount   Int       @default(0)
   comprehensionScore Int?
-  engagementLevel  String   @default("medium") // 'low', 'medium', 'high'
-  
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  video            Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
-  
+  engagementLevel    String    @default("medium") // 'low', 'medium', 'high'
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
   @@map("learning_sessions")
 }
 
 model UserLearningProfile {
-  id                   String   @id @default(cuid())
-  userId               String   @unique
-  preferredDifficulty  String   @default("medium")
-  learningStyle        String   @default("visual") // 'visual', 'auditory', 'kinesthetic'
-  preferredPace        String   @default("normal") // 'slow', 'normal', 'fast'
-  strongSubjects       String[] // Array of categories
-  weakSubjects         String[] // Array of categories
-  avgComprehensionScore Float   @default(0)
-  totalAIInteractions  Int      @default(0)
-  lastActive          DateTime @default(now())
-  
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  preferredDifficulty   String   @default("medium")
+  learningStyle         String   @default("visual") // 'visual', 'auditory', 'kinesthetic'
+  preferredPace         String   @default("normal") // 'slow', 'normal', 'fast'
+  strongSubjects        String[] // Array of categories
+  weakSubjects          String[] // Array of categories
+  avgComprehensionScore Float    @default(0)
+  totalAIInteractions   Int      @default(0)
+  lastActive            DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@map("user_learning_profiles")
 }

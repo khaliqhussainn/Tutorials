@@ -1,4 +1,3 @@
-
 // app/api/ai/learning-profile/[userId]/route.ts
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
@@ -45,7 +44,7 @@ export async function GET(
 
     // Calculate learning profile
     const categories = learningData.enrollments.map(e => e.course.category)
-    const uniqueCategories = [...new Set(categories)]
+    const uniqueCategories = Array.from(new Set(categories)) // ✅ FIX: Use Array.from instead of spread
     const totalWatchTime = learningData.videoProgress.reduce(
       (sum, p) => sum + (p.video.duration || 0), 0
     )

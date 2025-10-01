@@ -35,7 +35,8 @@ import {
   Lightbulb,
   BookOpen,
   Zap,
-  Loader2
+  Loader2,
+  BrainCircuit
 } from 'lucide-react'
 
 interface Transcript {
@@ -325,7 +326,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
         }
       case 'good':
         return {
-          icon: <Target className="w-4 h-4 text-blue-600" />,
+          icon: <BrainCircuit className="w-4 h-4 text-blue-600" />,
           text: "Good prompt. Consider adding more specific details for better questions.",
           color: "text-blue-700 bg-blue-50 border-blue-200"
         }
@@ -1071,7 +1072,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                             <div className="space-y-4">
                               <div>
                                 <h4 className="font-medium text-blue-900 mb-2 flex items-center">
-                                  <Target className="w-4 h-4 mr-2" />
+                                  <BrainCircuit className="w-4 h-4 mr-2" />
                                   Example Prompts:
                                 </h4>
                                 <div className="space-y-2">
@@ -1227,7 +1228,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                                           {video.duration ? formatDuration(video.duration) : 'Processing...'}
                                         </div>
                                         <div className="flex items-center">
-                                          <Target className="w-3 h-3 mr-1" />
+                                          <BrainCircuit className="w-3 h-3 mr-1" />
                                           {video.tests.length} quiz question{video.tests.length !== 1 ? 's' : ''}
                                         </div>
                                         {video.aiPrompt && (
@@ -1265,7 +1266,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
                                         className="flex items-center"
                                         title="Manage quiz questions"
                                       >
-                                        <Target className="w-3 h-3 mr-1" />
+                                        <BrainCircuit className="w-3 h-3 mr-1" />
                                         Quiz ({video.tests.length})
                                       </Button>
 
@@ -1388,7 +1389,7 @@ export default function CompleteAdminCoursePage({ params }: { params: { courseId
               <div className="p-6">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-xl font-bold text-gray-900 flex items-center">
-                    <Target className="w-6 h-6 mr-2 text-primary-600" />
+                    <BrainCircuit className="w-6 h-6 mr-2 text-primary-600" />
                     Quiz Management
                   </h2>
                   <button

@@ -1,11 +1,9 @@
-// components/admin/QuizManager.tsx
 "use client";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import {
-  Target,
   RefreshCw,
   CheckCircle,
   AlertCircle,
@@ -13,7 +11,7 @@ import {
   Brain,
   Loader2,
   Eye,
-  Settings,
+  BrainCircuitIcon,
 } from "lucide-react";
 
 interface QuizManagerProps {
@@ -35,29 +33,6 @@ interface QuizQuestion {
   order: number;
 }
 
-interface DebugInfo {
-  video: {
-    id: string;
-    title: string;
-    hasAiPrompt: boolean;
-  };
-  transcript: {
-    id: string;
-    length: number;
-    confidence: number;
-    status: string;
-  } | null;
-  quiz: {
-    count: number;
-    hasExplanations: number;
-  };
-  recommendations: {
-    canGenerateFromTranscript: boolean;
-    shouldRegenerateFromTranscript: boolean;
-    needsQuizGeneration: boolean;
-  };
-}
-
 export default function QuizManager({
   videoId,
   videoTitle,
@@ -70,16 +45,14 @@ export default function QuizManager({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
-  const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
     fetchQuestions();
-    fetchDebugInfo();
   }, [videoId]);
 
   const fetchQuestions = async () => {
     try {
+      // Use the new quiz endpoint that fetches from database
       const response = await fetch(`/api/videos/${videoId}/quiz`);
       if (response.ok) {
         const data = await response.json();
@@ -92,22 +65,11 @@ export default function QuizManager({
     }
   };
 
-  const fetchDebugInfo = async () => {
-    try {
-      const response = await fetch(`/api/admin/debug/quiz-status/${videoId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setDebugInfo(data);
-      }
-    } catch (error) {
-      console.error("Error fetching debug info:", error);
-    }
-  };
-
   const generateQuiz = async (regenerate = false) => {
     setGenerating(true);
     setError("");
     setSuccess("");
+    
     try {
       const response = await fetch(
         `/api/admin/videos/${videoId}/generate-quiz`,
@@ -120,19 +82,24 @@ export default function QuizManager({
           }),
         }
       );
+      
       if (response.ok) {
         const result = await response.json();
         setSuccess(
-          `Generated ${result.count} questions from ${result.source}`
+          `Successfully generated ${result.count} questions!`
         );
+        
+        // Refresh questions to show newly generated ones
         await fetchQuestions();
-        await fetchDebugInfo();
+        
+        // Notify parent component
         onQuizGenerated?.();
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Failed to generate quiz");
       }
     } catch (error) {
+      console.error("Error generating quiz:", error);
       setError("Network error while generating quiz");
     } finally {
       setGenerating(false);
@@ -142,7 +109,7 @@ export default function QuizManager({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <Loader2 className="w-6 h-6 animate-spin" />
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
       </div>
     );
   }
@@ -154,7 +121,7 @@ export default function QuizManager({
         <h3 className="text-lg font-semibold mb-2">{videoTitle}</h3>
         <div className="flex items-center space-x-4 text-sm text-gray-600">
           <div className="flex items-center">
-            <Target className="w-4 h-4 mr-1" />
+            <BrainCircuitIcon className="w-4 h-4 mr-1" />
             {questions.length} questions
           </div>
           {hasTranscript && (
@@ -174,23 +141,38 @@ export default function QuizManager({
       {/* Status Messages */}
       {error && (
         <div className="flex items-center p-3 bg-red-50 border border-red-200 rounded-lg text-red-700">
-          <AlertCircle className="w-5 h-5 mr-2" />
+          <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
           <span className="text-sm">{error}</span>
         </div>
       )}
       {success && (
         <div className="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg text-green-700">
-          <CheckCircle className="w-5 h-5 mr-2" />
+          <CheckCircle className="w-5 h-5 mr-2 flex-shrink-0" />
           <span className="text-sm">{success}</span>
         </div>
       )}
+
+      {/* Info Banner */}
+      <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="flex items-start space-x-3">
+          <Brain className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+          <div className="text-sm text-blue-800">
+            <p className="font-medium mb-1">Quiz Generation</p>
+            <p>
+              {hasTranscript
+                ? "Questions will be generated from the video transcript for maximum relevance and accuracy."
+                : "Questions will be generated based on the video title, description, and topic."}
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* Actions */}
       <div className="flex items-center space-x-3">
         <Button
           onClick={() => generateQuiz(false)}
           disabled={generating || questions.length > 0}
-          className="bg-blue-600 hover:bg-blue-700"
+          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
         >
           {generating ? (
             <>
@@ -223,67 +205,7 @@ export default function QuizManager({
             )}
           </Button>
         )}
-        <Button
-          onClick={() => setShowDebug(!showDebug)}
-          variant="outline"
-          size="sm"
-        >
-          <Settings className="w-4 h-4 mr-2" />
-          Debug Info
-        </Button>
       </div>
-
-      {/* Debug Information */}
-      {showDebug && debugInfo && (
-        <Card className="border-yellow-200 bg-yellow-50">
-          <CardHeader>
-            <CardTitle className="text-sm">Debug Information</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div>
-              <strong>Generation Method:</strong>
-              <span
-                className={`ml-2 px-2 py-1 rounded text-xs ${
-                  debugInfo.recommendations.canGenerateFromTranscript
-                    ? "bg-green-100 text-green-800"
-                    : "bg-orange-100 text-orange-800"
-                }`}
-              >
-                {debugInfo.recommendations.canGenerateFromTranscript
-                  ? "Transcript"
-                  : "Topic-based"}
-              </span>
-            </div>
-
-            {debugInfo.transcript && (
-              <div>
-                <strong>Transcript:</strong> {debugInfo.transcript.length}{" "}
-                chars, confidence: {(debugInfo.transcript.confidence * 100).toFixed(1)}%
-              </div>
-            )}
-
-            <div>
-              <strong>Quiz Quality:</strong> {debugInfo.quiz.count} questions,{" "}
-              {debugInfo.quiz.hasExplanations}/{debugInfo.quiz.count} have
-              explanations
-            </div>
-            <div>
-              <strong>Recommendations:</strong>
-              <ul className="mt-1 ml-4 list-disc text-xs">
-                {debugInfo.recommendations.needsQuizGeneration && (
-                  <li>Generate initial quiz</li>
-                )}
-                {debugInfo.recommendations.shouldRegenerateFromTranscript && (
-                  <li>Regenerate using transcript for better quality</li>
-                )}
-                {!debugInfo.video.hasAiPrompt && (
-                  <li>Add AI prompt for better topic-based generation</li>
-                )}
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Current Questions */}
       {questions.length > 0 && (
@@ -298,7 +220,7 @@ export default function QuizManager({
             {questions.map((question, index) => (
               <div
                 key={question.id}
-                className="border border-gray-200 rounded-lg p-4"
+                className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center space-x-2">
@@ -308,7 +230,7 @@ export default function QuizManager({
                     <Badge
                       variant={
                         question.difficulty === "easy"
-                          ? "primary"
+                          ? "default"
                           : question.difficulty === "medium"
                           ? "secondary"
                           : "destructive"
@@ -321,11 +243,9 @@ export default function QuizManager({
                     </span>
                   </div>
                 </div>
-
                 <h4 className="font-medium text-gray-900 mb-3">
                   {question.question}
                 </h4>
-
                 <div className="space-y-2 mb-3">
                   {question.options.map((option, optIndex) => (
                     <div
@@ -346,10 +266,10 @@ export default function QuizManager({
                     </div>
                   ))}
                 </div>
-
                 {question.explanation && (
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded text-sm">
-                    <strong>Explanation:</strong> {question.explanation}
+                    <strong className="text-blue-900">Explanation:</strong>{" "}
+                    <span className="text-blue-800">{question.explanation}</span>
                   </div>
                 )}
               </div>
@@ -362,14 +282,14 @@ export default function QuizManager({
       {questions.length === 0 && (
         <Card>
           <CardContent className="text-center py-12">
-            <Target className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <Brain className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-700 mb-2">
-              No Quiz Questions
+              No Quiz Questions Yet
             </h3>
             <p className="text-gray-500 mb-6">
               {hasTranscript
-                ? "Generate quiz questions from the video transcript for best quality."
-                : "Generate quiz questions from the video topic and description."}
+                ? "Generate high-quality quiz questions from the video transcript."
+                : "Generate quiz questions based on the video topic and description."}
             </p>
             <Button
               onClick={() => generateQuiz(false)}

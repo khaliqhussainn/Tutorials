@@ -1,10 +1,8 @@
-// app/api/admin/users/stats/route.ts
-import { NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
+// ===== app/api/admin/users/stats/route.ts =====
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-
-export const dynamic = 'force-dynamic'
+import { getServerSession } from "next-auth"
+import { NextResponse } from "next/server"
 
 export async function GET() {
   try {

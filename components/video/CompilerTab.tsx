@@ -97,14 +97,16 @@ int main() {
 };
 
 export function CompilerTab({ setActiveTab }: CompilerTabProps) {
-  // Use refs to store values that don't need to trigger re-renders
-  const codeRef = useRef<Record<string, string>>(() => {
+  // ✅ FIXED: Initialize code states properly
+  const getInitialCodeStates = (): Record<string, string> => {
     const initialStates: Record<string, string> = {};
     Object.entries(LANGUAGE_CONFIGS).forEach(([key, config]) => {
       initialStates[key] = config.defaultCode;
     });
     return initialStates;
-  });
+  };
+
+  const codeRef = useRef<Record<string, string>>(getInitialCodeStates());
 
   const [language, setLanguage] = useState("javascript");
   const [output, setOutput] = useState("");
@@ -115,31 +117,27 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
   const [executionTime, setExecutionTime] = useState("");
   const [memoryUsed, setMemoryUsed] = useState("");
   const [showSettings, setShowSettings] = useState(false);
-  const [editorKey, setEditorKey] = useState(0); // Force re-mount when needed
+  const [editorKey, setEditorKey] = useState(0);
   
   const outputRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<HTMLDivElement>(null);
 
-  // Get current code without causing re-renders
   const getCurrentCode = () => {
     return codeRef.current[language] || LANGUAGE_CONFIGS[language as keyof typeof LANGUAGE_CONFIGS].defaultCode;
   };
 
-  // Handle code changes without causing component re-renders
   const handleCodeChange = useCallback((value: string) => {
     codeRef.current[language] = value;
   }, [language]);
 
-  // Handle language change
   const handleLanguageChange = useCallback((newLanguage: string) => {
     setLanguage(newLanguage);
     setOutput("");
     setExecutionTime("");
     setMemoryUsed("");
-    setEditorKey(prev => prev + 1); // Force re-mount with new language
+    setEditorKey(prev => prev + 1);
   }, []);
 
-  // Get extensions for the editor
   const getExtensions = () => {
     const exts = [
       EditorView.theme({
@@ -181,7 +179,6 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
     return exts;
   };
 
-  // Auto-scroll output to bottom
   useEffect(() => {
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
@@ -196,7 +193,7 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
     }
 
     setIsRunning(true);
-    setOutput("🚀 Compiling and running your code...\n");
+    setOutput("Compiling and running your code...\n");
     setExecutionTime("");
     setMemoryUsed("");
 
@@ -248,7 +245,7 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
         attempts++;
         
         if (result.status.id <= 2) {
-          setOutput(`🚀 Compiling and running your code... (${attempts}/${maxAttempts})\n`);
+          setOutput(`Compiling and running your code... (${attempts}/${maxAttempts})\n`);
         }
         
       } while (result.status.id <= 2 && attempts < maxAttempts);
@@ -262,25 +259,25 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
       let formattedOutput = "";
       
       if (result.status.id === 3) {
-        formattedOutput = "✅ Code executed successfully!\n\n";
+        formattedOutput = "Code executed successfully!\n\n";
         if (result.stdout && result.stdout.trim()) {
-          formattedOutput += "📤 Output:\n";
+          formattedOutput += "Output:\n";
           formattedOutput += result.stdout;
         } else {
-          formattedOutput += "📤 Output: (no output)\n";
+          formattedOutput += "Output: (no output)\n";
         }
       } else if (result.status.id === 4) {
-        formattedOutput = "✅ Code executed!\n\n";
-        formattedOutput += "📤 Output:\n";
+        formattedOutput = "Code executed!\n\n";
+        formattedOutput += "Output:\n";
         formattedOutput += result.stdout || "(no output)";
         if (result.stderr && result.stderr.trim()) {
-          formattedOutput += "\n\n⚠️ Warnings:\n" + result.stderr;
+          formattedOutput += "\n\nWarnings:\n" + result.stderr;
         }
       } else if (result.status.id === 6) {
-        formattedOutput = "🔨 Compilation Error:\n\n";
+        formattedOutput = "Compilation Error:\n\n";
         formattedOutput += result.compile_output || result.stderr || "Unknown compilation error";
       } else if (result.status.id >= 7 && result.status.id <= 12) {
-        formattedOutput = "💥 Runtime Error:\n\n";
+        formattedOutput = "Runtime Error:\n\n";
         formattedOutput += `Error Type: ${result.status.description}\n\n`;
         if (result.stderr && result.stderr.trim()) {
           formattedOutput += "Error Details:\n" + result.stderr;
@@ -289,7 +286,7 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
           formattedOutput += "\n\nOutput before error:\n" + result.stdout;
         }
       } else {
-        formattedOutput = `⚠️ ${result.status.description}\n\n`;
+        formattedOutput = `${result.status.description}\n\n`;
         if (result.compile_output && result.compile_output.trim()) {
           formattedOutput += "Compile Output:\n" + result.compile_output + "\n\n";
         }
@@ -306,13 +303,13 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
     } catch (error) {
       console.error("Execution error:", error);
       setOutput(
-        "❌ Failed to execute code.\n\n" +
+        "Failed to execute code.\n\n" +
         `Error: ${error instanceof Error ? error.message : 'Unknown error'}\n\n` +
         "This could be due to:\n" +
-        "• Network connectivity issues\n" +
-        "• Invalid API key\n" +
-        "• API rate limiting\n" +
-        "• Server maintenance\n\n" +
+        "- Network connectivity issues\n" +
+        "- Invalid API key\n" +
+        "- API rate limiting\n" +
+        "- Server maintenance\n\n" +
         "Please check your API configuration and try again."
       );
     } finally {
@@ -356,7 +353,7 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
   const resetCode = () => {
     const defaultCode = LANGUAGE_CONFIGS[language as keyof typeof LANGUAGE_CONFIGS].defaultCode;
     codeRef.current[language] = defaultCode;
-    setEditorKey(prev => prev + 1); // Force re-mount to show reset code
+    setEditorKey(prev => prev + 1);
     clearOutput();
   };
 
@@ -371,7 +368,7 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
             value={isDarkTheme ? "dark" : "light"}
             onChange={(e) => {
               setIsDarkTheme(e.target.value === "dark");
-              setEditorKey(prev => prev + 1); // Re-mount to apply theme
+              setEditorKey(prev => prev + 1);
             }}
             className="w-full p-2 border rounded text-sm"
           >
@@ -386,7 +383,7 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
             value={fontSize}
             onChange={(e) => {
               setFontSize(Number(e.target.value));
-              setEditorKey(prev => prev + 1); // Re-mount to apply font size
+              setEditorKey(prev => prev + 1);
             }}
             className="w-full p-2 border rounded text-sm"
           >
@@ -441,7 +438,6 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
       </CardHeader>
       
       <CardContent className="flex flex-col h-[calc(100%-80px)]">
-        {/* Language and Controls */}
         <div className="flex flex-wrap items-center justify-between mb-4 gap-2">
           <div className="flex items-center space-x-2">
             <select
@@ -509,7 +505,6 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
           </div>
         </div>
 
-        {/* Code Editor */}
         <div className="flex-1 mb-4 border rounded-lg overflow-hidden">
           <CodeMirror
             key={editorKey}
@@ -531,7 +526,6 @@ export function CompilerTab({ setActiveTab }: CompilerTabProps) {
           />
         </div>
 
-        {/* Output Section */}
         <div className="flex-1 border rounded-lg flex flex-col bg-gray-900 text-gray-100">
           <div className="flex items-center justify-between p-3 border-b border-gray-700">
             <div className="flex items-center">

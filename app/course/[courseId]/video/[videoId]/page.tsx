@@ -1,4 +1,4 @@
-// app/course/[courseId]/video/[videoId]/page.tsx
+// app/course/[courseId]/video/[videoId]/page.tsx - Fixed version
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
@@ -68,6 +68,11 @@ interface Video {
     segments?: any[];
     confidence?: number;
     provider?: string;
+  };
+  // Add course relation for video
+  course?: {
+    title: string;
+    category: string;
   };
 }
 
@@ -207,7 +212,7 @@ export default function VideoPage({
   >("about");
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [currentVideoTime, setCurrentVideoTime] = useState(0);
-  const [sidebarOpen, setSidebarOpen] = useState(false); // Changed default to false for mobile-first
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
   // Quiz state
@@ -232,13 +237,12 @@ export default function VideoPage({
   // Mobile detection and window resize handling
   useEffect(() => {
     const checkMobile = () => {
-      const mobile = window.innerWidth < 1024; // lg breakpoint
+      const mobile = window.innerWidth < 1024;
       setIsMobile(mobile);
-      // Auto-close sidebar on mobile
       if (mobile) {
         setSidebarOpen(false);
       } else {
-        setSidebarOpen(true); // Open by default on desktop
+        setSidebarOpen(true);
       }
     };
 
@@ -370,8 +374,19 @@ export default function VideoPage({
       if (videoResponse.ok && courseResponse.ok) {
         const videoData = await videoResponse.json();
         const courseData = await courseResponse.json();
-        setVideo(videoData);
+        
+        // FIXED: Add course info to video object
+        const enrichedVideo = {
+          ...videoData,
+          course: {
+            title: courseData.title,
+            category: courseData.category
+          }
+        };
+        
+        setVideo(enrichedVideo);
         setCourse(courseData);
+        
         if (isQuizMode && videoData.tests) {
           setAnswers(new Array(videoData.tests.length).fill(-1));
         }
@@ -1185,7 +1200,7 @@ export default function VideoPage({
   }
 
   return (
-    <AIFeaturesProvider children={""}>
+    <AIFeaturesProvider>
       <div className="min-h-screen bg-gray-50">
         <VideoPageHeader
           courseId={params.courseId}

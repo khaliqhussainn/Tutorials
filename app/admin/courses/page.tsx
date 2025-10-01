@@ -1,4 +1,4 @@
-// app/admin/courses/page.tsx - ENHANCED with Q&A management and better deletion handling
+// app/admin/courses/page.tsx - Styled to match admin dashboard
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -26,9 +26,10 @@ import {
   AlertTriangle,
   Loader2,
   X,
-  ChevronDown,
   TrendingUp,
-  MessageSquare
+  MessageSquare,
+  Activity,
+  Globe
 } from 'lucide-react'
 
 interface AdminCourse {
@@ -186,7 +187,6 @@ export default function AdminCoursesPage() {
       if (response.ok) {
         const data = await response.json()
         setCourses(data)
-        console.log('Fetched courses:', data.length)
       } else {
         const errorData = await response.json()
         setError(errorData.error || 'Failed to fetch courses')
@@ -214,7 +214,6 @@ export default function AdminCoursesPage() {
   const filterCourses = () => {
     let filtered = courses
 
-    // Apply search filter
     if (searchTerm) {
       filtered = filtered.filter(course =>
         course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -223,7 +222,6 @@ export default function AdminCoursesPage() {
       )
     }
 
-    // Apply status filter
     if (filterStatus !== 'all') {
       filtered = filtered.filter(course => 
         filterStatus === 'published' ? course.isPublished : !course.isPublished
@@ -286,7 +284,6 @@ export default function AdminCoursesPage() {
         setSuccess(responseData.message || 'Course deleted successfully!')
         setCourseToDelete(null)
         setTimeout(() => setSuccess(''), 5000)
-        // Refresh stats after deletion
         fetchStats()
       } else {
         setError(responseData.error || 'Failed to delete course')
@@ -311,12 +308,6 @@ export default function AdminCoursesPage() {
         ...(course.sections?.flatMap(section => section.videos) || []),
         ...(course.videos || [])
       ].reduce((acc, video) => acc + (video.duration || 0), 0))
-  }
-
-  const getStatusColor = (isPublished: boolean) => {
-    return isPublished
-      ? 'bg-green-100 text-green-800 border-green-200'
-      : 'bg-yellow-100 text-yellow-800 border-yellow-200'
   }
 
   const getLevelColor = (level: string) => {
@@ -357,116 +348,132 @@ export default function AdminCoursesPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading courses...</p>
-        </div>
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-[#001e62]"></div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      {/* Hero Header */}
+      <div className="bg-[#001e62] text-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl md:text-4xl font-display font-bold text-gray-900 mb-2">
+              <h1 className="text-4xl md:text-5xl font-bold mb-3">
                 Course Management
               </h1>
-              <p className="text-lg text-gray-600">
+              <p className="text-xl text-blue-100 mb-6">
                 Create, edit, and manage all courses on the platform.
               </p>
+              <div className="flex items-center space-x-6 text-sm">
+                <div className="flex items-center">
+                  <Activity className="w-4 h-4 mr-2" />
+                  <span>Platform Active</span>
+                </div>
+                <div className="flex items-center">
+                  <Globe className="w-4 h-4 mr-2" />
+                  <span>All Systems Operational</span>
+                </div>
+                <div className="flex items-center">
+                  <Clock className="w-4 h-4 mr-2" />
+                  <span>Last updated: {new Date().toLocaleTimeString()}</span>
+                </div>
+              </div>
             </div>
-            
-            <Link href="/admin/courses/create">
-              <Button className="flex items-center bg-purple-600 hover:bg-purple-700">
-                <Plus className="w-4 h-4 mr-2" />
-                Create Course
-              </Button>
-            </Link>
-          </div>
 
-          {/* Stats Overview - Enhanced with Q&A stats */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center">
-                  <BookOpen className="w-8 h-8 text-blue-600 mr-3" />
-                  <div>
-                    <p className="text-sm text-gray-600">Total Courses</p>
-                    <p className="text-2xl font-bold text-gray-900">{courses.length}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center">
-                  <Eye className="w-8 h-8 text-green-600 mr-3" />
-                  <div>
-                    <p className="text-sm text-gray-600">Published</p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {courses.filter(c => c.isPublished).length}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center">
-                  <Clock className="w-8 h-8 text-yellow-600 mr-3" />
-                  <div>
-                    <p className="text-sm text-gray-600">Drafts</p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {courses.filter(c => !c.isPublished).length}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center">
-                  <Users className="w-8 h-8 text-purple-600 mr-3" />
-                  <div>
-                    <p className="text-sm text-gray-600">Total Students</p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {courses.reduce((acc, course) => acc + course._count.enrollments, 0)}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* NEW: Q&A Activity Card */}
-            <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
-              <CardContent className="p-4">
-                <div className="flex items-center">
-                  <MessageSquare className={`w-8 h-8 mr-3 ${stats.unansweredQuestions > 0 ? 'text-red-600' : 'text-purple-600'}`} />
-                  <div>
-                    <p className="text-sm text-gray-600">Unanswered Q&A</p>
-                    <p className={`text-2xl font-bold ${stats.unansweredQuestions > 0 ? 'text-red-600' : 'text-gray-900'}`}>
-                      {stats.unansweredQuestions || 0}
-                    </p>
-                  </div>
-                </div>
-                {stats.unansweredQuestions > 0 && (
-                  <div className="mt-2">
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                      <AlertCircle className="w-3 h-3 mr-1" />
-                      Needs attention
-                    </span>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <div className="hidden lg:block">
+              <Link href="/admin/courses/create">
+                <Button className="bg-white/20 backdrop-blur-sm text-white border-white/30 hover:bg-white/30">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Course
+                </Button>
+              </Link>
+            </div>
           </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 relative z-10 pb-12">
+        {/* Stats Overview */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+          <Card className="shadow-lg border-0 bg-white/95 backdrop-blur-sm hover:shadow-xl transition-all duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 mb-2">Total Courses</p>
+                  <p className="text-3xl font-bold text-gray-900">{courses.length}</p>
+                </div>
+                <div className="w-12 h-12 bg-[#001e62]/10 rounded-xl flex items-center justify-center">
+                  <BookOpen className="w-6 h-6 text-[#001e62]" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="shadow-lg border-0 bg-white/95 backdrop-blur-sm hover:shadow-xl transition-all duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 mb-2">Published</p>
+                  <p className="text-3xl font-bold text-gray-900">
+                    {courses.filter(c => c.isPublished).length}
+                  </p>
+                </div>
+                <div className="w-12 h-12 bg-[#001e62]/10 rounded-xl flex items-center justify-center">
+                  <Eye className="w-6 h-6 text-[#001e62]" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="shadow-lg border-0 bg-white/95 backdrop-blur-sm hover:shadow-xl transition-all duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 mb-2">Drafts</p>
+                  <p className="text-3xl font-bold text-gray-900">
+                    {courses.filter(c => !c.isPublished).length}
+                  </p>
+                </div>
+                <div className="w-12 h-12 bg-[#001e62]/10 rounded-xl flex items-center justify-center">
+                  <Clock className="w-6 h-6 text-[#001e62]" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="shadow-lg border-0 bg-white/95 backdrop-blur-sm hover:shadow-xl transition-all duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 mb-2">Total Students</p>
+                  <p className="text-3xl font-bold text-gray-900">
+                    {courses.reduce((acc, course) => acc + course._count.enrollments, 0)}
+                  </p>
+                </div>
+                <div className="w-12 h-12 bg-[#001e62]/10 rounded-xl flex items-center justify-center">
+                  <Users className="w-6 h-6 text-[#001e62]" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg border-0 bg-white/95 backdrop-blur-sm hover:shadow-xl transition-all duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 mb-2">Unanswered Q&A</p>
+                  <p className={`text-3xl font-bold ${stats.unansweredQuestions > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                    {stats.unansweredQuestions || 0}
+                  </p>
+                </div>
+                <div className="w-12 h-12 bg-[#001e62]/10 rounded-xl flex items-center justify-center">
+                  <MessageSquare className={`w-6 h-6 ${stats.unansweredQuestions > 0 ? 'text-red-600' : 'text-[#001e62]'}`} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Success/Error Messages */}
@@ -474,10 +481,7 @@ export default function AdminCoursesPage() {
           <div className="mb-6 flex items-center p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
             <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
             <span className="text-sm flex-1">{error}</span>
-            <button
-              onClick={() => setError('')}
-              className="ml-2 text-red-600 hover:text-red-800"
-            >
+            <button onClick={() => setError('')} className="ml-2 text-red-600 hover:text-red-800">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -487,10 +491,7 @@ export default function AdminCoursesPage() {
           <div className="mb-6 flex items-center p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
             <CheckCircle className="w-5 h-5 mr-2 flex-shrink-0" />
             <span className="text-sm flex-1">{success}</span>
-            <button
-              onClick={() => setSuccess('')}
-              className="ml-2 text-green-600 hover:text-green-800"
-            >
+            <button onClick={() => setSuccess('')} className="ml-2 text-green-600 hover:text-green-800">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -504,7 +505,7 @@ export default function AdminCoursesPage() {
               placeholder="Search courses by title, description, or category..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
+              className="pl-10 bg-white"
             />
           </div>
 
@@ -513,7 +514,7 @@ export default function AdminCoursesPage() {
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value as 'all' | 'published' | 'draft')}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#001e62]"
             >
               <option value="all">All Courses</option>
               <option value="published">Published Only</option>
@@ -526,7 +527,7 @@ export default function AdminCoursesPage() {
         {filteredCourses.length > 0 ? (
           <div className="grid lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {filteredCourses.map(course => (
-              <Card key={course.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+              <Card key={course.id} className="overflow-hidden shadow-sm border-gray-200 bg-white hover:shadow-xl transition-all duration-300">
                 <div className="relative">
                   {course.thumbnail ? (
                     <div className="relative aspect-video">
@@ -538,29 +539,30 @@ export default function AdminCoursesPage() {
                       />
                     </div>
                   ) : (
-                    <div className="aspect-video bg-gradient-to-br from-purple-100 to-blue-200 flex items-center justify-center">
-                      <Play className="w-12 h-12 text-purple-600" />
+                    <div className="aspect-video bg-gradient-to-br from-[#001e62]/10 to-blue-200 flex items-center justify-center">
+                      <Play className="w-12 h-12 text-[#001e62]" />
                     </div>
                   )}
                   
-                  {/* Status Badge */}
                   <div className="absolute top-3 right-3">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(course.isPublished)}`}>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      course.isPublished 
+                        ? 'bg-green-100 text-green-800' 
+                        : 'bg-yellow-100 text-yellow-800'
+                    }`}>
                       {course.isPublished ? 'Published' : 'Draft'}
                     </span>
                   </div>
 
-                  {/* Trending Badge for popular courses */}
                   {course._count.enrollments > 50 && (
                     <div className="absolute top-3 left-3">
-                      <span className="bg-orange-500 text-white px-2 py-1 rounded-full text-xs font-medium flex items-center">
+                      <span className="bg-[#001e62] text-white px-2 py-1 rounded-full text-xs font-medium flex items-center">
                         <TrendingUp className="w-3 h-3 mr-1" />
                         Popular
                       </span>
                     </div>
                   )}
 
-                  {/* Q&A Alert Badge */}
                   {course._count.unansweredQuestions && course._count.unansweredQuestions > 0 && (
                     <div className="absolute bottom-3 left-3">
                       <span className="bg-red-500 text-white px-2 py-1 rounded-full text-xs font-medium flex items-center">
@@ -573,7 +575,7 @@ export default function AdminCoursesPage() {
 
                 <CardHeader>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-purple-600 font-medium">{course.category}</span>
+                    <span className="text-sm text-[#001e62] font-medium">{course.category}</span>
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${getLevelColor(course.level)}`}>
                       {course.level}
                     </span>
@@ -608,7 +610,6 @@ export default function AdminCoursesPage() {
                       </div>
                     </div>
 
-                    {/* Q&A Stats */}
                     {course._count.questions && course._count.questions > 0 && (
                       <div className="flex items-center justify-between text-sm text-gray-500">
                         <div className="flex items-center">
@@ -624,11 +625,10 @@ export default function AdminCoursesPage() {
                     )}
                   </div>
 
-                  {/* UPDATED: Action Buttons with Q&A Management */}
                   <div className="space-y-2">
                     <div className="flex items-center space-x-2">
                       <Link href={`/admin/courses/${course.id}`} className="flex-1">
-                        <Button variant="outline" size="sm" className="w-full">
+                        <Button variant="outline" size="sm" className="w-full hover:bg-[#001e62]/5">
                           <Edit className="w-4 h-4 mr-2" />
                           Edit
                         </Button>
@@ -638,7 +638,7 @@ export default function AdminCoursesPage() {
                         variant="outline"
                         size="sm"
                         onClick={() => togglePublished(course.id, course.isPublished)}
-                        className="flex-shrink-0"
+                        className="flex-shrink-0 hover:bg-[#001e62]/5"
                         title={course.isPublished ? 'Unpublish course' : 'Publish course'}
                       >
                         {course.isPublished ? (
@@ -659,7 +659,6 @@ export default function AdminCoursesPage() {
                       </Button>
                     </div>
 
-                    {/* NEW: Q&A and Announcements Management Button */}
                     <Link href={`/admin/courses/${course.id}/manage`} className="block">
                       <Button 
                         variant="outline" 
@@ -667,7 +666,7 @@ export default function AdminCoursesPage() {
                         className={`w-full ${
                           course._count.unansweredQuestions && course._count.unansweredQuestions > 0
                             ? 'border-red-200 text-red-700 hover:bg-red-50' 
-                            : 'text-purple-700 hover:bg-purple-50'
+                            : 'text-[#001e62] hover:bg-[#001e62]/5'
                         }`}
                       >
                         <MessageSquare className="w-4 h-4 mr-2" />
@@ -685,7 +684,7 @@ export default function AdminCoursesPage() {
             ))}
           </div>
         ) : (
-          <Card>
+          <Card className="shadow-sm border-gray-200 bg-white">
             <CardContent className="text-center py-12">
               {searchTerm || filterStatus !== 'all' ? (
                 <>
@@ -716,7 +715,7 @@ export default function AdminCoursesPage() {
                     Create your first course to get started with the platform.
                   </p>
                   <Link href="/admin/courses/create">
-                    <Button className="bg-purple-600 hover:bg-purple-700">Create First Course</Button>
+                    <Button className="bg-[#001e62] hover:bg-[#001e62]/90">Create First Course</Button>
                   </Link>
                 </>
               )}
@@ -724,14 +723,14 @@ export default function AdminCoursesPage() {
           </Card>
         )}
 
-        {/* Enhanced Quick Actions with Q&A Management */}
-        <div className="mt-8 bg-white rounded-lg border p-6">
+        {/* Quick Actions */}
+        <div className="mt-8 bg-white rounded-lg border shadow-sm p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Link href="/admin/courses/create">
-              <Card className="hover:shadow-md transition-shadow cursor-pointer">
+              <Card className="hover:shadow-md transition-shadow cursor-pointer border-gray-200">
                 <CardContent className="p-4 text-center">
-                  <Plus className="w-8 h-8 text-purple-600 mx-auto mb-2" />
+                  <Plus className="w-8 h-8 text-[#001e62] mx-auto mb-2" />
                   <p className="font-medium text-gray-900">Create New Course</p>
                   <p className="text-sm text-gray-600">Start building a new course</p>
                 </CardContent>
@@ -745,7 +744,7 @@ export default function AdminCoursesPage() {
               }}
               className="text-left"
             >
-              <Card className="hover:shadow-md transition-shadow cursor-pointer">
+              <Card className="hover:shadow-md transition-shadow cursor-pointer border-gray-200">
                 <CardContent className="p-4 text-center">
                   <Clock className="w-8 h-8 text-yellow-600 mx-auto mb-2" />
                   <p className="font-medium text-gray-900">Review Drafts</p>
@@ -761,7 +760,7 @@ export default function AdminCoursesPage() {
               }}
               className="text-left"
             >
-              <Card className="hover:shadow-md transition-shadow cursor-pointer">
+              <Card className="hover:shadow-md transition-shadow cursor-pointer border-gray-200">
                 <CardContent className="p-4 text-center">
                   <TrendingUp className="w-8 h-8 text-green-600 mx-auto mb-2" />
                   <p className="font-medium text-gray-900">View Published</p>
@@ -770,15 +769,14 @@ export default function AdminCoursesPage() {
               </Card>
             </button>
 
-            {/* NEW: Q&A Management Quick Action */}
             <Link href="/admin/qa">
-              <Card className={`hover:shadow-md transition-shadow cursor-pointer ${
+              <Card className={`hover:shadow-md transition-shadow cursor-pointer border-gray-200 ${
                 stats.unansweredQuestions > 0 ? 'ring-2 ring-red-200 bg-red-50' : ''
               }`}>
                 <CardContent className="p-4 text-center">
                   <div className="relative">
                     <MessageSquare className={`w-8 h-8 mx-auto mb-2 ${
-                      stats.unansweredQuestions > 0 ? 'text-red-600' : 'text-purple-600'
+                      stats.unansweredQuestions > 0 ? 'text-red-600' : 'text-[#001e62]'
                     }`} />
                     {stats.unansweredQuestions > 0 && (
                       <span className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center font-medium">
@@ -799,7 +797,6 @@ export default function AdminCoursesPage() {
           </div>
         </div>
 
-        {/* Bulk Actions for future enhancement */}
         {filteredCourses.length > 0 && (
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-500">
@@ -808,10 +805,9 @@ export default function AdminCoursesPage() {
           </div>
         )}
 
-        {/* Alert for pending Q&A */}
         {stats.unansweredQuestions > 0 && (
           <div className="mt-6">
-            <Card className="border-red-200 bg-red-50">
+            <Card className="border-red-200 bg-red-50 shadow-sm">
               <CardContent className="p-4">
                 <div className="flex items-center">
                   <AlertCircle className="w-5 h-5 text-red-600 mr-3 flex-shrink-0" />
@@ -836,7 +832,6 @@ export default function AdminCoursesPage() {
         )}
       </div>
 
-      {/* Delete Confirmation Modal */}
       {courseToDelete && (
         <DeleteConfirmationModal
           course={courseToDelete}

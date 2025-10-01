@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/Button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card"
 import { Badge } from "@/components/ui/Badge"
 import { Input } from "@/components/ui/Input"
+import { Progress } from "@/components/ui/progress"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
-  Brain,
   MessageSquare,
   MapPin,
   FileText,
@@ -13,7 +14,6 @@ import {
   Loader2,
   Bot,
   User,
-  ChevronRight,
   CheckCircle,
   Clock,
   Download,
@@ -23,8 +23,12 @@ import {
   Award,
   AlertCircle,
   Sparkles,
-  BookOpen,
-  Target
+  HelpCircle,
+  Zap,
+  Star,
+  ExternalLink,
+  Target,
+  PlayCircle
 } from "lucide-react"
 
 interface Video {
@@ -65,6 +69,10 @@ interface LearningPathStep {
   estimatedTime: string
   status: 'completed' | 'current' | 'upcoming'
   skills: string[]
+  resources: string[]
+  projects: string[]
+  certifications: string[]
+  milestones: string[]
 }
 
 interface StudyNote {
@@ -77,6 +85,31 @@ interface StudyNote {
   estimatedTime: string
   tags: string[]
   createdAt: string
+  practicalExamples: string[]
+  commonMistakes: string[]
+  nextSteps: string[]
+}
+
+interface QuizQuestion {
+  id: string
+  question: string
+  options: string[]
+  correct: number
+  explanation: string
+  difficulty: 'easy' | 'medium' | 'hard'
+  points: number
+}
+
+interface LearningJourney {
+  title: string
+  description: string
+  totalDuration: string
+  steps: LearningPathStep[]
+  careerOutcomes?: string[]
+  salaryRange?: string
+  industryDemand?: string
+  careerProgression?: any[]
+  marketInsights?: string
 }
 
 export function LearningToolsTab({
@@ -89,24 +122,40 @@ export function LearningToolsTab({
   const [isAILoading, setIsAILoading] = useState(false)
 
   // Learning Journey State
-  const [learningPath, setLearningPath] = useState<LearningPathStep[]>([])
+  const [learningJourney, setLearningJourney] = useState<LearningJourney | null>(null)
   const [isPathLoading, setIsPathLoading] = useState(false)
 
   // Study Notes State
   const [studyNotes, setStudyNotes] = useState<StudyNote | null>(null)
   const [isNotesLoading, setIsNotesLoading] = useState(false)
 
+  // Quiz State
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([])
+  const [isQuizLoading, setIsQuizLoading] = useState(false)
+  const [currentQuizIndex, setCurrentQuizIndex] = useState(0)
+  const [quizAnswers, setQuizAnswers] = useState<number[]>([])
+  const [showQuizResults, setShowQuizResults] = useState(false)
+  const [quizStarted, setQuizStarted] = useState(false)
+  const [quizGenerationCount, setQuizGenerationCount] = useState(0)
+  const [remainingGenerations, setRemainingGenerations] = useState(2)
+
+  // UI State
+  const [activeTab, setActiveTab] = useState('chat')
+  
+  // Check if OpenAI is available
+  const hasOpenAI = process.env.NEXT_PUBLIC_HAS_OPENAI_KEY === 'true'
+
   // Initialize features when video changes
   useEffect(() => {
-    if (video) {
+    if (video && hasOpenAI) {
       generateLearningPath()
       generateStudyNotes()
     }
-  }, [video])
+  }, [video, hasOpenAI])
 
-  // 1. AI Q&A Feature - Enhanced to answer ANY questions using Gemini
+  // 1. AI Q&A Feature
   const handleAIQuestion = async () => {
-    if (!userQuery.trim() || !video) return
+    if (!userQuery.trim() || !video || !hasOpenAI || isAILoading) return
 
     const userMessage: ChatMessage = {
       id: Date.now() + '-user',
@@ -125,6 +174,7 @@ export function LearningToolsTab({
 
     setChatMessages(prev => [...prev, userMessage, loadingMessage])
     setIsAILoading(true)
+    const currentQuery = userQuery
     setUserQuery('')
 
     try {
@@ -132,14 +182,17 @@ export function LearningToolsTab({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query: userQuery,
+          query: currentQuery,
           videoId: video.id,
           videoTitle: video.title,
           transcript: video.transcript?.content,
           courseTitle: video.course?.title,
           courseCategory: video.course?.category,
           type: 'question',
-          context: chatMessages.slice(-3)
+          context: chatMessages.slice(-3).map(msg => ({
+            type: msg.type,
+            content: msg.content
+          }))
         })
       })
 
@@ -149,7 +202,7 @@ export function LearningToolsTab({
         const aiMessage: ChatMessage = {
           id: Date.now() + '-ai',
           type: 'ai',
-          content: data.content,
+          content: data.content || 'I apologize, but I couldn\'t generate a response.',
           timestamp: new Date()
         }
 
@@ -160,6 +213,7 @@ export function LearningToolsTab({
         throw new Error('Failed to get AI response')
       }
     } catch (error) {
+      console.error('AI question error:', error)
       const errorMessage: ChatMessage = {
         id: Date.now() + '-error',
         type: 'ai',
@@ -175,9 +229,9 @@ export function LearningToolsTab({
     }
   }
 
-  // 2. Learning Journey/Path Generator - Field-specific roadmaps
+  // 2. Learning Journey Generator
   const generateLearningPath = async () => {
-    if (!video) return
+    if (!video || !hasOpenAI) return
 
     setIsPathLoading(true)
     try {
@@ -189,143 +243,26 @@ export function LearningToolsTab({
           courseTitle: video.course?.title,
           courseCategory: video.course?.category,
           description: video.description,
-          currentProgress: getProgressPercentage()
+          currentProgress: getProgressPercentage(),
+          careerGoals: 'Professional mastery',
+          timeCommitment: 'part-time'
         })
       })
 
       if (response.ok) {
         const data = await response.json()
-        setLearningPath(data.steps || [])
+        setLearningJourney(data)
       }
     } catch (error) {
       console.error('Failed to generate learning path:', error)
-      generateFallbackPath()
     } finally {
       setIsPathLoading(false)
     }
   }
 
-  const generateFallbackPath = () => {
-    const category = video?.course?.category?.toLowerCase() || 'general'
-    let steps: LearningPathStep[] = []
-
-    if (category.includes('web') || category.includes('frontend') || category.includes('html') || category.includes('css') || category.includes('javascript')) {
-      steps = [
-        {
-          id: 1,
-          title: "HTML & CSS Foundations",
-          description: "Master structure, semantics, and styling fundamentals",
-          category: "Web Development",
-          difficulty: "Beginner",
-          estimatedTime: "2-3 weeks",
-          status: "current",
-          skills: ["HTML5", "CSS3", "Responsive Design", "Accessibility"]
-        },
-        {
-          id: 2,
-          title: "JavaScript Programming",
-          description: "Learn core JS concepts and DOM manipulation",
-          category: "Web Development",
-          difficulty: "Intermediate",
-          estimatedTime: "3-4 weeks",
-          status: "upcoming",
-          skills: ["ES6+", "DOM", "Events", "Async/Await"]
-        },
-        {
-          id: 3,
-          title: "React Framework",
-          description: "Build modern applications with React",
-          category: "Web Development",
-          difficulty: "Intermediate",
-          estimatedTime: "4-5 weeks",
-          status: "upcoming",
-          skills: ["Components", "Hooks", "State", "Router"]
-        },
-        {
-          id: 4,
-          title: "Full-Stack Development",
-          description: "Backend APIs, databases, and deployment",
-          category: "Web Development",
-          difficulty: "Advanced",
-          estimatedTime: "6-8 weeks",
-          status: "upcoming",
-          skills: ["Node.js", "APIs", "Databases", "Deployment"]
-        }
-      ]
-    } else if (category.includes('cyber') || category.includes('security')) {
-      steps = [
-        {
-          id: 1,
-          title: "Security Fundamentals",
-          description: "Basic security concepts and threat landscape",
-          category: "Cybersecurity",
-          difficulty: "Beginner",
-          estimatedTime: "2-3 weeks",
-          status: "current",
-          skills: ["Threat Modeling", "Risk Assessment", "Policies"]
-        },
-        {
-          id: 2,
-          title: "Network Security",
-          description: "Secure network design and monitoring",
-          category: "Cybersecurity",
-          difficulty: "Intermediate",
-          estimatedTime: "3-4 weeks",
-          status: "upcoming",
-          skills: ["Firewalls", "IDS/IPS", "VPN", "Protocols"]
-        },
-        {
-          id: 3,
-          title: "Ethical Hacking",
-          description: "Penetration testing and vulnerability assessment",
-          category: "Cybersecurity",
-          difficulty: "Advanced",
-          estimatedTime: "4-6 weeks",
-          status: "upcoming",
-          skills: ["Pentesting", "Vuln Scanning", "Social Engineering"]
-        }
-      ]
-    } else {
-      steps = [
-        {
-          id: 1,
-          title: "Foundation Knowledge",
-          description: "Build strong fundamentals in the subject area",
-          category: "General",
-          difficulty: "Beginner",
-          estimatedTime: "2-3 weeks",
-          status: "current",
-          skills: ["Core Concepts", "Best Practices", "Standards"]
-        },
-        {
-          id: 2,
-          title: "Practical Application",
-          description: "Apply knowledge through hands-on projects",
-          category: "General",
-          difficulty: "Intermediate",
-          estimatedTime: "3-4 weeks",
-          status: "upcoming",
-          skills: ["Projects", "Problem Solving", "Real-world"]
-        },
-        {
-          id: 3,
-          title: "Advanced Mastery",
-          description: "Master advanced topics and specializations",
-          category: "General",
-          difficulty: "Advanced",
-          estimatedTime: "4-6 weeks",
-          status: "upcoming",
-          skills: ["Advanced Techniques", "Optimization", "Leadership"]
-        }
-      ]
-    }
-
-    setLearningPath(steps)
-  }
-
-  // 3. AI Study Notes Generator - Video-specific notes
+  // 3. AI Study Notes Generator
   const generateStudyNotes = async () => {
-    if (!video) return
+    if (!video || !hasOpenAI) return
 
     setIsNotesLoading(true)
     try {
@@ -347,450 +284,745 @@ export function LearningToolsTab({
       }
     } catch (error) {
       console.error('Failed to generate study notes:', error)
-      generateFallbackNotes()
     } finally {
       setIsNotesLoading(false)
     }
   }
 
-  const generateFallbackNotes = () => {
-    const category = video?.course?.category || 'General'
-    const fallbackNotes: StudyNote = {
-      id: Date.now().toString(),
-      title: `Study Notes: ${video?.title}`,
-      content: `# ${video?.title}\n\n## Overview\nThis lesson covers important concepts in ${category}.\n\n## Key Points\n- Understand fundamental concepts\n- Apply practical techniques\n- Follow best practices\n- Build practical skills\n\n## Summary\nThis lesson provides essential knowledge for advancing in ${category}.`,
-      keyPoints: [
-        "Master the fundamental concepts presented",
-        "Apply the techniques in practical scenarios", 
-        "Follow industry best practices",
-        "Build hands-on experience",
-        "Connect to broader learning goals"
-      ],
-      summary: `This lesson on "${video?.title}" covers essential ${category} concepts with practical applications.`,
-      difficulty: "Intermediate",
-      estimatedTime: "15-20 minutes",
-      tags: [category, "Fundamentals", "Practice"],
-      createdAt: new Date().toISOString()
+  // 4. AI Quiz Generator with limits
+  const generateQuiz = async () => {
+    if (!video || !hasOpenAI || remainingGenerations <= 0) return
+
+    setIsQuizLoading(true)
+    try {
+      const response = await fetch('/api/ai/generate-quiz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoId: video.id,
+          videoTitle: video.title,
+          transcript: video.transcript?.content,
+          courseTitle: video.course?.title,
+          courseCategory: video.course?.category,
+          difficulty: 'mixed',
+          questionCount: 5,
+          regenerateAttempt: quizGenerationCount
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        
+        if (data.error) {
+          return
+        }
+        
+        setQuizQuestions(data.questions || [])
+        setQuizAnswers(new Array(data.questions?.length || 0).fill(-1))
+        setCurrentQuizIndex(0)
+        setShowQuizResults(false)
+        setQuizStarted(true)
+        setActiveTab('quiz')
+        
+        if (data.generationCount !== undefined) {
+          setQuizGenerationCount(data.generationCount)
+          setRemainingGenerations(data.remainingGenerations || 0)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to generate quiz:', error)
+    } finally {
+      setIsQuizLoading(false)
     }
-    setStudyNotes(fallbackNotes)
+  }
+
+  const handleQuizAnswer = (answerIndex: number) => {
+    const newAnswers = [...quizAnswers]
+    newAnswers[currentQuizIndex] = answerIndex
+    setQuizAnswers(newAnswers)
+  }
+
+  const nextQuizQuestion = () => {
+    if (currentQuizIndex < quizQuestions.length - 1) {
+      setCurrentQuizIndex(currentQuizIndex + 1)
+    } else {
+      calculateQuizResults()
+    }
+  }
+
+  const previousQuizQuestion = () => {
+    if (currentQuizIndex > 0) {
+      setCurrentQuizIndex(currentQuizIndex - 1)
+    }
+  }
+
+  const calculateQuizResults = () => {
+    setShowQuizResults(true)
+  }
+
+  const getQuizScore = () => {
+    const correct = quizAnswers.filter((answer, index) => 
+      answer === quizQuestions[index]?.correct
+    ).length
+    return {
+      correct,
+      total: quizQuestions.length,
+      percentage: Math.round((correct / quizQuestions.length) * 100)
+    }
+  }
+
+  const resetQuiz = () => {
+    setQuizQuestions([])
+    setQuizAnswers([])
+    setCurrentQuizIndex(0)
+    setShowQuizResults(false)
+    setQuizStarted(false)
   }
 
   const downloadNotes = () => {
     if (!studyNotes) return
 
-    const notesText = `${studyNotes.title}\n\n${studyNotes.content}\n\nKey Points:\n${studyNotes.keyPoints.map(point => `• ${point}`).join('\n')}\n\nSummary:\n${studyNotes.summary}`
+    const notesText = `${studyNotes.title}\n\n${studyNotes.content}\n\nKey Points:\n${studyNotes.keyPoints.map(point => `• ${point}`).join('\n')}\n\nPractical Examples:\n${studyNotes.practicalExamples?.map(example => `• ${example}`).join('\n') || ''}\n\nCommon Mistakes:\n${studyNotes.commonMistakes?.map(mistake => `• ${mistake}`).join('\n') || ''}\n\nNext Steps:\n${studyNotes.nextSteps?.map(step => `• ${step}`).join('\n') || ''}\n\nSummary:\n${studyNotes.summary}\n\nTags: ${studyNotes.tags.join(', ')}`
     
     const blob = new Blob([notesText], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${video?.title}-notes.txt`
+    a.download = `${video?.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}-comprehensive-notes.txt`
     a.click()
     URL.revokeObjectURL(url)
   }
 
+  if (!hasOpenAI) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <Card className="border border-gray-200">
+          <CardContent className="p-8 text-center">
+            <AlertCircle className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-gray-900 mb-3">AI Features Unavailable</h3>
+            <p className="text-gray-600 mb-6">
+              OpenAI integration is not configured. To enable AI-powered learning features, please add your OpenAI API key to the environment variables.
+            </p>
+            <div className="bg-gray-50 p-4 rounded border border-gray-200">
+              <code className="text-sm text-gray-800">OPENAI_API_KEY=your_api_key_here</code>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
-    <div className="max-w-7xl mx-auto space-y-8">
+    <div className="max-w-6xl mx-auto">
       {/* Header */}
-      <div className="text-center">
-        <h2 className="text-3xl font-bold text-gray-900 mb-2">AI Learning Assistant</h2>
-        <p className="text-gray-600">Enhanced learning with AI-powered Q&A, personalized learning paths, and study notes</p>
+      <div className="text-center mb-8">
+        <h2 className="text-3xl font-bold text-[#001E62] mb-2">AI Learning Assistant</h2>
+        <p className="text-gray-600 mb-4">Advanced AI-powered tools to enhance your learning experience</p>
+        {video && (
+          <div className="p-4 bg-[#001E62]/5 rounded-lg border border-[#001E62]/20">
+            <h3 className="font-semibold text-[#001E62]">{video.title}</h3>
+            <p className="text-sm text-gray-600">{video.course?.title} • {video.course?.category}</p>
+          </div>
+        )}
       </div>
 
-      {/* Main AI Features Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* 1. AI Q&A Chat - Can answer ANY questions */}
-        <Card className="lg:col-span-1 border-2 border-blue-200">
-          <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50">
-            <CardTitle className="flex items-center text-blue-900">
-              <MessageSquare className="w-6 h-6 mr-2" />
-              AI Q&A Assistant
-            </CardTitle>
-            <p className="text-sm text-blue-700">Ask me anything - lesson questions, general knowledge, explanations, and more!</p>
-          </CardHeader>
-          <CardContent className="p-0">
-            {/* Chat Messages */}
-            <div className="h-80 overflow-y-auto p-4 space-y-4">
-              {chatMessages.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">
-                  <Bot className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                  <p className="mb-4">Ask me anything!</p>
-                  <div className="space-y-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setUserQuery("Explain the main concepts from this lesson")
-                        setTimeout(() => handleAIQuestion(), 100)
-                      }}
-                      className="w-full text-xs"
-                    >
-                      Explain lesson concepts
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setUserQuery("What is artificial intelligence?")
-                        setTimeout(() => handleAIQuestion(), 100)
-                      }}
-                      className="w-full text-xs"
-                    >
-                      What is AI?
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setUserQuery("Give me study tips for this subject")
-                        setTimeout(() => handleAIQuestion(), 100)
-                      }}
-                      className="w-full text-xs"
-                    >
-                      Study tips
-                    </Button>
+      {/* AI Features Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-4 mb-8 bg-gray-100">
+          <TabsTrigger value="chat" className="flex items-center gap-2 data-[state=active]:bg-[#001E62] data-[state=active]:text-white">
+            <MessageSquare className="w-4 h-4" />
+            AI Tutor
+          </TabsTrigger>
+          <TabsTrigger value="journey" className="flex items-center gap-2 data-[state=active]:bg-[#001E62] data-[state=active]:text-white">
+            <MapPin className="w-4 h-4" />
+            Career Path
+          </TabsTrigger>
+          <TabsTrigger value="notes" className="flex items-center gap-2 data-[state=active]:bg-[#001E62] data-[state=active]:text-white">
+            <FileText className="w-4 h-4" />
+            Study Notes
+          </TabsTrigger>
+          <TabsTrigger value="quiz" className="flex items-center gap-2 data-[state=active]:bg-[#001E62] data-[state=active]:text-white">
+            <HelpCircle className="w-4 h-4" />
+            Smart Quiz
+          </TabsTrigger>
+        </TabsList>
+
+        {/* AI Q&A Chat Tab */}
+        <TabsContent value="chat" className="mt-6">
+          <Card className="border border-[#001E62]/20">
+            <CardHeader className="bg-[#001E62]/5 border-b border-[#001E62]/10">
+              <CardTitle className="flex items-center text-[#001E62]">
+                <MessageSquare className="w-6 h-6 mr-2" />
+                AI Tutor - Ask Anything
+              </CardTitle>
+              <p className="text-sm text-gray-600">Get expert explanations, clarifications, and guidance on any topic</p>
+            </CardHeader>
+            <CardContent className="p-0">
+              {/* Chat Messages */}
+              <div className="h-96 overflow-y-auto p-6 space-y-4">
+                {chatMessages.length === 0 ? (
+                  <div className="text-center text-gray-500 py-8">
+                    <Bot className="w-12 h-12 mx-auto mb-4 text-[#001E62]/40" />
+                    <p className="text-lg font-medium mb-2 text-gray-700">Your AI Learning Assistant</p>
+                    <p className="mb-6 text-gray-600">Ask questions, get explanations, or discuss concepts from this lesson</p>
+                    <div className="grid grid-cols-1 gap-2 max-w-lg mx-auto">
+                      {[
+                        "Explain the key concepts in simple terms",
+                        "What are the practical applications?",
+                        "How does this connect to other topics?",
+                        "What should I focus on learning next?"
+                      ].map((suggestion, index) => (
+                        <Button
+                          key={index}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setUserQuery(suggestion)}
+                          className="text-sm text-left justify-start border-[#001E62]/20 hover:bg-[#001E62]/5"
+                        >
+                          {suggestion}
+                        </Button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ) : (
-                chatMessages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
+                ) : (
+                  chatMessages.map((message) => (
                     <div
-                      className={`max-w-[85%] p-3 rounded-lg ${
-                        message.type === 'user'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-900'
-                      }`}
+                      key={message.id}
+                      className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
-                      <div className="flex items-start space-x-2">
-                        {message.type === 'ai' && <Bot className="w-4 h-4 mt-0.5 flex-shrink-0" />}
-                        {message.type === 'user' && <User className="w-4 h-4 mt-0.5 flex-shrink-0" />}
-                        <div className="flex-1">
-                          {message.isLoading ? (
-                            <div className="flex items-center space-x-2">
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>Thinking...</span>
+                      <div
+                        className={`max-w-[85%] p-4 rounded-lg ${
+                          message.type === 'user'
+                            ? 'bg-[#001E62] text-white rounded-br-none'
+                            : 'bg-gray-100 text-gray-900 rounded-bl-none'
+                        }`}
+                      >
+                        <div className="flex items-start space-x-3">
+                          {message.type === 'ai' && <Bot className="w-5 h-5 mt-0.5 flex-shrink-0 text-[#001E62]" />}
+                          {message.type === 'user' && <User className="w-5 h-5 mt-0.5 flex-shrink-0" />}
+                          <div className="flex-1">
+                            {message.isLoading ? (
+                              <div className="flex items-center space-x-2">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Thinking...</span>
+                              </div>
+                            ) : (
+                              <div className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</div>
+                            )}
+                            <div className="text-xs mt-2 opacity-70">
+                              {message.timestamp.toLocaleTimeString()}
                             </div>
-                          ) : (
-                            <div className="text-sm whitespace-pre-wrap">{message.content}</div>
-                          )}
-                          <div className="text-xs mt-1 opacity-70">
-                            {message.timestamp.toLocaleTimeString()}
                           </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Chat Input */}
-            <div className="border-t p-4">
-              <div className="flex space-x-2">
-                <Input
-                  placeholder="Ask me anything..."
-                  value={userQuery}
-                  onChange={(e) => setUserQuery(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && !isAILoading && handleAIQuestion()}
-                  className="flex-1"
-                />
-                <Button
-                  onClick={handleAIQuestion}
-                  disabled={!userQuery.trim() || isAILoading}
-                  size="sm"
-                >
-                  {isAILoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                </Button>
-              </div>
-              <p className="text-xs text-gray-500 mt-2">
-                Powered by Gemini AI - Ask about this lesson, general knowledge, or anything else!
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 2. Learning Journey Map - Field-specific roadmaps */}
-        <Card className="lg:col-span-1 border-2 border-green-200">
-          <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50">
-            <CardTitle className="flex items-center text-green-900">
-              <MapPin className="w-6 h-6 mr-2" />
-              Learning Journey Map
-            </CardTitle>
-            <p className="text-sm text-green-700">Your personalized roadmap for mastering {video?.course?.category || 'this field'}</p>
-          </CardHeader>
-          <CardContent className="p-4">
-            {isPathLoading ? (
-              <div className="text-center py-8">
-                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
-                <p className="text-sm text-gray-500">Generating your learning path...</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {learningPath.slice(0, 4).map((step, index) => (
-                  <div key={step.id} className="relative">
-                    <div className={`flex items-start space-x-3 p-3 rounded-lg border-2 ${
-                      step.status === 'completed' ? 'bg-green-50 border-green-200' :
-                      step.status === 'current' ? 'bg-blue-50 border-blue-200' :
-                      'bg-gray-50 border-gray-200'
-                    }`}>
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                        step.status === 'completed' ? 'bg-green-600 text-white' :
-                        step.status === 'current' ? 'bg-blue-600 text-white' :
-                        'bg-gray-400 text-white'
-                      }`}>
-                        {step.status === 'completed' ? <CheckCircle className="w-4 h-4" /> : step.id}
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-sm">{step.title}</h4>
-                        <p className="text-xs text-gray-600 mb-2">{step.description}</p>
-                        <div className="flex items-center space-x-2 text-xs">
-                          <Badge variant="outline" className="text-xs px-1 py-0">
-                            {step.difficulty}
-                          </Badge>
-                          <span className="text-gray-500">{step.estimatedTime}</span>
-                        </div>
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {step.skills.slice(0, 2).map((skill, i) => (
-                            <Badge key={i} variant="secondary" className="text-xs px-1 py-0">
-                              {skill}
-                            </Badge>
-                          ))}
-                          {step.skills.length > 2 && (
-                            <Badge variant="secondary" className="text-xs px-1 py-0">
-                              +{step.skills.length - 2}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    {index < learningPath.slice(0, 4).length - 1 && (
-                      <div className="absolute left-6 top-14 w-0.5 h-4 bg-gray-300"></div>
-                    )}
-                  </div>
-                ))}
-                <div className="pt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={generateLearningPath}
-                    disabled={isPathLoading}
-                    className="w-full"
-                  >
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Refresh Journey
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* 3. AI Study Notes - Video-specific notes */}
-        <Card className="lg:col-span-1 border-2 border-purple-200">
-          <CardHeader className="bg-gradient-to-r from-purple-50 to-violet-50">
-            <CardTitle className="flex items-center text-purple-900">
-              <FileText className="w-6 h-6 mr-2" />
-              AI Study Notes
-            </CardTitle>
-            <p className="text-sm text-purple-700">Comprehensive notes generated specifically for "{video?.title}"</p>
-          </CardHeader>
-          <CardContent className="p-4">
-            {isNotesLoading ? (
-              <div className="text-center py-8">
-                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
-                <p className="text-sm text-gray-500">Generating study notes...</p>
-              </div>
-            ) : studyNotes ? (
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-semibold text-sm mb-2">{studyNotes.title}</h4>
-                  <div className="text-xs text-gray-600 mb-3 flex items-center space-x-4">
-                    <span className="flex items-center">
-                      <Clock className="w-3 h-3 mr-1" />
-                      {studyNotes.estimatedTime}
-                    </span>
-                    <Badge variant="outline" className="text-xs">
-                      {studyNotes.difficulty}
-                    </Badge>
-                  </div>
-                </div>
-
-                <div>
-                  <h5 className="font-medium text-sm mb-2">Key Points:</h5>
-                  <div className="space-y-1 max-h-32 overflow-y-auto">
-                    {studyNotes.keyPoints.map((point, index) => (
-                      <div key={index} className="flex items-start space-x-2 text-xs">
-                        <Lightbulb className="w-3 h-3 mt-0.5 text-yellow-500 flex-shrink-0" />
-                        <span className="text-gray-700">{point}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <h5 className="font-medium text-sm mb-2">Summary:</h5>
-                  <p className="text-xs text-gray-700 leading-relaxed">{studyNotes.summary}</p>
-                </div>
-
-                <div className="flex flex-wrap gap-1">
-                  {studyNotes.tags.map((tag, index) => (
-                    <Badge key={index} variant="secondary" className="text-xs px-1 py-0">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-
-                <div className="flex space-x-2 pt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={downloadNotes}
-                    className="flex-1"
-                  >
-                    <Download className="w-3 h-3 mr-1" />
-                    Download
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={generateStudyNotes}
-                    disabled={isNotesLoading}
-                    className="flex-1"
-                  >
-                    <RefreshCw className="w-3 h-3 mr-1" />
-                    Regenerate
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <FileText className="w-8 h-8 mx-auto mb-3 text-gray-300" />
-                <p className="text-sm text-gray-500 mb-4">No study notes available</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={generateStudyNotes}
-                  disabled={isNotesLoading}
-                >
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Generate Notes
-                </Button>
-                {!video?.transcript?.content && (
-                  <p className="text-xs text-gray-400 mt-2">
-                    Note: Transcript needed for best results
-                  </p>
+                  ))
                 )}
               </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
 
-      {/* Quick Action Buttons */}
-      <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
-        <CardContent className="p-6">
-          <h3 className="text-lg font-semibold text-blue-900 mb-4">Quick AI Actions</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Button
-              variant="outline"
-              className="h-auto p-3 flex flex-col items-center space-y-2"
-              onClick={() => {
-                setUserQuery("Summarize this lesson")
-                setTimeout(() => handleAIQuestion(), 100)
-              }}
-              disabled={isAILoading}
-            >
-              <FileText className="w-6 h-6 text-blue-600" />
-              <span className="text-sm">Summarize</span>
-            </Button>
-            
-            <Button
-              variant="outline"
-              className="h-auto p-3 flex flex-col items-center space-y-2"
-              onClick={() => {
-                setUserQuery("Explain the key concepts")
-                setTimeout(() => handleAIQuestion(), 100)
-              }}
-              disabled={isAILoading}
-            >
-              <Lightbulb className="w-6 h-6 text-yellow-600" />
-              <span className="text-sm">Explain</span>
-            </Button>
-            
-            <Button
-              variant="outline"
-              className="h-auto p-3 flex flex-col items-center space-y-2"
-              onClick={() => {
-                setUserQuery("Create practice questions")
-                setTimeout(() => handleAIQuestion(), 100)
-              }}
-              disabled={isAILoading}
-            >
-              <Target className="w-6 h-6 text-green-600" />
-              <span className="text-sm">Practice</span>
-            </Button>
-            
-            <Button
-              variant="outline"
-              className="h-auto p-3 flex flex-col items-center space-y-2"
-              onClick={() => {
-                setUserQuery("Give me study tips")
-                setTimeout(() => handleAIQuestion(), 100)
-              }}
-              disabled={isAILoading}
-            >
-              <BookOpen className="w-6 h-6 text-purple-600" />
-              <span className="text-sm">Study Tips</span>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+              {/* Chat Input */}
+              <div className="border-t border-[#001E62]/10 p-4">
+                <div className="flex space-x-3">
+                  <Input
+                    placeholder="Ask your question..."
+                    value={userQuery}
+                    onChange={(e) => setUserQuery(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && !isAILoading && handleAIQuestion()}
+                    className="flex-1 border-[#001E62]/20 focus:border-[#001E62]"
+                  />
+                  <Button
+                    onClick={handleAIQuestion}
+                    disabled={!userQuery.trim() || isAILoading}
+                    size="lg"
+                    className="bg-[#001E62] hover:bg-[#001E62]/90"
+                  >
+                    {isAILoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {/* Progress Summary */}
-      <Card className="bg-gradient-to-r from-gray-50 to-slate-50 border-gray-200">
-        <CardContent className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Learning Progress</h3>
-              <p className="text-gray-600">Track your AI-enhanced learning journey</p>
-            </div>
-            <div className="text-right">
-              <div className="text-3xl font-bold text-blue-600">{getProgressPercentage()}%</div>
-              <div className="text-sm text-gray-500">Complete</div>
-            </div>
+        {/* Learning Journey Tab */}
+       <TabsContent value="journey" className="mt-6">
+  <Card className="border border-[#001E62]/20">
+    <CardHeader className="bg-[#001E62]/5 border-b border-[#001E62]/10">
+      <CardTitle className="flex items-center text-[#001E62]">
+        <MapPin className="w-6 h-6 mr-2" />
+        Learning Roadmap
+      </CardTitle>
+      <p className="text-sm text-gray-600">
+        Your personalized learning path for {video?.course?.category || 'this course'}
+      </p>
+    </CardHeader>
+    <CardContent className="p-6">
+      {isPathLoading ? (
+        <div className="text-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#001E62]" />
+          <p className="text-gray-500">Creating your personalized roadmap...</p>
+        </div>
+      ) : learningJourney ? (
+        <div className="space-y-6">
+          {/* Journey Overview */}
+          <div className="bg-[#001E62]/5 p-6 rounded-lg border border-[#001E62]/10">
+            <h3 className="text-2xl font-bold text-[#001E62] mb-2">
+              {learningJourney.title}
+            </h3>
+            <p className="text-gray-700 leading-relaxed">
+              {learningJourney.description}
+            </p>
           </div>
-          
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-white rounded-lg border">
-              <MessageSquare className="w-6 h-6 mx-auto mb-2 text-blue-600" />
-              <div className="text-sm font-medium">AI Interactions</div>
-              <div className="text-lg font-bold text-gray-900">{chatMessages.length}</div>
+
+          {/* Progress Indicator */}
+          <div className="bg-gray-50 p-4 rounded border border-gray-200">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-gray-700">Your Progress</span>
+              <span className="text-sm text-gray-600">
+                Phase 1 of {learningJourney.steps?.length || 0}
+              </span>
             </div>
-            
-            <div className="text-center p-4 bg-white rounded-lg border">
-              <MapPin className="w-6 h-6 mx-auto mb-2 text-green-600" />
-              <div className="text-sm font-medium">Learning Steps</div>
-              <div className="text-lg font-bold text-gray-900">{learningPath.length}</div>
-            </div>
-            
-            <div className="text-center p-4 bg-white rounded-lg border">
-              <FileText className="w-6 h-6 mx-auto mb-2 text-purple-600" />
-              <div className="text-sm font-medium">Study Notes</div>
-              <div className="text-lg font-bold text-gray-900">{studyNotes ? '1' : '0'}</div>
-            </div>
-            
-            <div className="text-center p-4 bg-white rounded-lg border">
-              <Award className="w-6 h-6 mx-auto mb-2 text-yellow-600" />
-              <div className="text-sm font-medium">AI Features</div>
-              <div className="text-lg font-bold text-gray-900">Active</div>
-            </div>
+            <Progress 
+              value={(1 / (learningJourney.steps?.length || 1)) * 100} 
+              className="h-2" 
+            />
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Learning Steps */}
+          <div className="space-y-4">
+            {learningJourney.steps?.map((step, index) => (
+              <Card 
+                key={step.id} 
+                className={`border-l-4 ${
+                  index === 0 
+                    ? 'border-l-[#001E62] bg-[#001E62]/5' 
+                    : 'border-l-gray-300'
+                }`}
+              >
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${
+                          index === 0 
+                            ? 'bg-[#001E62] text-white' 
+                            : 'bg-gray-200 text-gray-600'
+                        }`}>
+                          {index + 1}
+                        </div>
+                        <Badge 
+                          variant="outline" 
+                          className="text-xs border-[#001E62]/30"
+                        >
+                          {step.difficulty}
+                        </Badge>
+                        {index === 0 && (
+                          <Badge className="bg-[#001E62] text-xs">
+                            <PlayCircle className="w-3 h-3 mr-1" />
+                            Current
+                          </Badge>
+                        )}
+                      </div>
+
+                      <CardTitle className="text-lg text-[#001E62] mb-2">
+                        {step.title}
+                      </CardTitle>
+                      <p className="text-sm text-gray-600 leading-relaxed">
+                        {step.description}
+                      </p>
+                    </div>
+                  </div>
+                </CardHeader>
+
+                {step.skills && step.skills.length > 0 && (
+                  <CardContent>
+                    <div className="font-semibold text-sm text-gray-800 mb-2 flex items-center">
+                      <Sparkles className="w-4 h-4 mr-1.5 text-[#001E62]" />
+                      Key Skills
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {step.skills.map((skill, idx) => (
+                        <Badge 
+                          key={idx} 
+                          variant="outline" 
+                          className="text-xs border-[#001E62]/30 text-[#001E62]"
+                        >
+                          {skill}
+                        </Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            ))}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button
+              variant="outline"
+              onClick={generateLearningPath}
+              disabled={isPathLoading}
+              className="flex-1 border-[#001E62]/30 hover:bg-[#001E62]/5"
+              size="lg"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Regenerate Roadmap
+            </Button>
+            <Button
+              onClick={() => {
+                const pathText = `${learningJourney.title}\n\n${learningJourney.description}\n\nLearning Path:\n\n${learningJourney.steps?.map((s, i) => `${i + 1}. ${s.title} (${s.difficulty})\n   ${s.description}\n   Skills: ${s.skills?.join(', ')}\n`).join('\n')}`
+                const blob = new Blob([pathText], { type: 'text/plain' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `learning-roadmap-${video?.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.txt`
+                a.click()
+                URL.revokeObjectURL(url)
+              }}
+              className="flex-1 bg-[#001E62] hover:bg-[#001E62]/90"
+              size="lg"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Download Roadmap
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="text-center py-16">
+          <MapPin className="w-16 h-16 mx-auto mb-4 text-[#001E62]/40" />
+          <h3 className="text-xl font-semibold text-[#001E62] mb-2">
+            Generate Your Learning Roadmap
+          </h3>
+          <p className="text-gray-600 mb-6 max-w-md mx-auto">
+            Create a personalized learning path based on this course
+          </p>
+          <Button
+            onClick={generateLearningPath}
+            disabled={isPathLoading || !video}
+            size="lg"
+            className="bg-[#001E62] hover:bg-[#001E62]/90"
+          >
+            <Sparkles className="w-5 h-5 mr-2" />
+            Generate Roadmap
+          </Button>
+        </div>
+      )}
+    </CardContent>
+  </Card>
+</TabsContent>
+
+        {/* Study Notes Tab */}
+        <TabsContent value="notes" className="mt-6">
+          <Card className="border border-[#001E62]/20">
+            <CardHeader className="bg-[#001E62]/5 border-b border-[#001E62]/10">
+              <CardTitle className="flex items-center text-[#001E62]">
+                <FileText className="w-6 h-6 mr-2" />
+                Comprehensive Study Notes
+              </CardTitle>
+              <p className="text-sm text-gray-600">Detailed notes with examples, insights, and actionable next steps</p>
+            </CardHeader>
+            <CardContent className="p-6">
+              {isNotesLoading ? (
+                <div className="text-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#001E62]" />
+                  <p className="text-gray-500">Generating comprehensive study notes...</p>
+                </div>
+              ) : studyNotes ? (
+                <div className="space-y-6">
+                  {/* Metadata */}
+                  <div className="flex flex-wrap gap-3 text-sm">
+                    <Badge variant="outline" className="border-[#001E62]/30">{studyNotes.difficulty}</Badge>
+                    <Badge variant="outline" className="border-[#001E62]/30">
+                      <Clock className="w-3 h-3 mr-1" />
+                      {studyNotes.estimatedTime}
+                    </Badge>
+                    {studyNotes.tags.map((tag, index) => (
+                      <Badge key={index} variant="outline" className="border-[#001E62]/30">{tag}</Badge>
+                    ))}
+                  </div>
+
+                  {/* Content */}
+                  <div className="bg-white p-6 rounded border border-gray-200">
+                    <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed">
+                      <div className="whitespace-pre-wrap">{studyNotes.content}</div>
+                    </div>
+                  </div>
+
+                  {/* Key Points */}
+                  <div className="bg-[#001E62]/5 p-6 rounded border border-[#001E62]/10">
+                    <h4 className="font-semibold text-[#001E62] mb-4 flex items-center">
+                      <Lightbulb className="w-5 h-5 mr-2" />
+                      Key Points to Master
+                    </h4>
+                    <div className="space-y-3">
+                      {studyNotes.keyPoints.map((point, index) => (
+                        <div key={index} className="flex items-start space-x-3">
+                          <Star className="w-4 h-4 mt-0.5 text-[#001E62] flex-shrink-0" />
+                          <span className="text-sm text-gray-700">{point}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Practical Examples */}
+                  {studyNotes.practicalExamples && studyNotes.practicalExamples.length > 0 && (
+                    <div className="bg-gray-50 p-6 rounded border border-gray-200">
+                      <h4 className="font-semibold text-[#001E62] mb-4">Practical Examples</h4>
+                      <div className="space-y-3">
+                        {studyNotes.practicalExamples.map((example, index) => (
+                          <div key={index} className="flex items-start space-x-3">
+                            <ExternalLink className="w-4 h-4 mt-0.5 text-[#001E62] flex-shrink-0" />
+                            <span className="text-sm text-gray-700">{example}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Common Mistakes */}
+                  {studyNotes.commonMistakes && studyNotes.commonMistakes.length > 0 && (
+                    <div className="bg-gray-50 p-6 rounded border border-gray-200">
+                      <h4 className="font-semibold text-[#001E62] mb-4">Common Mistakes to Avoid</h4>
+                      <div className="space-y-3">
+                        {studyNotes.commonMistakes.map((mistake, index) => (
+                          <div key={index} className="flex items-start space-x-3">
+                            <AlertCircle className="w-4 h-4 mt-0.5 text-[#001E62] flex-shrink-0" />
+                            <span className="text-sm text-gray-700">{mistake}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Next Steps */}
+                  {studyNotes.nextSteps && studyNotes.nextSteps.length > 0 && (
+                    <div className="bg-[#001E62]/5 p-6 rounded border border-[#001E62]/10">
+                      <h4 className="font-semibold text-[#001E62] mb-4">Next Steps for Learning</h4>
+                      <div className="space-y-3">
+                        {studyNotes.nextSteps.map((step, index) => (
+                          <div key={index} className="flex items-start space-x-3">
+                            <CheckCircle className="w-4 h-4 mt-0.5 text-[#001E62] flex-shrink-0" />
+                            <span className="text-sm text-gray-700">{step}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Summary */}
+                  <div className="bg-gray-50 p-6 rounded border border-gray-200">
+                    <h4 className="font-semibold text-[#001E62] mb-3">Summary</h4>
+                    <p className="text-sm text-gray-700 leading-relaxed">{studyNotes.summary}</p>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex space-x-3">
+                    <Button
+                      onClick={downloadNotes}
+                      className="flex-1 bg-[#001E62] hover:bg-[#001E62]/90"
+                      size="lg"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Download Notes
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={generateStudyNotes}
+                      disabled={isNotesLoading}
+                      className="flex-1 border-[#001E62]/30 hover:bg-[#001E62]/5"
+                      size="lg"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Regenerate
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-16">
+                  <FileText className="w-16 h-16 mx-auto mb-4 text-[#001E62]/40" />
+                  <h3 className="text-xl font-semibold text-[#001E62] mb-2">Generate Study Notes</h3>
+                  <p className="text-gray-600 mb-6">Create comprehensive notes with examples and insights</p>
+                  <Button
+                    onClick={generateStudyNotes}
+                    disabled={isNotesLoading || !video}
+                    size="lg"
+                    className="bg-[#001E62] hover:bg-[#001E62]/90"
+                  >
+                    <Sparkles className="w-5 h-5 mr-2" />
+                    Generate Notes
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Smart Quiz Tab */}
+        <TabsContent value="quiz" className="mt-6">
+          <Card className="border border-[#001E62]/20">
+            <CardHeader className="bg-[#001E62]/5 border-b border-[#001E62]/10">
+              <CardTitle className="flex items-center text-[#001E62]">
+                <HelpCircle className="w-6 h-6 mr-2" />
+                Advanced Practice Quiz
+              </CardTitle>
+              <p className="text-sm text-gray-600">
+                Test your understanding with challenging questions
+                {remainingGenerations > 0 && (
+                  <span className="ml-2 text-xs bg-[#001E62]/10 text-[#001E62] px-2 py-1 rounded">
+                    {remainingGenerations} remaining
+                  </span>
+                )}
+              </p>
+            </CardHeader>
+            <CardContent className="p-6">
+              {isQuizLoading ? (
+                <div className="text-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-[#001E62]" />
+                  <p className="text-gray-500">Creating quiz questions...</p>
+                </div>
+              ) : quizQuestions.length > 0 && !showQuizResults ? (
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">
+                      Question {currentQuizIndex + 1} of {quizQuestions.length}
+                    </span>
+                    <Badge variant="outline" className="border-[#001E62]/30">
+                      {quizQuestions[currentQuizIndex]?.difficulty} • {quizQuestions[currentQuizIndex]?.points} pts
+                    </Badge>
+                  </div>
+                  
+                  <Progress value={((currentQuizIndex + 1) / quizQuestions.length) * 100} className="h-2" />
+                  
+                  <div className="bg-white p-6 rounded border border-gray-200">
+                    <h4 className="font-semibold text-lg mb-6 text-gray-900 leading-relaxed">
+                      {quizQuestions[currentQuizIndex]?.question}
+                    </h4>
+                    
+                    <div className="space-y-3">
+                      {quizQuestions[currentQuizIndex]?.options.map((option, index) => (
+                        <button
+                          key={index}
+                          onClick={() => handleQuizAnswer(index)}
+                          className={`w-full p-4 text-left rounded border-2 transition-all ${
+                            quizAnswers[currentQuizIndex] === index
+                              ? 'bg-[#001E62]/5 border-[#001E62] text-gray-900'
+                              : 'bg-gray-50 border-gray-200 hover:bg-gray-100 hover:border-gray-300'
+                          }`}
+                        >
+                          <div className="flex items-start">
+                            <span className="font-semibold mr-3 text-sm text-[#001E62]">
+                              {String.fromCharCode(65 + index)}.
+                            </span>
+                            <span className="text-sm leading-relaxed">{option}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-between">
+                    <Button
+                      variant="outline"
+                      onClick={previousQuizQuestion}
+                      disabled={currentQuizIndex === 0}
+                      className="border-[#001E62]/30"
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      onClick={nextQuizQuestion}
+                      disabled={quizAnswers[currentQuizIndex] === -1}
+                      size="lg"
+                      className="bg-[#001E62] hover:bg-[#001E62]/90"
+                    >
+                      {currentQuizIndex === quizQuestions.length - 1 ? 'Complete Quiz' : 'Next Question'}
+                    </Button>
+                  </div>
+                </div>
+              ) : showQuizResults ? (
+                <div className="text-center py-8">
+                  <div className="bg-white p-8 rounded border border-gray-200 mb-6">
+                    <h3 className="text-2xl font-bold text-[#001E62] mb-4">Quiz Completed!</h3>
+                    <div className="text-5xl font-bold text-[#001E62] mb-3">
+                      {getQuizScore().percentage}%
+                    </div>
+                    <div className="text-gray-600 mb-6">
+                      {getQuizScore().correct} out of {getQuizScore().total} questions correct
+                    </div>
+                    
+                    <div className="text-sm text-gray-700 p-4 bg-gray-50 rounded">
+                      {getQuizScore().percentage >= 80 ? 
+                        "Outstanding! You demonstrate strong mastery of the concepts." :
+                        getQuizScore().percentage >= 60 ?
+                        "Good progress! Review the concepts and try again." :
+                        "Keep learning! Focus on understanding the core concepts."}
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    {remainingGenerations > 0 && (
+                      <Button
+                        onClick={generateQuiz}
+                        className="w-full bg-[#001E62] hover:bg-[#001E62]/90"
+                        size="lg"
+                      >
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Generate New Quiz ({remainingGenerations} remaining)
+                      </Button>
+                    )}
+                    
+                    {remainingGenerations === 0 && (
+                      <div className="p-4 bg-gray-50 border border-gray-200 rounded">
+                        <p className="text-sm text-gray-700">
+                          You've reached the quiz generation limit for this video.
+                        </p>
+                      </div>
+                    )}
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setShowQuizResults(false)
+                          setCurrentQuizIndex(0)
+                        }}
+                        className="border-[#001E62]/30"
+                      >
+                        Review Answers
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={resetQuiz}
+                        className="border-[#001E62]/30"
+                      >
+                        Reset Quiz
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-16">
+                  <HelpCircle className="w-16 h-16 mx-auto mb-4 text-[#001E62]/40" />
+                  <h3 className="text-xl font-semibold text-[#001E62] mb-2">Generate Practice Quiz</h3>
+                  <p className="text-gray-600 mb-6">
+                    Test your understanding with challenging questions
+                  </p>
+                  <Button
+                    onClick={generateQuiz}
+                    disabled={isQuizLoading || remainingGenerations === 0}
+                    size="lg"
+                    className="bg-[#001E62] hover:bg-[#001E62]/90"
+                  >
+                    <Zap className="w-5 h-5 mr-2" />
+                    {remainingGenerations === 0 ? 'Limit Reached' : 'Generate Quiz'}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

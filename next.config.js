@@ -8,14 +8,27 @@ const nextConfig = {
 
   // Image configuration
   images: {
-    domains: [
-      "lh3.googleusercontent.com",
-      "avatars.githubusercontent.com",
-      "images.unsplash.com",
-      "via.placeholder.com",
-      "res.cloudinary.com",
-    ],
     remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "lh3.googleusercontent.com",
+      },
+      {
+        protocol: "https",
+        hostname: "avatars.githubusercontent.com",
+      },
+      {
+        protocol: "https",
+        hostname: "images.unsplash.com",
+      },
+      {
+        protocol: "https",
+        hostname: "via.placeholder.com",
+      },
+      {
+        protocol: "https",
+        hostname: "res.cloudinary.com",
+      },
       {
         protocol: "https",
         hostname: "**",

@@ -28,7 +28,8 @@ export async function POST(
       );
     }
 
-    const { regenerate = false, source = "manual" } = await request.json();
+    const body = await request.json();
+    const { regenerate = false } = body;
 
     // Get video with transcript and current tests
     const video = await prisma.video.findUnique({
@@ -60,7 +61,7 @@ export async function POST(
       return NextResponse.json({
         message: "Quiz already exists. Use regenerate=true to replace it.",
         hasQuiz: true,
-        questionCount: video.tests.length,
+        count: video.tests.length,
         transcriptStatus: video.transcript?.status || "NOT_FOUND",
       });
     }
@@ -72,32 +73,12 @@ export async function POST(
     // Initialize quiz generator
     const generator = new TranscriptQuizGenerator();
 
-    // Generate quiz (will prioritize transcript if available)
-    const questions = await generator.generateQuizFromVideo(params.videoId);
-
-    // Save questions to the database
-    await prisma.$transaction(async (tx) => {
-      // Delete existing questions if regenerating
-      if (regenerate) {
-        await tx.test.deleteMany({
-          where: { videoId: params.videoId },
-        });
-      }
-
-      // Create new questions
-      await tx.test.createMany({
-        data: questions.map((q, index) => ({
-          videoId: params.videoId,
-          question: q.question,
-          options: q.options,
-          correct: q.correct,
-          explanation: q.explanation,
-          difficulty: q.difficulty,
-          points: q.points,
-          order: index,
-        })),
-      });
-    });
+    // Generate and save quiz questions
+    // The generator handles both generation AND database saving
+    const questions = await generator.generateQuizFromVideo(
+      params.videoId,
+      regenerate
+    );
 
     const generationSource =
       video.transcript?.status === "COMPLETED" &&
@@ -107,7 +88,7 @@ export async function POST(
         : "topic";
 
     console.log(
-      `Generated ${questions.length} questions from ${generationSource}`
+      `Successfully generated ${questions.length} questions from ${generationSource}`
     );
 
     return NextResponse.json({

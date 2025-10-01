@@ -3,9 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client' // ✅ FIX: Import from @prisma/client
 import OpenAI from 'openai'
-import { Prisma } from 'prisma'
-
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -17,7 +16,7 @@ interface TranscriptSegment {
   start: number
   end: number
   text: string
-  confidence?: number
+  confidence?: number | null
   speaker?: string
 }
 
@@ -136,7 +135,7 @@ export async function POST(
       language,
       response_format: includeTimestamps ? 'verbose_json' : 'text',
       timestamp_granularities: includeTimestamps ? ['segment'] : undefined,
-    }) as VerboseTranscription | string  // 👈 fix: cast with our type
+    }) as VerboseTranscription | string
 
     let fullTranscript = ''
     let allSegments: TranscriptSegment[] = []
@@ -157,24 +156,24 @@ export async function POST(
 
     console.log(`✅ Transcription completed: ${fullTranscript.length} chars, ${allSegments.length} segments`)
 
+    // ✅ Properly convert to Prisma.JsonArray
     const transcriptData = {
-  content: fullTranscript,
-  language,
-  segments: allSegments.length > 0 ? allSegments as Prisma.JsonArray : null, // ✅ FIX
-  status: 'COMPLETED' as const,
-  confidence: allSegments.length > 0
-    ? allSegments.reduce((acc, seg) => acc + (seg.confidence || 0), 0) / allSegments.length
-    : null,
-  provider: 'openai',
-  generatedAt: new Date(),
-  error: null
-}
+      content: fullTranscript,
+      language,
+      segments: allSegments.length > 0 ? (allSegments as unknown as Prisma.JsonArray) : null,
+      status: 'COMPLETED' as const,
+      confidence: allSegments.length > 0
+        ? allSegments.reduce((acc, seg) => acc + (seg.confidence || 0), 0) / allSegments.length
+        : null,
+      provider: 'openai',
+      generatedAt: new Date(),
+      error: null
+    }
 
-const savedTranscript = await prisma.transcript.update({
-  where: { videoId },
-  data: transcriptData
-})
-
+    const savedTranscript = await prisma.transcript.update({
+      where: { videoId },
+      data: transcriptData
+    })
 
     return NextResponse.json({
       success: true,
@@ -195,12 +194,20 @@ const savedTranscript = await prisma.transcript.update({
       await prisma.transcript.upsert({
         where: { videoId: params.videoId },
         update: { status: 'FAILED', error: error instanceof Error ? error.message : 'Unknown error' },
-        create: { videoId: params.videoId, content: '', language: 'en', status: 'FAILED', error: error instanceof Error ? error.message : 'Unknown error' }
+        create: { 
+          videoId: params.videoId, 
+          content: '', 
+          language: 'en', 
+          status: 'FAILED', 
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        }
       })
     } catch (dbError) {
       console.error('Error updating transcript status:', dbError)
     }
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to generate transcript' }, { status: 500 })
+    return NextResponse.json({ 
+      error: error instanceof Error ? error.message : 'Failed to generate transcript' 
+    }, { status: 500 })
   }
 }
 
@@ -217,18 +224,33 @@ export async function GET(
     const transcript = await prisma.transcript.findUnique({
       where: { videoId: params.videoId },
       include: {
-        video: { select: { title: true, duration: true, course: { select: { title: true } } } }
+        video: { 
+          select: { 
+            title: true, 
+            duration: true, 
+            course: { select: { title: true } } 
+          } 
+        }
       }
     })
 
     if (!transcript) {
-      return NextResponse.json({ error: 'Transcript not found', videoId: params.videoId }, { status: 404 })
+      return NextResponse.json({ 
+        error: 'Transcript not found', 
+        videoId: params.videoId 
+      }, { status: 404 })
     }
 
-    return NextResponse.json({ ...transcript, hasTranscript: transcript.status === 'COMPLETED' })
+    return NextResponse.json({ 
+      ...transcript, 
+      hasTranscript: transcript.status === 'COMPLETED' 
+    })
   } catch (error) {
     console.error('Error fetching transcript:', error)
-    return NextResponse.json({ error: 'Failed to fetch transcript', videoId: params.videoId }, { status: 500 })
+    return NextResponse.json({ 
+      error: 'Failed to fetch transcript', 
+      videoId: params.videoId 
+    }, { status: 500 })
   }
 }
 
@@ -242,15 +264,26 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const transcript = await prisma.transcript.findUnique({ where: { videoId: params.videoId } })
+    const transcript = await prisma.transcript.findUnique({ 
+      where: { videoId: params.videoId } 
+    })
+    
     if (!transcript) {
       return NextResponse.json({ error: 'Transcript not found' }, { status: 404 })
     }
 
     await prisma.transcript.delete({ where: { videoId: params.videoId } })
-    return NextResponse.json({ success: true, message: 'Transcript deleted successfully', videoId: params.videoId })
+    
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Transcript deleted successfully', 
+      videoId: params.videoId 
+    })
   } catch (error) {
     console.error('Error deleting transcript:', error)
-    return NextResponse.json({ error: 'Failed to delete transcript', videoId: params.videoId }, { status: 500 })
+    return NextResponse.json({ 
+      error: 'Failed to delete transcript', 
+      videoId: params.videoId 
+    }, { status: 500 })
   }
 }

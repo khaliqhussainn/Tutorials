@@ -1,10 +1,12 @@
-// app/api/ai/study-notes/route.ts
+// app/api/ai/study-notes/route.ts - Fixed TypeScript errors
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { GoogleGenerativeAI } from "@google/generative-ai"
+import OpenAI from 'openai'
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY || '',
+})
 
 interface StudyNote {
   id: string
@@ -16,6 +18,9 @@ interface StudyNote {
   estimatedTime: string
   tags: string[]
   createdAt: string
+  practicalExamples: string[]
+  commonMistakes: string[]
+  nextSteps: string[]
 }
 
 export async function POST(request: NextRequest) {
@@ -26,213 +31,443 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { videoId, videoTitle, transcript, courseTitle, courseCategory } = await request.json()
+    const requestBody = await request.json()
+    const { 
+      videoId, 
+      videoTitle, 
+      transcript, 
+      courseTitle, 
+      courseCategory 
+    } = requestBody
 
-    if (!process.env.GEMINI_API_KEY || !transcript) {
+    if (!videoId || !videoTitle) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json({ 
-        notes: generateFallbackNotes(videoTitle, courseCategory)
+        notes: generateComprehensiveFallbackNotes(videoTitle, courseCategory, videoId),
+        source: 'fallback'
       })
     }
 
-    const model = genAI.getGenerativeModel({ 
-      model: 'gemini-pro',
-      generationConfig: {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-      }
-    })
+    console.log(`📝 Generating comprehensive study notes for: "${videoTitle}"`)
 
-    const prompt = buildStudyNotesPrompt(
+    const prompt = buildComprehensiveStudyNotesPrompt(
       videoTitle, 
       transcript, 
       courseTitle, 
       courseCategory
     )
 
-    const result = await model.generateContent(prompt)
-    const response = await result.response
-    const text = response.text()
-
     try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0])
-        return NextResponse.json({ notes: parsed })
-      }
-    } catch (e) {
-      console.error('Failed to parse study notes JSON:', e)
-    }
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { 
+            role: "system", 
+            content: "You are an expert educational content creator who specializes in creating comprehensive, professional-quality study materials. Your notes are used by students to master complex topics and succeed in their careers." 
+          },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.5,
+        max_tokens: 3000,
+      })
 
-    // Fallback to generated notes
-    return NextResponse.json({ 
-      notes: generateFallbackNotes(videoTitle, courseCategory)
-    })
+      const content = completion.choices[0]?.message?.content?.trim() || ""
+
+      try {
+        const cleanContent = content.replace(/```json\n?|\n?```/g, '').trim()
+        const parsed = JSON.parse(cleanContent)
+        
+        const notes: StudyNote = {
+          id: `${videoId}_comprehensive_notes_${Date.now()}`,
+          title: parsed.title || `Comprehensive Study Notes: ${videoTitle}`,
+          content: parsed.content || 'Content not available',
+          keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [],
+          summary: parsed.summary || 'Summary not available',
+          difficulty: parsed.difficulty || 'Intermediate',
+          estimatedTime: parsed.estimatedTime || '20-30 minutes',
+          tags: Array.isArray(parsed.tags) ? parsed.tags : [courseCategory?.toLowerCase() || 'general'],
+          practicalExamples: Array.isArray(parsed.practicalExamples) ? parsed.practicalExamples : [],
+          commonMistakes: Array.isArray(parsed.commonMistakes) ? parsed.commonMistakes : [],
+          nextSteps: Array.isArray(parsed.nextSteps) ? parsed.nextSteps : [],
+          createdAt: new Date().toISOString()
+        }
+        
+        return NextResponse.json({ 
+          notes,
+          source: 'openai'
+        })
+        
+      } catch (parseError) {
+        console.error('JSON parsing failed:', parseError)
+        return NextResponse.json({ 
+          notes: generateComprehensiveFallbackNotes(videoTitle, courseCategory, videoId),
+          source: 'fallback'
+        })
+      }
+
+    } catch (openaiError) {
+      console.error('OpenAI API Error:', openaiError)
+      return NextResponse.json({ 
+        notes: generateComprehensiveFallbackNotes(videoTitle, courseCategory, videoId),
+        source: 'fallback'
+      })
+    }
 
   } catch (error) {
     console.error('Study notes generation error:', error)
     return NextResponse.json({ 
-      notes: generateFallbackNotes('Lesson', 'General')
+      notes: generateComprehensiveFallbackNotes('Video Content', 'General', 'fallback'),
+      source: 'fallback'
     })
   }
 }
 
-function buildStudyNotesPrompt(
+function buildComprehensiveStudyNotesPrompt(
   videoTitle: string,
   transcript: string,
   courseTitle: string,
   courseCategory: string
 ): string {
-  return `Create comprehensive study notes from this educational video transcript.
+  return `Create comprehensive, professional-quality study notes for the educational video: "${videoTitle}"
 
-Video Title: "${videoTitle}"
-Course: "${courseTitle}"
-Category: "${courseCategory}"
-Transcript: ${transcript.substring(0, 4000)}
+CONTEXT:
+Title: "${videoTitle}"
+Course: "${courseTitle || 'N/A'}"
+Category: "${courseCategory || 'General'}"
+Content Source: ${transcript ? 'Full transcript available' : 'Title and course context'}
+${transcript ? `Transcript: ${transcript.substring(0, 2500)}...` : ''}
 
-Generate structured study notes that include:
-1. Clear overview and introduction
-2. Key concepts and definitions
-3. Important points and takeaways
-4. Practical examples and applications
-5. Summary of main ideas
-6. 5-7 key learning points
-7. Relevant tags for categorization
+REQUIREMENTS:
+Create detailed, professional study notes that serve as a complete reference guide. These notes should be:
+1. Comprehensive enough to understand the topic without watching the video
+2. Structured for easy review and quick reference
+3. Include practical applications and real-world context
+4. Address common challenges and misconceptions
+5. Provide clear next steps for continued learning
 
-Focus on:
-- Making complex concepts easy to understand
-- Highlighting actionable insights
-- Organizing information logically
-- Using bullet points and clear structure
-- Emphasizing practical applications
+CONTENT STRUCTURE:
+1. **Detailed Content**: In-depth explanations with examples
+2. **Key Points**: 7-10 essential takeaways for quick review
+3. **Practical Examples**: Real-world applications and use cases
+4. **Common Mistakes**: What to avoid and why
+5. **Next Steps**: Recommended follow-up learning
+6. **Professional Context**: How this applies in workplace/career
 
-Return as JSON:
+TONE: Professional yet accessible, like notes from an expert instructor
+
+RESPONSE FORMAT (JSON only):
 {
-  "id": "unique_id",
-  "title": "Study Notes: [Video Title]",
-  "content": "Formatted markdown content with headers, bullet points, and clear structure",
-  "keyPoints": [
-    "Key learning point 1",
-    "Key learning point 2",
-    "Key learning point 3",
-    "Key learning point 4",
-    "Key learning point 5"
-  ],
-  "summary": "Concise 2-3 sentence summary of the main concepts",
-  "difficulty": "Beginner|Intermediate|Advanced",
-  "estimatedTime": "10-15 minutes",
-  "tags": ["tag1", "tag2", "tag3"],
-  "createdAt": "2024-01-01T00:00:00.000Z"
-}
-
-Make the content educational, well-structured, and easy to review.`
-}
-
-function generateFallbackNotes(videoTitle: string, courseCategory: string): StudyNote {
-  const category = courseCategory || 'General'
-  const difficulty = determineDifficulty(videoTitle, category)
+  "title": "Comprehensive Study Guide: ${videoTitle}",
+  "content": "DETAILED COMPREHENSIVE CONTENT (minimum 800 words):\n\n## Overview\n[Clear introduction explaining what this lesson covers and why it's important]\n\n## Core Concepts\n[Detailed explanations of main concepts with definitions, examples, and context]\n\n## Technical Details\n[Specific implementation details, syntax, methods, or processes]\n\n## Professional Applications\n[How these concepts apply in real work scenarios]\n\n## Best Practices\n[Industry standards and recommended approaches]\n\n## Integration & Advanced Usage\n[How this connects to other concepts and advanced applications]\n\n## Troubleshooting\n[Common issues and how to resolve them]",
   
-  // Generate category-specific content
-  let content = `# Study Notes: ${videoTitle}\n\n`
+  "keyPoints": [
+    "Most important concept with specific details",
+    "Second critical point with practical context",
+    "Third essential takeaway with examples",
+    "Fourth key principle with application",
+    "Fifth important technique with reasoning",
+    "Sixth crucial concept with implications",
+    "Seventh vital point for mastery"
+  ],
+  
+  "practicalExamples": [
+    "Real-world scenario 1: Specific example of how to apply this knowledge",
+    "Professional use case 2: Industry application with context",
+    "Practical implementation 3: Step-by-step example"
+  ],
+  
+  "commonMistakes": [
+    "Frequent mistake 1: What people do wrong and why it causes problems",
+    "Common error 2: Misconception and the correct approach",
+    "Typical pitfall 3: How to avoid this issue"
+  ],
+  
+  "nextSteps": [
+    "Immediate next topic to study for progression",
+    "Recommended practice exercises or projects",
+    "Advanced concepts to explore after mastering this"
+  ],
+  
+  "summary": "Comprehensive 3-4 sentence summary covering the main concepts, their importance, and key applications in professional contexts.",
+  "difficulty": "Beginner/Intermediate/Advanced",
+  "estimatedTime": "25-35 minutes",
+  "tags": ["${courseCategory?.toLowerCase() || 'general'}", "specific_topic", "key_concept", "skill_area", "professional_development"]
+}
+
+Generate comprehensive, detailed notes that provide complete understanding of the topic. Make the content substantial and professionally valuable.`
+}
+
+function generateComprehensiveFallbackNotes(
+  videoTitle: string,
+  courseCategory: string,
+  videoId: string
+): StudyNote {
+  const category = courseCategory || 'General'
+  const title = videoTitle.toLowerCase()
+  
+  let content = ''
   let keyPoints: string[] = []
   let summary = ''
-  let tags: string[] = []
+  let practicalExamples: string[] = []
+  let commonMistakes: string[] = []
+  let nextSteps: string[] = []
+  let tags: string[] = [category.toLowerCase()]
+  let difficulty = 'Intermediate'
+  
+  if (title.includes('react')) {
+    content = `# Comprehensive Study Guide: ${videoTitle}
 
-  if (category.toLowerCase().includes('web') || category.toLowerCase().includes('frontend') || category.toLowerCase().includes('html') || category.toLowerCase().includes('css') || category.toLowerCase().includes('javascript')) {
-    content += `## Overview\nThis lesson covers important web development concepts related to ${videoTitle}.\n\n`
-    content += `## Key Concepts\n\n### Frontend Development\n- Understanding HTML structure and semantics\n- Styling with CSS and responsive design principles\n- JavaScript functionality and interactivity\n- Modern development practices\n\n`
-    content += `### Best Practices\n- Write clean, semantic code\n- Follow accessibility guidelines\n- Optimize for performance\n- Use version control effectively\n\n`
-    content += `### Practical Applications\n- Building responsive websites\n- Creating interactive user interfaces\n- Implementing modern design patterns\n- Debugging and testing code\n\n`
-    content += `## Summary\nThis lesson provides essential knowledge for web development, focusing on practical skills and industry best practices.`
+## Overview
+React is a powerful JavaScript library for building user interfaces, particularly web applications. This lesson covers essential React concepts that form the foundation for modern front-end development. Understanding these concepts is crucial for building scalable, maintainable applications in professional environments.
+
+## Core Concepts
+
+### Component-Based Architecture
+React applications are built using components - self-contained pieces of code that manage their own state and render UI elements. Components can be functional or class-based, with functional components being the modern standard.
+
+### Virtual DOM
+React uses a Virtual DOM to optimize rendering performance. Instead of directly manipulating the browser's DOM, React creates a virtual representation in memory, compares it with the previous state, and only updates the parts that have changed.
+
+### JSX (JavaScript XML)
+JSX allows you to write HTML-like syntax directly in JavaScript. It gets compiled to JavaScript function calls that create React elements. JSX makes component code more readable and maintainable.
+
+## Technical Details
+
+### State Management
+- Local state: Managed within individual components using useState hook
+- Global state: Shared across multiple components using Context API or external libraries
+- State immutability: Always create new state objects rather than modifying existing ones
+
+### Event Handling
+React uses SyntheticEvents that wrap native browser events, providing consistent behavior across different browsers. Event handlers receive event objects as parameters and can access event properties and methods.
+
+## Professional Applications
+In professional development, React is used for:
+- Single-page applications (SPAs) with complex user interactions
+- E-commerce platforms with dynamic product catalogs
+- Dashboard and admin interfaces with real-time data
+- Mobile applications using React Native
+- Progressive web applications (PWAs)
+
+## Best Practices
+- Keep components small and focused on single responsibilities
+- Use meaningful component and variable names
+- Implement proper error boundaries for production applications
+- Optimize performance with React.memo and useMemo when needed
+- Follow consistent code organization and file structure
+
+## Integration & Advanced Usage
+React integrates seamlessly with:
+- State management libraries (Redux, Zustand, Jotai)
+- Routing libraries (React Router, Next.js routing)
+- Testing frameworks (Jest, React Testing Library)
+- Build tools (Webpack, Vite, Create React App)
+- Backend APIs through HTTP clients or GraphQL
+
+## Troubleshooting
+Common development issues include:
+- Key prop warnings in lists (ensure unique keys for each item)
+- State update timing issues (use useEffect for side effects)
+- Performance bottlenecks (identify unnecessary re-renders)
+- Memory leaks from uncleared intervals or subscriptions`
 
     keyPoints = [
-      "Master HTML structure and semantic markup for better accessibility",
-      "Understand CSS styling principles and responsive design techniques",
-      "Learn JavaScript fundamentals for creating interactive experiences",
-      "Follow web development best practices for clean, maintainable code",
-      "Apply modern development workflows and testing strategies"
+      "Components are the building blocks of React applications, promoting reusability and maintainability",
+      "Virtual DOM optimization ensures efficient rendering by minimizing actual DOM manipulations",
+      "JSX syntax combines the power of JavaScript with HTML-like templates for intuitive UI development",
+      "State management with hooks like useState enables dynamic, interactive user interfaces",
+      "Props enable data flow from parent to child components, creating a unidirectional data flow",
+      "Event handling in React uses SyntheticEvents for consistent cross-browser behavior",
+      "Component lifecycle and effects (useEffect) manage side effects and cleanup operations"
     ]
 
-    summary = `This lesson covers essential web development concepts including HTML, CSS, and JavaScript fundamentals. It emphasizes practical application and modern development best practices.`
-    tags = ["Web Development", "Frontend", "HTML", "CSS", "JavaScript", "Best Practices"]
+    practicalExamples = [
+      "E-commerce product catalog: Create reusable ProductCard components that display product information and handle user interactions like adding to cart",
+      "Dashboard application: Build a real-time analytics dashboard using React components to display charts, metrics, and user data with automatic updates",
+      "Form management: Implement complex forms with validation, error handling, and dynamic field generation using controlled components and state"
+    ]
 
-  } else if (category.toLowerCase().includes('cyber') || category.toLowerCase().includes('security')) {
-    content += `## Overview\nThis lesson explores cybersecurity concepts and practices related to ${videoTitle}.\n\n`
-    content += `## Key Concepts\n\n### Security Fundamentals\n- Understanding threat landscapes and attack vectors\n- Risk assessment and management strategies\n- Security policies and compliance requirements\n- Incident response procedures\n\n`
-    content += `### Technical Implementation\n- Network security configurations\n- Access control mechanisms\n- Encryption and data protection\n- Security monitoring and logging\n\n`
-    content += `### Best Practices\n- Regular security assessments\n- Employee training and awareness\n- Continuous monitoring and updates\n- Documentation and reporting\n\n`
-    content += `## Summary\nThis lesson provides crucial cybersecurity knowledge for protecting systems and data against modern threats.`
+    commonMistakes = [
+      "Directly mutating state objects instead of creating new ones, which prevents React from detecting changes and re-rendering components",
+      "Missing key props in list items, causing React to inefficiently re-render and potentially lose component state",
+      "Using useEffect without proper dependency arrays, leading to infinite loops or stale data issues"
+    ]
+
+    nextSteps = [
+      "Learn React Hooks in depth, particularly useEffect, useContext, and custom hooks for advanced state management",
+      "Explore React Router for building single-page applications with multiple views and navigation",
+      "Study state management libraries like Redux or Zustand for complex application state handling"
+    ]
+
+    summary = "React is a component-based JavaScript library that revolutionizes front-end development through Virtual DOM optimization, JSX syntax, and unidirectional data flow. It enables developers to build scalable, maintainable user interfaces for modern web applications while providing powerful tools for state management and event handling."
+    tags = ['react', 'javascript', 'frontend', 'components', 'jsx', 'virtual-dom', 'web-development']
+    difficulty = 'Intermediate'
+    
+  } else if (title.includes('javascript')) {
+    content = `# Comprehensive Study Guide: ${videoTitle}
+
+## Overview
+JavaScript is the cornerstone of modern web development, enabling dynamic, interactive experiences across websites and applications. This lesson covers fundamental JavaScript concepts that are essential for both front-end and back-end development, providing the foundation for advanced programming techniques.
+
+## Core Concepts
+
+### Variables and Data Types
+JavaScript supports multiple data types including primitives (string, number, boolean, null, undefined, symbol) and objects (arrays, functions, objects). Understanding variable declaration with let, const, and var is crucial for proper scope management.
+
+### Functions and Scope
+Functions are first-class objects in JavaScript, meaning they can be assigned to variables, passed as arguments, and returned from other functions. Scope determines variable accessibility, with function scope, block scope, and lexical scope being key concepts.
+
+### Asynchronous Programming
+JavaScript's event-driven nature requires understanding of callbacks, promises, and async/await for handling asynchronous operations like API calls, file operations, and timers.
+
+## Technical Details
+
+### ES6+ Features
+- Arrow functions: Concise function syntax with lexical this binding
+- Destructuring: Extract values from arrays and objects efficiently
+- Template literals: String interpolation with embedded expressions
+- Modules: Import/export functionality for code organization
+
+### DOM Manipulation
+- Selecting elements: getElementById, querySelector, querySelectorAll
+- Modifying content: innerHTML, textContent, createElement
+- Event handling: addEventListener, event delegation, event propagation
+
+## Professional Applications
+JavaScript powers:
+- Interactive web interfaces with dynamic content updates
+- Server-side applications using Node.js for scalable backend services
+- Mobile app development with React Native and Ionic
+- Desktop applications using Electron framework
+- Game development with HTML5 Canvas and WebGL
+
+## Best Practices
+- Use strict mode to catch common coding mistakes
+- Implement proper error handling with try-catch blocks
+- Follow naming conventions and write self-documenting code
+- Use modern ES6+ features for cleaner, more maintainable code
+- Implement proper security measures to prevent XSS and injection attacks
+
+## Integration & Advanced Usage
+JavaScript integrates with:
+- Frontend frameworks (React, Vue.js, Angular)
+- Backend runtime environments (Node.js, Deno)
+- Databases (MongoDB with JavaScript, JSON-based storage)
+- Build tools and bundlers (Webpack, Rollup, Vite)
+- Testing frameworks (Jest, Mocha, Cypress)
+
+## Troubleshooting
+Common JavaScript issues:
+- Type coercion unexpected behavior (use strict equality ===)
+- Scope-related bugs (understand hoisting and closure)
+- Asynchronous code timing issues (proper promise handling)
+- Memory leaks from uncleaned event listeners or closures`
 
     keyPoints = [
-      "Understand common cybersecurity threats and attack methods",
-      "Implement effective security controls and monitoring systems",
-      "Develop incident response and recovery procedures",
-      "Maintain compliance with security standards and regulations",
-      "Create a culture of security awareness within organizations"
+      "Variables declared with let and const have block scope, while var has function scope, affecting where variables can be accessed",
+      "Functions are first-class objects that can be stored in variables, passed as arguments, and returned from other functions",
+      "Asynchronous programming with promises and async/await enables non-blocking code execution for better performance",
+      "ES6+ features like destructuring, template literals, and arrow functions improve code readability and maintainability",
+      "Event-driven programming allows JavaScript to respond to user interactions and system events dynamically",
+      "Closure concept enables functions to access variables from their outer scope even after the outer function has returned",
+      "Prototypal inheritance allows objects to inherit properties and methods from other objects in JavaScript"
     ]
 
-    summary = `This lesson covers fundamental cybersecurity concepts, threat analysis, and defensive strategies. It emphasizes practical implementation of security controls and best practices.`
-    tags = ["Cybersecurity", "Network Security", "Risk Management", "Compliance", "Incident Response"]
-
-  } else if (category.toLowerCase().includes('data') || category.toLowerCase().includes('python') || category.toLowerCase().includes('analytics')) {
-    content += `## Overview\nThis lesson covers data science and analytics concepts related to ${videoTitle}.\n\n`
-    content += `## Key Concepts\n\n### Data Analysis\n- Data collection and cleaning techniques\n- Statistical analysis and interpretation\n- Data visualization best practices\n- Pattern recognition and insights\n\n`
-    content += `### Technical Skills\n- Python programming for data science\n- Working with pandas and numpy libraries\n- Creating meaningful visualizations\n- Statistical modeling and validation\n\n`
-    content += `### Practical Applications\n- Business intelligence and reporting\n- Predictive modeling and forecasting\n- Data-driven decision making\n- Machine learning implementation\n\n`
-    content += `## Summary\nThis lesson provides essential data science skills for analyzing, interpreting, and extracting insights from data.`
-
-    keyPoints = [
-      "Master data collection, cleaning, and preparation techniques",
-      "Understand statistical analysis methods and interpretation",
-      "Create effective data visualizations for communication",
-      "Apply Python and relevant libraries for data analysis",
-      "Develop insights and recommendations from data findings"
+    practicalExamples = [
+      "API integration: Fetch data from REST APIs using async/await, handle loading states, and update UI components with received data",
+      "Form validation: Implement real-time form validation with custom rules, error messaging, and user feedback for improved user experience",
+      "Interactive UI components: Create dynamic elements like modal windows, dropdown menus, and image carousels with event handling"
     ]
 
-    summary = `This lesson covers essential data science concepts including data analysis, statistical methods, and visualization techniques. It emphasizes practical Python programming and real-world applications.`
-    tags = ["Data Science", "Python", "Analytics", "Statistics", "Visualization", "Machine Learning"]
-
-  } else {
-    // Generic content
-    content += `## Overview\nThis lesson covers important concepts and practices related to ${videoTitle}.\n\n`
-    content += `## Key Learning Areas\n\n### Core Concepts\n- Fundamental principles and theories\n- Industry standards and best practices\n- Practical applications and use cases\n- Common challenges and solutions\n\n`
-    content += `### Skills Development\n- Technical proficiency and tools\n- Problem-solving methodologies\n- Critical thinking and analysis\n- Communication and collaboration\n\n`
-    content += `### Practical Implementation\n- Real-world project applications\n- Testing and validation approaches\n- Continuous learning and improvement\n- Professional development strategies\n\n`
-    content += `## Summary\nThis lesson provides valuable knowledge and skills for professional growth and practical application in the field.`
-
-    keyPoints = [
-      "Understand core concepts and fundamental principles",
-      "Apply best practices and industry standards",
-      "Develop practical skills through hands-on experience",
-      "Solve real-world problems using learned techniques",
-      "Continue professional development and skill advancement"
+    commonMistakes = [
+      "Confusing == and === operators, leading to unexpected type coercion and logical errors in comparisons",
+      "Not understanding hoisting behavior, which can cause variables to be undefined when accessed before declaration",
+      "Creating memory leaks by not removing event listeners or clearing intervals/timeouts when they're no longer needed"
     ]
 
-    summary = `This lesson covers essential concepts and practical skills in ${category}. It emphasizes both theoretical understanding and real-world application.`
-    tags = [category, "Fundamentals", "Best Practices", "Professional Development", "Practical Skills"]
+    nextSteps = [
+      "Explore advanced JavaScript patterns like module patterns, observer patterns, and functional programming concepts",
+      "Learn a modern JavaScript framework like React, Vue.js, or Angular for building complex user interfaces",
+      "Study Node.js for server-side JavaScript development and building full-stack applications"
+    ]
+
+    summary = "JavaScript is a versatile, dynamic programming language that enables interactive web experiences through DOM manipulation, asynchronous programming, and modern ES6+ features. It serves as the foundation for both client-side and server-side development, making it essential for modern web development careers."
+    tags = ['javascript', 'programming', 'web-development', 'dom', 'async', 'es6', 'functions']
+    difficulty = 'Beginner'
   }
+  
+  // Generic comprehensive content for other topics
+  if (!content) {
+    content = `# Comprehensive Study Guide: ${videoTitle}
 
+## Overview
+This lesson covers essential concepts in ${category} that are fundamental for professional development and career advancement. Understanding these principles is crucial for building expertise and applying knowledge effectively in real-world scenarios.
+
+## Core Concepts
+The main topics covered include foundational principles, practical applications, and industry best practices. These concepts form the building blocks for more advanced learning and professional implementation.
+
+## Technical Details
+Specific techniques, methodologies, and implementation strategies are explored in depth, providing practical knowledge that can be immediately applied to projects and professional work.
+
+## Professional Applications
+These concepts are widely used in industry for solving real-world problems, improving efficiency, and creating valuable solutions that meet business and user needs.
+
+## Best Practices
+Industry standards and recommended approaches ensure professional-quality implementations. Following established patterns and methodologies leads to maintainable, scalable solutions.
+
+## Integration & Advanced Usage
+Understanding how these concepts connect to other technologies and methodologies enables more sophisticated implementations and career growth opportunities.
+
+## Troubleshooting
+Common challenges and their solutions help avoid typical pitfalls and ensure successful project outcomes.`
+
+    keyPoints = [
+      `Core principles of ${category} that form the foundation for advanced learning`,
+      "Practical implementation techniques that can be applied immediately to projects",
+      "Industry best practices that ensure professional-quality work and career advancement",
+      "Integration strategies for connecting with other technologies and methodologies",
+      "Common challenges and proven solutions for successful project outcomes",
+      "Professional applications that demonstrate real-world value and business impact",
+      "Next steps for continued learning and skill development in this area"
+    ]
+
+    practicalExamples = [
+      `Professional project scenario: Applying ${category} concepts to solve real business problems`,
+      `Industry use case: How leading companies implement these techniques for competitive advantage`,
+      `Career application: Using this knowledge to advance professional development and opportunities`
+    ]
+
+    commonMistakes = [
+      "Skipping foundational concepts and jumping to advanced topics without proper understanding",
+      "Focusing only on theory without practical application and hands-on experience",
+      "Not considering integration with existing systems and methodologies in professional environments"
+    ]
+
+    nextSteps = [
+      `Advanced topics in ${category} that build upon these foundational concepts`,
+      "Related technologies and methodologies that complement this knowledge",
+      "Professional certifications and career paths that utilize these skills"
+    ]
+
+    summary = `This lesson provides comprehensive coverage of ${category} concepts essential for professional development, including practical applications, industry best practices, and integration strategies for real-world implementation.`
+    tags = [category.toLowerCase(), 'fundamentals', 'professional-development', 'best-practices']
+  }
+  
   return {
-    id: Date.now().toString(),
-    title: `Study Notes: ${videoTitle}`,
+    id: `${videoId}_comprehensive_notes_${Date.now()}`,
+    title: `Comprehensive Study Guide: ${videoTitle}`,
     content,
     keyPoints,
     summary,
     difficulty,
-    estimatedTime: "15-20 minutes",
+    estimatedTime: '25-35 minutes',
     tags,
+    practicalExamples,
+    commonMistakes,
+    nextSteps,
     createdAt: new Date().toISOString()
-  }
-}
-
-function determineDifficulty(videoTitle: string, category: string): string {
-  const title = videoTitle.toLowerCase()
-  
-  if (title.includes('intro') || title.includes('basic') || title.includes('beginner') || title.includes('fundamentals') || title.includes('getting started')) {
-    return 'Beginner'
-  } else if (title.includes('advanced') || title.includes('expert') || title.includes('master') || title.includes('complex') || title.includes('deep dive')) {
-    return 'Advanced'
-  } else {
-    return 'Intermediate'
   }
 }
